@@ -4,15 +4,19 @@
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
 //! blob `f016fd332f2fd0c8ca164b0b18537662987a492f`.
 //!
-//! Script builders port `src/sesslint/completion.py` lines 1–253
-//! (`_ps_quote` inclusive) at the same commit, blob
-//! `d1724061aa49f43e8cd5e09064fdc62e466becde`. This stops before
-//! `_powershell_script` (line 256) and does not define `generate_completion`.
+//! Script builders port `src/sesslint/completion.py` lines 1–369 at the same
+//! commit, blob `d1724061aa49f43e8cd5e09064fdc62e466becde`, including
+//! `_powershell_script` and `generate_completion`.
 //!
-//! [`configure`] does not import the engine. [`run`] would import
-//! `generate_completion`, which is not available, so it returns
-//! [`GenerateCompletionUnavailable`]. It does not print a script, call the
-//! builders below, or return `0`.
+//! [`configure`] does not import the engine. [`run`] is not connected to
+//! [`generate_completion`]: it still returns [`GenerateCompletionUnavailable`].
+//! It does not print a script, call the builders, or return `0`.
+//!
+//! [`generate_completion`] rejects an unknown shell before it looks at the
+//! command list. With no command list it returns
+//! [`GenerateCompletionError::CreateParserUnavailable`], because
+//! `sesslint.cli.create_parser` is not ported. It does not invent a parser
+//! and does not call [`profile_choices`].
 //!
 //! [`profile_choices`] would import `sesslint.profiles.list_profiles`, which
 //! is not available in this crate, so it returns [`ListProfilesUnavailable`].
@@ -94,9 +98,9 @@ pub fn configure() -> CompletionSpec {
 /// Python `run(ctx, args, parser)`.
 ///
 /// `shell` is the value Python would read from `args.shell`. It is accepted
-/// and not interpreted. `generate_completion` is not ported, so this returns
-/// [`GenerateCompletionUnavailable`]. It does not print a script, invoke a
-/// shell, call `ctx.error`, or return `0`.
+/// and not interpreted. This subcommand does not call [`generate_completion`],
+/// so this returns [`GenerateCompletionUnavailable`]. It does not print a
+/// script, invoke a shell, call `ctx.error`, or return `0`.
 pub fn run(shell: &str) -> Result<i32, GenerateCompletionUnavailable> {
     let _dialect = shell;
     Err(GenerateCompletionUnavailable)
@@ -490,6 +494,312 @@ pub fn ps_quote(value: &str) -> String {
     quoted
 }
 
+/// Text when `sesslint.cli.create_parser` cannot be imported.
+pub const CREATE_PARSER_UNAVAILABLE: &str = "sesslint.cli.create_parser is not available";
+
+/// Failure from [`generate_completion`].
+///
+/// Unknown shells are [`Self::UnsupportedShell`]. A missing command list is
+/// [`Self::CreateParserUnavailable`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GenerateCompletionError {
+    /// Python `ValueError`: shell is not in [`COMPLETION_SHELLS`].
+    UnsupportedShell(String),
+    /// `sesslint.cli.create_parser` is not ported.
+    CreateParserUnavailable,
+}
+
+impl fmt::Display for GenerateCompletionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedShell(shell) => write!(
+                formatter,
+                "Unsupported shell {}; expected one of {}",
+                python_str_repr(shell),
+                completion_shells_repr()
+            ),
+            Self::CreateParserUnavailable => formatter.write_str(CREATE_PARSER_UNAVAILABLE),
+        }
+    }
+}
+
+impl Error for GenerateCompletionError {}
+
+/// Python `_powershell_script`.
+///
+/// Command names come from [`command_words`]. Flag, choice, and help rows are
+/// formatted first, then sorted on the whole line. Every literal goes through
+/// [`ps_quote`]. [`PROG`] is `sesslint`.
+pub fn powershell_script(commands: &[Command]) -> String {
+    let names = command_words(commands)
+        .iter()
+        .map(|word| ps_quote(word))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut flag_rows = Vec::new();
+    let mut choice_rows = Vec::new();
+    let mut help_rows = Vec::new();
+    for command in commands {
+        let opts: Vec<&str> = command
+            .flags
+            .iter()
+            .flat_map(|flag| flag.options.iter().map(String::as_str))
+            .collect();
+        let quoted_opts = opts
+            .iter()
+            .map(|opt| ps_quote(opt))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut words = Vec::with_capacity(command.aliases.len().saturating_add(1));
+        words.push(command.name.as_str());
+        words.extend(command.aliases.iter().map(String::as_str));
+        for word in &words {
+            flag_rows.push(format!("    {} = @({})", ps_quote(word), quoted_opts));
+        }
+        for flag in &command.flags {
+            for opt in &flag.options {
+                for word in &words {
+                    let key = format!("{word} {opt}");
+                    if !flag.choices.is_empty() {
+                        let vals = flag
+                            .choices
+                            .iter()
+                            .map(|value| ps_quote(value))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        choice_rows.push(format!("    {} = @({})", ps_quote(&key), vals));
+                    }
+                    if !flag.help.is_empty() {
+                        help_rows.push(format!(
+                            "    {} = {}",
+                            ps_quote(&key),
+                            ps_quote(&flag.help)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    flag_rows.sort();
+    choice_rows.sort();
+    help_rows.sort();
+    render_powershell(
+        &names,
+        &flag_rows.join("\n"),
+        &choice_rows.join("\n"),
+        &help_rows.join("\n"),
+    )
+}
+
+/// Python `generate_completion(shell, *, parser=None)`.
+///
+/// `commands` is the already harvested command list. `None` is Python's
+/// default `parser=None`, which would import `sesslint.cli.create_parser`.
+/// That import is not ported. An unknown `shell` is rejected first and does
+/// not panic. A known shell with commands calls [`bash_script`],
+/// [`zsh_script`], [`fish_script`], or [`powershell_script`].
+pub fn generate_completion(
+    shell: &str,
+    commands: Option<&[Command]>,
+) -> Result<String, GenerateCompletionError> {
+    let Some(render) = shell_renderer(shell) else {
+        return Err(GenerateCompletionError::UnsupportedShell(shell.to_string()));
+    };
+    let Some(commands) = commands else {
+        return Err(GenerateCompletionError::CreateParserUnavailable);
+    };
+    Ok(render(commands))
+}
+
+fn shell_renderer(shell: &str) -> Option<fn(&[Command]) -> String> {
+    match shell {
+        "bash" => Some(bash_script),
+        "zsh" => Some(zsh_script),
+        "fish" => Some(fish_script),
+        "powershell" => Some(powershell_script),
+        _ => None,
+    }
+}
+
+fn render_powershell(
+    names: &str,
+    flags_table: &str,
+    choices_table: &str,
+    help_table: &str,
+) -> String {
+    let mut out = String::new();
+    push_line(
+        &mut out,
+        &format!("# {PROG} completion (powershell) - generated at runtime; do not edit."),
+    );
+    push_line(
+        &mut out,
+        "# Install: paste this script into your $PROFILE, or run:",
+    );
+    push_line(&mut out, "#   sesslint completion powershell >> $PROFILE");
+    push_line(&mut out, &format!("${PROG}CommandNames = @({names})"));
+    out.push_str(&format!("${PROG}FlagMap = @{{\n{flags_table}\n}}\n"));
+    out.push_str(&format!("${PROG}ChoiceMap = @{{\n{choices_table}\n}}\n"));
+    out.push_str(&format!("${PROG}HelpMap = @{{\n{help_table}\n}}\n"));
+    push_line(&mut out, &format!("${PROG}Core = {{"));
+    push_line(&mut out, "    param($wordToComplete, $commandAst)");
+    push_line(&mut out, "    $elements = @($commandAst.CommandElements)");
+    push_line(&mut out, "    $prevIndex = $elements.Count - 1");
+    push_line(
+        &mut out,
+        "    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }",
+    );
+    push_line(
+        &mut out,
+        "    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }",
+    );
+    push_line(&mut out, "    $cmd = $null");
+    push_line(&mut out, "    for ($i = 1; $i -le $prevIndex; $i++) {");
+    push_line(&mut out, "        $t = $elements[$i].Extent.Text");
+    push_line(
+        &mut out,
+        "        if (-not $t.StartsWith('-')) { $cmd = $t; break }",
+    );
+    push_line(&mut out, "    }");
+    push_line(&mut out, "    $candidates = @()");
+    push_line(&mut out, "    if ($null -eq $cmd) {");
+    push_line(
+        &mut out,
+        &format!("        $candidates = ${PROG}CommandNames"),
+    );
+    push_line(
+        &mut out,
+        &format!(
+            "    }} elseif ($null -ne $prev -and ${PROG}ChoiceMap.ContainsKey(\"$cmd $prev\")) {{"
+        ),
+    );
+    push_line(
+        &mut out,
+        &format!("        $candidates = ${PROG}ChoiceMap[\"$cmd $prev\"]"),
+    );
+    push_line(
+        &mut out,
+        &format!("    }} elseif (${PROG}FlagMap.ContainsKey($cmd)) {{"),
+    );
+    push_line(
+        &mut out,
+        &format!("        $candidates = ${PROG}FlagMap[$cmd]"),
+    );
+    push_line(&mut out, "    }");
+    push_line(
+        &mut out,
+        "    $candidates | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object {",
+    );
+    push_line(
+        &mut out,
+        &format!("        $tip = ${PROG}HelpMap[\"$cmd $_\"]"),
+    );
+    push_line(&mut out, "        if ($null -eq $tip) { $tip = $_ }");
+    push_line(
+        &mut out,
+        "        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)",
+    );
+    push_line(&mut out, "    }");
+    push_line(&mut out, "}");
+    push_line(
+        &mut out,
+        "$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue",
+    );
+    push_line(
+        &mut out,
+        "if ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {",
+    );
+    push_line(
+        &mut out,
+        &format!("    Register-ArgumentCompleter -Native -CommandName {PROG} -ScriptBlock {{"),
+    );
+    push_line(
+        &mut out,
+        "        param($wordToComplete, $commandAst, $cursorPosition)",
+    );
+    push_line(
+        &mut out,
+        &format!("        & ${PROG}Core $wordToComplete $commandAst"),
+    );
+    push_line(&mut out, "    }.GetNewClosure()");
+    push_line(&mut out, "} else {");
+    push_line(
+        &mut out,
+        &format!("    Register-ArgumentCompleter -CommandName {PROG} -ScriptBlock {{"),
+    );
+    push_line(
+        &mut out,
+        "        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)",
+    );
+    push_line(
+        &mut out,
+        &format!("        & ${PROG}Core $wordToComplete $commandAst"),
+    );
+    push_line(&mut out, "    }.GetNewClosure()");
+    push_line(&mut out, "}");
+    out
+}
+
+/// Python `repr` for `str`. Single quotes, unless the text contains `'` and no `"`.
+///
+/// ASCII and C1 controls, plus non-space Unicode whitespace, use CPython 3.11
+/// escapes. Other non-printable categories are copied through.
+fn python_str_repr(text: &str) -> String {
+    let use_double = text.contains('\'') && !text.contains('"');
+    let quote = if use_double { '"' } else { '\'' };
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push(quote);
+    for ch in text.chars() {
+        let code = u32::from(ch);
+        if ch == '\\' {
+            out.push_str("\\\\");
+        } else if ch == quote {
+            out.push('\\');
+            out.push(quote);
+        } else if ch == '\t' {
+            out.push_str("\\t");
+        } else if ch == '\n' {
+            out.push_str("\\n");
+        } else if ch == '\r' {
+            out.push_str("\\r");
+        } else if ch.is_control() || (ch.is_whitespace() && ch != ' ') {
+            if code < 0x100 {
+                push_hex(&mut out, "\\x", code, 2);
+            } else if code < 0x10000 {
+                push_hex(&mut out, "\\u", code, 4);
+            } else {
+                push_hex(&mut out, "\\U", code, 8);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push(quote);
+    out
+}
+
+fn completion_shells_repr() -> String {
+    let mut out = String::from("(");
+    for (index, shell) in COMPLETION_SHELLS.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&python_str_repr(shell));
+    }
+    out.push(')');
+    out
+}
+
+fn push_hex(out: &mut String, prefix: &str, code: u32, width: usize) {
+    out.push_str(prefix);
+    let digits = format!("{code:x}");
+    let pad = width.saturating_sub(digits.len());
+    for _ in 0..pad {
+        out.push('0');
+    }
+    out.push_str(&digits);
+}
+
 fn harvest_flags(
     group: &SubcommandGroup,
     body_id: u64,
@@ -660,12 +970,13 @@ fn fish_option_part(opt: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bash_script, clean_help, command_words, configure, fish_script, harvest_parser,
-        profile_choices, ps_quote, run, zsh_script, Command, FixedChoices, Flag, FlagAction,
-        GenerateCompletionUnavailable, ListProfilesUnavailable, OptionAction, ParserSurface,
-        RawHelp, SubcommandBody, SubcommandGroup, SubcommandName, SurfaceAction, COMPLETION_SHELLS,
-        DESCRIPTION, GENERATE_COMPLETION_UNAVAILABLE, HELP, LIST_PROFILES_UNAVAILABLE,
-        LIVE_CHOICES, NAME, PROG, SHELL_HELP,
+        bash_script, clean_help, command_words, configure, fish_script, generate_completion,
+        harvest_parser, powershell_script, profile_choices, ps_quote, run, zsh_script, Command,
+        FixedChoices, Flag, FlagAction, GenerateCompletionError, GenerateCompletionUnavailable,
+        ListProfilesUnavailable, OptionAction, ParserSurface, RawHelp, SubcommandBody,
+        SubcommandGroup, SubcommandName, SurfaceAction, COMPLETION_SHELLS,
+        CREATE_PARSER_UNAVAILABLE, DESCRIPTION, GENERATE_COMPLETION_UNAVAILABLE, HELP,
+        LIST_PROFILES_UNAVAILABLE, LIVE_CHOICES, NAME, PROG, SHELL_HELP,
     };
 
     #[test]
@@ -786,6 +1097,131 @@ complete -c sesslint -n "__fish_seen_subcommand_from alpha aah aaa-alias" -s z -
 complete -c sesslint -n "__fish_seen_subcommand_from alpha aah aaa-alias" -l quiet
 complete -c sesslint -n "__fish_seen_subcommand_from alpha aah aaa-alias" -s q
 "##;
+    /// Python `_powershell_script` on [`synthetic_commands`], called twice.
+    /// The two calls matched. Not copied from the Rust builder.
+    const EXPECTED_POWERSHELL: &str = r##"# sesslint completion (powershell) - generated at runtime; do not edit.
+# Install: paste this script into your $PROFILE, or run:
+#   sesslint completion powershell >> $PROFILE
+$sesslintCommandNames = @('aaa-alias', 'aah', 'alpha', 'bee', 'beta')
+$sesslintFlagMap = @{
+    'aaa-alias' = @('--zeta', '-z', '--alpha', '-q', '--quiet')
+    'aah' = @('--zeta', '-z', '--alpha', '-q', '--quiet')
+    'alpha' = @('--zeta', '-z', '--alpha', '-q', '--quiet')
+    'bee' = @('-q', '--quiet')
+    'beta' = @('-q', '--quiet')
+}
+$sesslintChoiceMap = @{
+    'aaa-alias --alpha' = @('mid', 'aaa', 'zzz')
+    'aaa-alias --zeta' = @('mid', 'aaa', 'zzz')
+    'aaa-alias -z' = @('mid', 'aaa', 'zzz')
+    'aah --alpha' = @('mid', 'aaa', 'zzz')
+    'aah --zeta' = @('mid', 'aaa', 'zzz')
+    'aah -z' = @('mid', 'aaa', 'zzz')
+    'alpha --alpha' = @('mid', 'aaa', 'zzz')
+    'alpha --zeta' = @('mid', 'aaa', 'zzz')
+    'alpha -z' = @('mid', 'aaa', 'zzz')
+}
+$sesslintHelpMap = @{
+    'aaa-alias --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'aaa-alias --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'aaa-alias -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'aah --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'aah --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'aah -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'alpha --alpha' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'alpha --zeta' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+    'alpha -z' = 'alpha: beta''s [gamma] éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé'
+}
+$sesslintCore = {
+    param($wordToComplete, $commandAst)
+    $elements = @($commandAst.CommandElements)
+    $prevIndex = $elements.Count - 1
+    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }
+    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }
+    $cmd = $null
+    for ($i = 1; $i -le $prevIndex; $i++) {
+        $t = $elements[$i].Extent.Text
+        if (-not $t.StartsWith('-')) { $cmd = $t; break }
+    }
+    $candidates = @()
+    if ($null -eq $cmd) {
+        $candidates = $sesslintCommandNames
+    } elseif ($null -ne $prev -and $sesslintChoiceMap.ContainsKey("$cmd $prev")) {
+        $candidates = $sesslintChoiceMap["$cmd $prev"]
+    } elseif ($sesslintFlagMap.ContainsKey($cmd)) {
+        $candidates = $sesslintFlagMap[$cmd]
+    }
+    $candidates | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        $tip = $sesslintHelpMap["$cmd $_"]
+        if ($null -eq $tip) { $tip = $_ }
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)
+    }
+}
+$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue
+if ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {
+    Register-ArgumentCompleter -Native -CommandName sesslint -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        & $sesslintCore $wordToComplete $commandAst
+    }.GetNewClosure()
+} else {
+    Register-ArgumentCompleter -CommandName sesslint -ScriptBlock {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        & $sesslintCore $wordToComplete $commandAst
+    }.GetNewClosure()
+}
+"##;
+    /// Python `_powershell_script(())`, called twice. The two calls matched.
+    const EXPECTED_POWERSHELL_EMPTY: &str = r##"# sesslint completion (powershell) - generated at runtime; do not edit.
+# Install: paste this script into your $PROFILE, or run:
+#   sesslint completion powershell >> $PROFILE
+$sesslintCommandNames = @()
+$sesslintFlagMap = @{
+
+}
+$sesslintChoiceMap = @{
+
+}
+$sesslintHelpMap = @{
+
+}
+$sesslintCore = {
+    param($wordToComplete, $commandAst)
+    $elements = @($commandAst.CommandElements)
+    $prevIndex = $elements.Count - 1
+    if ($wordToComplete -ne '' -and $prevIndex -ge 1) { $prevIndex-- }
+    $prev = if ($prevIndex -ge 1) { $elements[$prevIndex].Extent.Text } else { $null }
+    $cmd = $null
+    for ($i = 1; $i -le $prevIndex; $i++) {
+        $t = $elements[$i].Extent.Text
+        if (-not $t.StartsWith('-')) { $cmd = $t; break }
+    }
+    $candidates = @()
+    if ($null -eq $cmd) {
+        $candidates = $sesslintCommandNames
+    } elseif ($null -ne $prev -and $sesslintChoiceMap.ContainsKey("$cmd $prev")) {
+        $candidates = $sesslintChoiceMap["$cmd $prev"]
+    } elseif ($sesslintFlagMap.ContainsKey($cmd)) {
+        $candidates = $sesslintFlagMap[$cmd]
+    }
+    $candidates | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        $tip = $sesslintHelpMap["$cmd $_"]
+        if ($null -eq $tip) { $tip = $_ }
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $tip)
+    }
+}
+$_rac = Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue
+if ($null -ne $_rac -and $_rac.Parameters.ContainsKey('Native')) {
+    Register-ArgumentCompleter -Native -CommandName sesslint -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        & $sesslintCore $wordToComplete $commandAst
+    }.GetNewClosure()
+} else {
+    Register-ArgumentCompleter -CommandName sesslint -ScriptBlock {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        & $sesslintCore $wordToComplete $commandAst
+    }.GetNewClosure()
+}
+"##;
 
     fn synthetic_commands() -> Vec<Command> {
         let choice = Flag {
@@ -846,6 +1282,129 @@ complete -c sesslint -n "__fish_seen_subcommand_from alpha aah aaa-alias" -s q
     #[test]
     fn fish_script_matches_python_synthetic_command() {
         assert_eq!(fish_script(&synthetic_commands()), EXPECTED_FISH);
+    }
+
+    #[test]
+    fn powershell_script_matches_python_synthetic_command() {
+        let commands = synthetic_commands();
+        let first = powershell_script(&commands);
+        let second = powershell_script(&commands);
+        assert_eq!(first, second);
+        assert_eq!(first, EXPECTED_POWERSHELL);
+        assert!(first.contains("beta''s"));
+        assert!(first.contains("'aaa-alias'"));
+        assert!(first.contains("@('mid', 'aaa', 'zzz')"));
+        assert_eq!(powershell_script(&[]), EXPECTED_POWERSHELL_EMPTY);
+    }
+
+    #[test]
+    fn generate_completion_unknown_shell_matches_python_value_error() {
+        let commands = synthetic_commands();
+        let cases = [
+            (
+                "csh",
+                "Unsupported shell 'csh'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "",
+                "Unsupported shell ''; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "it's",
+                "Unsupported shell \"it's\"; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "a\"b",
+                "Unsupported shell 'a\"b'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "both'\"",
+                "Unsupported shell 'both\\'\"'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "\\",
+                "Unsupported shell '\\\\'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "\n",
+                "Unsupported shell '\\n'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "PowerShell",
+                "Unsupported shell 'PowerShell'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "bash ",
+                "Unsupported shell 'bash '; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "é",
+                "Unsupported shell 'é'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "\u{00a0}",
+                "Unsupported shell '\\xa0'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+            (
+                "cmd\u{007f}",
+                "Unsupported shell 'cmd\\x7f'; expected one of ('bash', 'zsh', 'fish', 'powershell')",
+            ),
+        ];
+        for (shell, expected) in cases {
+            for supplied in [None, Some(commands.as_slice())] {
+                match generate_completion(shell, supplied) {
+                    Ok(script) => panic!("expected ValueError for {shell:?}, got script {script}"),
+                    Err(err) => {
+                        assert_eq!(err.to_string(), expected, "shell {shell:?}");
+                        assert!(matches!(
+                            err,
+                            GenerateCompletionError::UnsupportedShell(ref got) if got == shell
+                        ));
+                        let _typed: &dyn std::error::Error = &err;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn generate_completion_without_commands_is_create_parser_seam() {
+        for shell in ["bash", "zsh", "fish", "powershell"] {
+            match generate_completion(shell, None) {
+                Ok(script) => panic!("expected seam, got script {script}"),
+                Err(err) => {
+                    assert_eq!(
+                        err.to_string(),
+                        "sesslint.cli.create_parser is not available"
+                    );
+                    assert_eq!(err.to_string(), CREATE_PARSER_UNAVAILABLE);
+                    assert!(matches!(
+                        err,
+                        GenerateCompletionError::CreateParserUnavailable
+                    ));
+                    assert!(!err.to_string().contains("Register-ArgumentCompleter"));
+                    assert!(!err.to_string().contains("# sesslint"));
+                    let _typed: &dyn std::error::Error = &err;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn generate_completion_with_commands_matches_existing_builders() {
+        let commands = synthetic_commands();
+        let bash = generate_completion("bash", Some(&commands)).expect("bash");
+        assert_eq!(bash, bash_script(&commands));
+        assert_eq!(bash, EXPECTED_BASH);
+        let fish = generate_completion("fish", Some(&commands)).expect("fish");
+        assert_eq!(fish, fish_script(&commands));
+        assert_eq!(fish, EXPECTED_FISH);
+        let zsh = generate_completion("zsh", Some(&commands)).expect("zsh");
+        assert_eq!(zsh, zsh_script(&commands));
+        assert_eq!(zsh, EXPECTED_ZSH);
+        let powershell = generate_completion("powershell", Some(&commands)).expect("powershell");
+        assert_eq!(powershell, powershell_script(&commands));
+        assert_eq!(powershell, EXPECTED_POWERSHELL);
     }
 
     #[test]
