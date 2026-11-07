@@ -3021,7 +3021,8 @@ impl Error for LoadCanonicalBodyError {
 /// Python: `_load_canonical` lines 975–1072. `limits` `None` uses
 /// [`DEFAULT_MAX_FILE_BYTES`]. `Some` uses that `max_file_bytes` `i64`.
 ///
-/// Finding labels come from [`canonical_source_label`]. A missing path is
+/// Finding labels come from [`canonical_source_label`]. A missing path,
+/// including every `exists()` `OSError`, is
 /// `Session file not found: {path_obj}` and a directory is
 /// `Expected session file, got directory: {path_obj}`. `{path_obj}` is
 /// `str(Path)` and keeps host separators. Those return before `open`.
@@ -3092,6 +3093,7 @@ fn load_path_text(
     };
     let displayed = session_path_text(Path::new(text));
     let path = session_fs_path(text);
+    // `Path.exists` turns every `OSError` into "not found" before `is_dir`.
     match path.metadata() {
         Ok(meta) if meta.is_dir() => {
             return Err(LoadCanonicalBodyError::IsADirectory(format!(
@@ -3099,12 +3101,11 @@ fn load_path_text(
             )));
         }
         Ok(_) => {}
-        Err(error) if is_missing(&error) => {
+        Err(_) => {
             return Err(LoadCanonicalBodyError::NotFound(format!(
                 "Session file not found: {displayed}"
             )));
         }
-        Err(error) => return Err(LoadCanonicalBodyError::Io(error)),
     }
     let oversized = match path.metadata() {
         Ok(meta) if meta.is_file() => exceeds_limit(meta.len(), max_bytes),
@@ -3130,13 +3131,6 @@ fn session_fs_path(text: &str) -> &Path {
     } else {
         Path::new(text)
     }
-}
-
-fn is_missing(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-    )
 }
 
 fn read_gates(
