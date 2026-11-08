@@ -1,13 +1,21 @@
 //! Content-free aggregate statistics over session files (ux-reporting T-03).
 //!
-//! Port of `src/sesslint/stats.py` lines 1–231
+//! Port of `src/sesslint/stats.py` lines 1–365
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
-//! This slice is the counters, the bounded directory walk, and the hashed
-//! tool-name fold. `stats_paths` is a later card. `to_dict`, `render_human`,
-//! and `to_json` stop on `sesslint.report.minimize_path`. This crate does not
-//! link `report`, so those three methods return [`MinimizePathUnavailable`]
-//! and do not build a dictionary, human text, or JSON.
+//! Lines 1–231 are the counters, the bounded directory walk, and the hashed
+//! tool-name fold. `to_dict`, `render_human`, and `to_json` stop on
+//! `sesslint.report.minimize_path`. This crate does not link `report`, so
+//! those three methods return [`MinimizePathUnavailable`] and do not build a
+//! dictionary, human text, or JSON.
+//!
+//! Lines 234–365 append [`stats_paths`], [`get_stats_schema_path`], and
+//! [`load_stats_schema`]. A missing limit stops on
+//! `sesslint.scan.DEFAULT_MAX_FILES` and builds no [`SessionStats`]. When
+//! both limits are provided, every root is checked before the load import.
+//! After candidates are built, [`stats_paths`] stops on
+//! `sesslint.adapters.load.load_events_for_format`. The schema helpers stop
+//! on `sesslint._resources.schema_path`.
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -15,6 +23,7 @@ use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, DirEntry};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -45,6 +54,64 @@ impl fmt::Display for MinimizePathUnavailable {
 }
 
 impl Error for MinimizePathUnavailable {}
+
+/// Display text when `sesslint.scan.DEFAULT_MAX_FILES` cannot be imported.
+pub const SCAN_DEFAULT_MAX_FILES_UNAVAILABLE: &str =
+    "sesslint.scan.DEFAULT_MAX_FILES is not available";
+
+/// Display text when `sesslint.adapters.load.load_events_for_format` cannot be imported.
+pub const LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE: &str =
+    "sesslint.adapters.load.load_events_for_format is not available";
+
+/// Display text when `sesslint._resources.schema_path` cannot be imported.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
+/// Failure from [`stats_paths`] or the stats schema helpers.
+///
+/// Missing-import display text is the `module.attr is not available` sentence.
+/// Path failures use the pin's `FileNotFoundError` and `ValueError` sentences,
+/// without the Python exception type name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StatsError {
+    /// `from sesslint.scan import DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES` failed.
+    ScanDefaultMaxFilesUnavailable,
+    /// Python `FileNotFoundError`: `Path not found: {path}`.
+    PathNotFound(String),
+    /// Python `ValueError` when `Path.is_dir()` is true and `recursive` is false.
+    ///
+    /// `is_dir` follows a symlink, so a link to a directory uses this error too.
+    DirectoryRequiresRecursive(String),
+    /// `sesslint.adapters.load.load_events_for_format` failed to import.
+    LoadEventsForFormatUnavailable,
+    /// `sesslint._resources.schema_path` failed to import.
+    SchemaPathUnavailable,
+    /// `symlink_metadata` failed for a reason other than a missing path.
+    Io(String),
+}
+
+impl fmt::Display for StatsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScanDefaultMaxFilesUnavailable => {
+                formatter.write_str(SCAN_DEFAULT_MAX_FILES_UNAVAILABLE)
+            }
+            Self::PathNotFound(path) => write!(formatter, "Path not found: {path}"),
+            Self::DirectoryRequiresRecursive(path) => {
+                write!(
+                    formatter,
+                    "Path {path} is a directory. Use recursive=True to scan."
+                )
+            }
+            Self::LoadEventsForFormatUnavailable => {
+                formatter.write_str(LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE)
+            }
+            Self::SchemaPathUnavailable => formatter.write_str(SCHEMA_PATH_UNAVAILABLE),
+            Self::Io(text) => formatter.write_str(text),
+        }
+    }
+}
+
+impl Error for StatsError {}
 
 /// One payload value for [`StatsEvent`].
 ///
@@ -402,6 +469,158 @@ fn bump(counts: &mut BTreeMap<String, i64>, key: &str) {
     *count += 1;
 }
 
+/// Python `stats_paths`.
+///
+/// `recursive` is Python's default `False` when the caller omitted it.
+/// `format` is accepted and not read on this slice. Either missing limit is
+/// the `sesslint.scan` import. This crate cannot call `DEFAULT_MAX_FILES` or
+/// `DEFAULT_MAX_BYTES`, so that import returns
+/// [`StatsError::ScanDefaultMaxFilesUnavailable`] and no [`SessionStats`].
+///
+/// When both limits are provided, every root is checked before the load
+/// import. A path that does not exist and is not a symlink is
+/// `FileNotFoundError`. `Path.is_dir` follows symlinks: a real directory, or a
+/// symlink to a directory, is `ValueError` unless `recursive` is true. After
+/// that check, a symlink is an explicit entry. Only a real directory is walked.
+///
+/// Explicit entries stay in front of the walked tail. [`_iter_files`] walks
+/// only non-symlink directories and receives `max_files`. The slice applies
+/// to walked paths that are not already explicit, so explicit files stay.
+///
+/// After that list is built, the pin imports
+/// `sesslint.adapters.load.load_events_for_format` and
+/// `sesslint.io.probe_text_encoding`. Neither is linked. No events are
+/// counted, `cwd` is not called, and `tool_version` is not filled.
+///
+/// # Errors
+///
+/// [`StatsError::ScanDefaultMaxFilesUnavailable`], [`StatsError::PathNotFound`],
+/// [`StatsError::DirectoryRequiresRecursive`], [`StatsError::Io`], or
+/// [`StatsError::LoadEventsForFormatUnavailable`].
+pub fn stats_paths<P: AsRef<Path>>(
+    paths: &[P],
+    recursive: bool,
+    format: Option<&str>,
+    max_files: Option<i64>,
+    max_bytes: Option<i64>,
+) -> Result<SessionStats, StatsError> {
+    let (Some(max_files), Some(_max_bytes)) = (max_files, max_bytes) else {
+        return Err(StatsError::ScanDefaultMaxFilesUnavailable);
+    };
+
+    let mut explicit = Vec::new();
+    let mut dirs = Vec::new();
+    for path in paths {
+        let path = path.as_ref();
+        match classify_root(path, recursive)? {
+            RootKind::Directory => dirs.push(path.to_path_buf()),
+            RootKind::Explicit => explicit.push(path.to_path_buf()),
+        }
+    }
+
+    let candidates = candidate_paths(explicit, &dirs, max_files);
+    let _ = (candidates, format);
+    Err(StatsError::LoadEventsForFormatUnavailable)
+}
+
+/// Python `get_stats_schema_path`.
+///
+/// The first statement imports `sesslint._resources.schema_path`. That
+/// function is not linked. This does not build a `schemas/` path and does
+/// not read a schema file.
+///
+/// # Errors
+///
+/// Always [`StatsError::SchemaPathUnavailable`].
+pub fn get_stats_schema_path() -> Result<PathBuf, StatsError> {
+    Err(StatsError::SchemaPathUnavailable)
+}
+
+/// Python `load_stats_schema`.
+///
+/// Calls [`get_stats_schema_path`] before any file check. The resource import
+/// fails there, so this returns that same error. This does not read a schema
+/// file and does not parse JSON.
+///
+/// # Errors
+///
+/// Always [`StatsError::SchemaPathUnavailable`]. Success is [`Infallible`].
+pub fn load_stats_schema() -> Result<Infallible, StatsError> {
+    let _schema_path = get_stats_schema_path()?;
+    Err(StatsError::SchemaPathUnavailable)
+}
+
+enum RootKind {
+    Explicit,
+    Directory,
+}
+
+fn classify_root(path: &Path, recursive: bool) -> Result<RootKind, StatsError> {
+    let unfollowed = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if is_missing_path(&error) => {
+            return Err(StatsError::PathNotFound(path_text(path)));
+        }
+        Err(error) => return Err(StatsError::Io(error.to_string())),
+    };
+    let symlink = unfollowed.file_type().is_symlink();
+    // `Path.is_dir` follows links. A broken symlink is not a directory.
+    let followed_dir = if symlink {
+        fs::metadata(path).is_ok_and(|metadata| metadata.is_dir())
+    } else {
+        unfollowed.is_dir()
+    };
+    if followed_dir && !recursive {
+        return Err(StatsError::DirectoryRequiresRecursive(path_text(path)));
+    }
+    if followed_dir && !symlink {
+        Ok(RootKind::Directory)
+    } else {
+        Ok(RootKind::Explicit)
+    }
+}
+
+fn is_missing_path(error: &std::io::Error) -> bool {
+    matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory)
+}
+
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn candidate_paths(explicit: Vec<PathBuf>, dirs: &[PathBuf], max_files: i64) -> Vec<PathBuf> {
+    let (walked, _skipped) = _iter_files(dirs, max_files);
+    let mut tail = Vec::new();
+    for walked_path in walked {
+        if !explicit.contains(&walked_path) {
+            tail.push(walked_path);
+        }
+    }
+    let mut candidates = explicit;
+    candidates.extend(prefix_slice(tail, max_files));
+    candidates
+}
+
+fn prefix_slice(mut items: Vec<PathBuf>, max_files: i64) -> Vec<PathBuf> {
+    if max_files < 0 {
+        let Ok(drop_count) = usize::try_from(max_files.unsigned_abs()) else {
+            return Vec::new();
+        };
+        if drop_count >= items.len() {
+            return Vec::new();
+        }
+        items.truncate(items.len() - drop_count);
+        return items;
+    }
+    let Ok(limit) = usize::try_from(max_files) else {
+        return items;
+    };
+    if limit < items.len() {
+        items.truncate(limit);
+    }
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -413,9 +632,11 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        Dist, MinimizePathUnavailable, PayloadValue, SessionStats, StatsCounters, StatsEvent,
-        _count_events, _dist, _iter_files, _percentile, _tool_hash, MAX_TOOL_ROWS,
-        MINIMIZE_PATH_UNAVAILABLE, STATS_SCHEMA_VERSION,
+        candidate_paths, get_stats_schema_path, load_stats_schema, path_text, stats_paths, Dist,
+        MinimizePathUnavailable, PayloadValue, SessionStats, StatsCounters, StatsError, StatsEvent,
+        _count_events, _dist, _iter_files, _percentile, _tool_hash,
+        LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE, MAX_TOOL_ROWS, MINIMIZE_PATH_UNAVAILABLE,
+        SCAN_DEFAULT_MAX_FILES_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE, STATS_SCHEMA_VERSION,
     };
 
     #[test]
@@ -667,6 +888,17 @@ mod tests {
         path: PathBuf,
     }
 
+    fn symlink_dir(original: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
     impl TempTree {
         fn new(name: &str) -> Self {
             let path = std::env::temp_dir().join(format!("sesslint-stats-{name}"));
@@ -680,5 +912,201 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    fn assert_no_session_stats(result: Result<SessionStats, StatsError>, display: &str) {
+        match result {
+            Ok(_stats) => panic!("stats_paths yielded SessionStats"),
+            Err(error) => {
+                assert_eq!(error.to_string(), display);
+                let as_error: &dyn Error = &error;
+                assert_eq!(as_error.to_string(), display);
+                assert!(as_error.source().is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn missing_limit_stops_at_the_scan_constant() {
+        let tree = TempTree::new("rx-limit");
+        let cases: [(Option<i64>, Option<i64>); 3] =
+            [(None, Some(8)), (Some(8), None), (None, None)];
+        for (max_files, max_bytes) in cases {
+            let error = stats_paths(
+                std::slice::from_ref(&tree.path),
+                false,
+                None,
+                max_files,
+                max_bytes,
+            )
+            .unwrap_err();
+            assert_eq!(error, StatsError::ScanDefaultMaxFilesUnavailable);
+            assert_eq!(error.to_string(), SCAN_DEFAULT_MAX_FILES_UNAVAILABLE);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.scan.DEFAULT_MAX_FILES is not available"
+            );
+            assert!(!matches!(
+                error,
+                StatsError::DirectoryRequiresRecursive(_) | StatsError::PathNotFound(_)
+            ));
+            assert_ne!(error, StatsError::LoadEventsForFormatUnavailable);
+            let as_error: &dyn Error = &error;
+            assert_eq!(as_error.to_string(), SCAN_DEFAULT_MAX_FILES_UNAVAILABLE);
+            assert!(as_error.source().is_none());
+        }
+    }
+
+    #[test]
+    fn missing_path_and_directory_raise_before_load() {
+        let tree = TempTree::new("rx-roots");
+        let missing = tree.path.join("synthetic-absent-session.jsonl");
+        let missing_error = stats_paths(
+            std::slice::from_ref(&missing),
+            false,
+            None,
+            Some(4),
+            Some(32),
+        )
+        .unwrap_err();
+        let missing_text = path_text(&missing);
+        assert_eq!(
+            missing_error,
+            StatsError::PathNotFound(missing_text.clone())
+        );
+        assert_eq!(
+            missing_error.to_string(),
+            format!("Path not found: {missing_text}")
+        );
+        assert_ne!(missing_error, StatsError::LoadEventsForFormatUnavailable);
+        assert_ne!(
+            missing_error.to_string(),
+            LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE
+        );
+
+        let directory = tree.path.join("synthetic-dir");
+        fs::create_dir(&directory).unwrap();
+        let directory_error = stats_paths(
+            std::slice::from_ref(&directory),
+            false,
+            Some("synthetic"),
+            Some(4),
+            Some(32),
+        )
+        .unwrap_err();
+        let directory_text = path_text(&directory);
+        assert_eq!(
+            directory_error,
+            StatsError::DirectoryRequiresRecursive(directory_text.clone())
+        );
+        assert_eq!(
+            directory_error.to_string(),
+            format!("Path {directory_text} is a directory. Use recursive=True to scan.")
+        );
+        assert_ne!(directory_error, StatsError::LoadEventsForFormatUnavailable);
+        assert!(!directory_error
+            .to_string()
+            .contains("load_events_for_format"));
+
+        let link = tree.path.join("synthetic-link-dir");
+        let created = symlink_dir(&directory, &link);
+        if created.is_ok() {
+            let link_error =
+                stats_paths(std::slice::from_ref(&link), false, None, Some(4), Some(32))
+                    .unwrap_err();
+            let link_text = path_text(&link);
+            assert_eq!(
+                link_error,
+                StatsError::DirectoryRequiresRecursive(link_text.clone())
+            );
+            assert_eq!(
+                link_error.to_string(),
+                format!("Path {link_text} is a directory. Use recursive=True to scan.")
+            );
+            assert_no_session_stats(
+                stats_paths(std::slice::from_ref(&link), true, None, Some(4), Some(32)),
+                LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE,
+            );
+        }
+    }
+
+    #[test]
+    fn real_file_stops_at_load_events_for_format() {
+        let tree = TempTree::new("rx-file");
+        let file = tree.path.join("synthetic-session.jsonl");
+        fs::write(&file, b"synthetic\n").unwrap();
+        assert_no_session_stats(
+            stats_paths(&[file], false, Some("synthetic"), Some(4), Some(32)),
+            "sesslint.adapters.load.load_events_for_format is not available",
+        );
+
+        assert_no_session_stats(
+            stats_paths(
+                std::slice::from_ref(&tree.path),
+                true,
+                None,
+                Some(4),
+                Some(32),
+            ),
+            LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE,
+        );
+
+        assert_no_session_stats(
+            stats_paths(&[] as &[PathBuf], false, None, Some(1), Some(1)),
+            LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE,
+        );
+    }
+
+    #[test]
+    fn explicit_files_are_not_dropped_by_the_max_files_slice() {
+        let tree = TempTree::new("rx-cand");
+        let first = tree.path.join("explicit-a.jsonl");
+        let second = tree.path.join("explicit-b.jsonl");
+        fs::write(&first, b"synthetic\n").unwrap();
+        fs::write(&second, b"synthetic\n").unwrap();
+        let dir = tree.path.join("synthetic-dir");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("m.jsonl"), b"synthetic\n").unwrap();
+        fs::write(dir.join("z.jsonl"), b"synthetic\n").unwrap();
+
+        let kept = candidate_paths(
+            vec![first.clone(), second.clone()],
+            std::slice::from_ref(&dir),
+            0,
+        );
+        assert_eq!(kept, vec![first.clone(), second.clone()]);
+
+        let capped = candidate_paths(
+            vec![first.clone(), second.clone()],
+            std::slice::from_ref(&dir),
+            1,
+        );
+        assert_eq!(capped, vec![first, second, dir.join("m.jsonl")]);
+    }
+
+    #[test]
+    fn schema_functions_stop_at_schema_path() {
+        let path_error = get_stats_schema_path().unwrap_err();
+        assert_eq!(path_error, StatsError::SchemaPathUnavailable);
+        assert_eq!(path_error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert_eq!(
+            path_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(!path_error.to_string().contains("schemas"));
+        assert!(!path_error.to_string().contains(".json"));
+        let as_error: &dyn Error = &path_error;
+        assert!(as_error.source().is_none());
+
+        let load_error = match load_stats_schema() {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(load_error, path_error);
+        assert_eq!(
+            load_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(std::error::Error::source(&load_error).is_none());
     }
 }
