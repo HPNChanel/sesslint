@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.export configure() and run() pre-import fixtures from pinned src/sesslint/cli/export.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.export/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-export-export-file: Python run() imports `from sesslint import api` after output is set and `args.path.is_file()`; Rust run() returns Display `sesslint.api.export_file is not available` at that import (no ExportRefused import, no getattr(adapter), no json.dumps, no print, no exit 0 or 1)."
+  ]
+}
