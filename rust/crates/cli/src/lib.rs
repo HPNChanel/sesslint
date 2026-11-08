@@ -25,7 +25,7 @@ pub mod completion;
 pub mod diff {}
 pub mod doctor {}
 pub mod export {}
-pub mod hook {}
+pub mod hook;
 pub mod mcp {}
 pub mod outcome {}
 pub mod repair {}
