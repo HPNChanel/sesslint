@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.diff configure declarations and run() rust seam fixtures from pinned src/sesslint/cli/diff.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.diff/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-diff-diff-sessions: Python run() starts with `from sesslint.diff import DiffInputError, diff_sessions` before path checks; Rust run() returns Display `sesslint.diff.diff_sessions is not available` at that import (no getattr, no path stat, no emit_text, no exit 0/1)."
+  ]
+}
