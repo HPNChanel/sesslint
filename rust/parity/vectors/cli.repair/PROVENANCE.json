@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.repair configure declarations from pinned src/sesslint/cli/repair.py (no checkout import). Run vectors omitted for progress-callback and import-stop seams.",
+  "generator": "rust/parity/vectors/cli.repair/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-repair-run-stops: `CliContext::progress_callback` is not called because it takes self by value; batch mode stops with Display `sesslint.batch.BatchRepairReport is not available`; stdin stops with Display `sesslint.io.DEFAULT_MAX_FILE_BYTES is not available` before any read; and an existing file stops with Display `sesslint.adapters.detect.VALID_FORMAT_OPTIONS is not available`. The progress-callback seam and the three import stops are gaps, not covered rows."
+  ]
+}
