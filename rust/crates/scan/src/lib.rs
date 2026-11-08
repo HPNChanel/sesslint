@@ -12,4 +12,4 @@ pub mod discovery;
 pub mod io;
 pub mod state_db;
 pub mod scan;
-pub mod batch {}
+pub mod batch;
