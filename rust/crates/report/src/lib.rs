@@ -10,5 +10,5 @@ pub mod baseline;
 pub mod progress;
 pub mod report;
 pub mod html_report;
-pub mod sarif {}
+pub mod sarif;
 pub mod triage;
