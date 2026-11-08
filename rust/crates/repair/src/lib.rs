@@ -17,5 +17,5 @@ pub mod errors;
 pub mod recipes_conservative;
 pub mod recipes_salvage;
 pub mod vetting;
-pub mod writeback {}
+pub mod writeback;
 pub mod executor {}
