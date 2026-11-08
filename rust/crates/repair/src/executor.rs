@@ -6,6 +6,9 @@
 //! [`execute`] ports lines 386–476 and stops on `compute_plan_fingerprint`
 //! at line 477.
 //!
+//! [`ALL`] is `__all__` from lines 1073–1081. `run_all_checks` is a name in
+//! that list. This module does not define it.
+//!
 //! Python's module-level imports are not run. This module does not register
 //! recipes, hash bytes, or publish a session file. [`RepairPlan::from_dict`]
 //! parses a mapping. JSON text is read by a hand parser into [`PlanValue`]
@@ -1361,6 +1364,17 @@ pub fn execute(plan: &RepairPlan) -> Result<Infallible, ExecuteError> {
     Err(ExecuteError::FingerprintUnavailable)
 }
 
+/// Python `__all__` (`executor.py` lines 1073–1081), in that order.
+pub const ALL: [&str; 7] = [
+    "SQLITE_MAGIC",
+    "_ATOMIC_TEST_HOOKS",
+    "execute",
+    "is_live_store_path",
+    "load_plan",
+    "load_session_source",
+    "run_all_checks",
+];
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -2434,5 +2448,26 @@ mod execute_prefix_tests {
             assert!(!err.to_string().contains(DECOY));
             assert_untouched(&scratch);
         }
+    }
+}
+
+#[cfg(test)]
+mod all_export_tests {
+    use super::ALL;
+
+    #[test]
+    fn all_exports_match_python_order() {
+        assert_eq!(
+            ALL,
+            [
+                "SQLITE_MAGIC",
+                "_ATOMIC_TEST_HOOKS",
+                "execute",
+                "is_live_store_path",
+                "load_plan",
+                "load_session_source",
+                "run_all_checks",
+            ]
+        );
     }
 }
