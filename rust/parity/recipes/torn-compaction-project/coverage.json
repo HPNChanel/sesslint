@@ -1,0 +1,178 @@
+{
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "torn-compaction-project",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "test_file": "tests/repair/test_recipes_salvage.py",
+  "covered_count": 1,
+  "not_applicable_count": 23,
+  "rows": [
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-compaction-project-canonical blocks canonical_json_bytes. It is not a successful plan. One fixture inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored."
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-compaction-project-canonical blocks canonical_json_bytes. It is not a successful plan. One recipe inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored."
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_acknowledgement",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_no_shorthand",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_assurance_lattice",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_fingerprint_differs_by_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_component_too_large",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_sums",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_sl203_refusal_beats_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_empty_events_salvage_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_key_injection_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_invalid_policy_string_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_torn_compaction_direct_apply_validation",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "torn_compaction_direct_apply_validation",
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_truncate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "GAP-torn-compaction-project-canonical blocks the plan. It is not a successful plan. GAP-torn-compaction-project-session-copy blocks the kept SessionEvent. The pin succeeds. A rust seam while the pin succeeds is not coverage. That success is not replayed. GAP-torn-compaction-project-payload blocks the fixture events. They carry a payload. A payload-free result is not this test. GAP-torn-compaction-project-sweep blocks the loss check. A successful project that also checks loss, plan, or canonical bytes is not covered by the event list alone. One recipe inside a sweep is not the whole test. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored."
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_dual_policy_plan_merge_attempt",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_plans_and_applies",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_conservative_blocks",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_resolves_by_params",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_direct_apply_refusals",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_torn_compaction_project"
+    }
+  ]
+}

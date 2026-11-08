@@ -1,0 +1,1925 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "torn-compaction-project",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "known_parity_gaps": [
+    "GAP-torn-compaction-project-canonical: planner.plan is not run. A missing canonical codec call is not a successful plan. tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage checks a fingerprint for three fixtures. One fixture inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in compares a plan dict for three recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications plans and then applies. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-torn-compaction-project-session-copy: a kept SessionEvent copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications uses SessionEvent records from the fixture. One recipe inside a sweep is not the whole test.",
+    "GAP-torn-compaction-project-payload: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications carries payload on the events. This set does not store payload content. A payload-free result is not that test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in and tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage load the same fixture.",
+    "GAP-torn-compaction-project-bool: an in-range bool is an index in the pin. True selects the event at index 1 when the session length is greater than one and that event is the boundary. The published function returns a different error. This set does not claim that success. A rust seam while the pin succeeds is not coverage. That success is not replayed. False selects index 0. When that event is not a compaction_boundary the pin refuses with a different message. When that event is a projecting boundary the pin succeeds. The published function returns a different error. This set does not claim that refusal and does not claim that success.",
+    "GAP-torn-compaction-project-float: a float past the end and a negative float are rendered with repr in the pin when no unique compaction_boundary is found. The published function returns a different error. This set does not claim that refusal. An in-range float raises TypeError before the event is read. That TypeError is an extra vector and is not a whole pinned test. A zero float is in range and raises that same TypeError. It is not a rendered refusal. A float kind is rendered with str in the pin and the no-split refusal follows. The published function returns a different error. This set does not claim that refusal.",
+    "GAP-torn-compaction-project-sweep: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications applies three recipes and checks loss. One recipe inside a sweep is not the whole test. A successful project that also checks loss, plan, or canonical bytes is not covered by the event list alone. tests/repair/test_recipes_salvage.py::test_torn_compaction_direct_apply_validation is three refusals of one function. The covered vector contains every refusal in that test."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_torn_compaction_project",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_TORN_COMPACTION_PROJECT",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "torn-compaction-project",
+        "handles": [
+          "SL108"
+        ],
+        "preconditions": [
+          "salvage_policy",
+          "sl108_present"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": false
+      }
+    },
+    {
+      "id": "torn_compaction_direct_apply_validation",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": true,
+        "assert_count": 3,
+        "calls": [
+          {
+            "events": [],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Cannot project across compaction in empty session"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Event at index 0 is not a compaction_boundary"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              },
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "cb0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:01Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "system"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "compaction_boundary"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 1
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Compaction boundary at index 1 has no split pairs or orphaned halves"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "refusals",
+        "error_type": "PreconditionFailed",
+        "fn": "apply_torn_compaction_project"
+      }
+    },
+    {
+      "id": "project_refusal_missing_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index None"
+      }
+    },
+    {
+      "id": "project_refusal_negative_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -2
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index -2"
+      }
+    },
+    {
+      "id": "project_refusal_param_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "boundary_index",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index 9"
+      }
+    },
+    {
+      "id": "project_refusal_two_boundaries",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 50
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index 50"
+      }
+    },
+    {
+      "id": "project_refusal_true_index_len_one",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index True"
+      }
+    },
+    {
+      "id": "project_refusal_params_without_boundary",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "marker",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid compaction boundary index None"
+      }
+    },
+    {
+      "id": "project_type_string_boundary",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "boundary_index",
+                {
+                  "t": "str",
+                  "v": "not-an-index"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'str' and 'int'"
+      }
+    },
+    {
+      "id": "project_type_list_boundary",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "boundary_index",
+                {
+                  "t": "list",
+                  "items": [
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'list' and 'int'"
+      }
+    },
+    {
+      "id": "project_type_dict_boundary",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "boundary_index",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "k",
+                      {
+                        "t": "int",
+                        "v": 1
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'dict' and 'int'"
+      }
+    },
+    {
+      "id": "project_type_in_range_float",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "float",
+            "v": 1.0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "list indices must be integers or slices, not float"
+      }
+    },
+    {
+      "id": "project_ok_tie_trailing",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "projected-orphans",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "project_ok_out_of_range_falls_back",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 99
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "projected-orphans",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "project_ok_missing_index_falls_back",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "projected-orphans",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "project_ok_float_param_falls_back",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "boundary_index",
+                {
+                  "t": "float",
+                  "v": 4.0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "projected-orphans",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "project_ok_leading_minority",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_torn_compaction_project",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-boundary"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result-a"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result-b"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result-a"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-result-b"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-call"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "projected-orphans",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
