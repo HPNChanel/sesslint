@@ -20,7 +20,7 @@ pub mod render;
 pub mod scan_args;
 pub mod check;
 pub mod triage;
-pub mod bundle {}
+pub mod bundle;
 pub mod completion;
 pub mod diff {}
 pub mod doctor {}
