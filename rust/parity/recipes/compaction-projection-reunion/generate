@@ -1,0 +1,782 @@
+#!/usr/bin/env python3
+"""Generate compaction-projection-reunion parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+Expected messages are the pin's ``PreconditionFailed`` text. Fixture output,
+fingerprints, and planner results are not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "compaction-projection-reunion"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_conservative"
+RECIPE = "compaction-projection-reunion"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_recipes_conservative.py"
+ABSTENTION_FILE = "tests/repair/test_scoped_abstention.py"
+FIXTURE = "fixtures/repair/recipe_reunion.json"
+GENERATOR = "rust/parity/recipes/compaction-projection-reunion/generate"
+PINNED_TEST_COUNT = 35
+ENDPOINT = (
+    "compaction-projection-reunion: boundary sits at pair endpoint (not strictly between)"
+)
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+SEAM_CODEC = "sesslint._canonical_codec.canonical_json_bytes is not available"
+
+GAP_REGION = "GAP-compaction-projection-reunion-affected-region"
+GAP_PLANNER = "GAP-compaction-projection-reunion-planner"
+GAP_BOOL = "GAP-compaction-projection-reunion-bool-boundary"
+
+KNOWN_PARITY_GAPS: tuple[str, ...] = (
+    f"{GAP_REGION}: affected_region_compaction_projection_reunion in the pin "
+    "returns sesslint.policy.abstention.AffectedRegion. This set does not "
+    "construct that region and does not cover a region row. "
+    "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz "
+    "is a multi-function sweep. One function inside the sweep is not the whole test.",
+    f"{GAP_PLANNER}: planner.plan and api.repair are not executed. A missing "
+    "canonical codec call is not a successful plan. No fingerprint is hashed "
+    "and no fixture diff is stored.",
+    f"{GAP_BOOL}: a bool boundary_index uses Python equality against an int "
+    "endpoint in the pin. The published function does not treat that bool as "
+    "the endpoint int. This set does not store the pin refusal and does not "
+    "claim that message.",
+)
+
+COVERED: dict[str, str] = {
+    "test_reunion_refusal_zero_boundaries": "reunion_refusal_zero_boundaries",
+    "test_reunion_refusal_multiple_boundaries": "reunion_refusal_multiple_boundaries",
+    "test_reunion_refusal_boundary_at_endpoint": "reunion_refusal_boundary_at_endpoint",
+}
+
+TOUCHES: frozenset[str] = frozenset(
+    {
+        "test_conservative_recipes_registration_and_handles",
+        "test_compaction_projection_reunion_fixture",
+        "test_reunion_refusal_zero_boundaries",
+        "test_reunion_refusal_multiple_boundaries",
+        "test_reunion_refusal_boundary_at_endpoint",
+        "test_no_synthetic_success_multiset_proof",
+        "test_purity_and_immutability",
+        "test_plan_and_apply_compaction_reunion_full_flow",
+    }
+)
+
+FIXTURE_NOTE = (
+    f"{GAP_PLANNER} blocks canonical_json_bytes. It is not a successful plan. "
+    "No fingerprint is hashed and no fixture diff is stored."
+)
+PURITY_NOTE = (
+    f"{GAP_PLANNER} blocks the fixture apply. The pin succeeds. That success "
+    "is not replayed. No fingerprint is hashed and no fixture diff is stored."
+)
+PLAN_NOTE = (
+    f"{GAP_PLANNER} blocks planner.plan. It is not a successful plan. "
+    "One example inside a sweep is not the whole test. No fingerprint is hashed "
+    "and no fixture diff is stored."
+)
+MULTISET_NOTE = (
+    f"{GAP_PLANNER} blocks canonical_json_bytes. It is not a successful plan. "
+    "One fixture inside a sweep is not the whole test. No fingerprint is hashed "
+    "and no fixture diff is stored."
+)
+REGISTER_NOTE = (
+    "one recipe inside a registration sweep is not the whole test. "
+    "different function from apply_compaction_projection_reunion."
+)
+DIFFERENT_NOTE = "different function from apply_compaction_projection_reunion"
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_compaction_projection_reunion.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        raise SystemExit("float is not a pinned scalar in this set")
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def function_named(text: str, name: str) -> ast.FunctionDef:
+    for node in test_functions(text):
+        if node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def string_constants(fn: ast.FunctionDef) -> set[str]:
+    docstring = None
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and isinstance(fn.body[0].value.value, str)
+    ):
+        docstring = fn.body[0]
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if node is docstring:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+    return found
+
+
+def touches_recipe(fn: ast.FunctionDef) -> bool:
+    names = set(call_names(fn))
+    constants = string_constants(fn)
+    if "apply_compaction_projection_reunion" in names:
+        return True
+    if "compaction-projection-reunion" in constants:
+        return True
+    return any("recipe_reunion" in item for item in constants)
+
+
+def assigned(fn: ast.FunctionDef, name: str) -> ast.AST:
+    for stmt in fn.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if isinstance(target, ast.Name) and target.id == name:
+            return stmt.value
+    raise SystemExit(f"{fn.name} missing {name}")
+
+
+def raises_match(fn: ast.FunctionDef) -> str:
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "raises":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "match":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, str):
+                    raise SystemExit(f"{fn.name} match is not a string")
+                return value
+    raise SystemExit(f"{fn.name} has no raises match")
+
+
+def assert_whole_refusal(fn: ast.FunctionDef) -> None:
+    names = call_names(fn)
+    if names.count("apply_compaction_projection_reunion") != 1:
+        raise SystemExit(f"{fn.name} is not one apply call")
+    if "plan" in names or "repair" in names or "canonical_json_bytes" in names:
+        raise SystemExit(f"{fn.name} is not only the refusal")
+    if names.count("raises") != 1:
+        raise SystemExit(f"{fn.name} raises count")
+    if any(isinstance(node, ast.Assert) for node in ast.walk(fn)):
+        raise SystemExit(f"{fn.name} has another assert")
+    kinds: list[str] = []
+    for stmt in fn.body:
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            continue
+        kinds.append(type(stmt).__name__)
+    if kinds != ["Assign", "Assign", "With"]:
+        raise SystemExit(f"{fn.name} shape {kinds}")
+
+
+def step_from_test(fn: ast.FunctionDef) -> dict[str, Any]:
+    value = assigned(fn, "step")
+    if not isinstance(value, ast.Call):
+        raise SystemExit(f"{fn.name} step is not a call")
+    found: dict[str, Any] = {}
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            raise SystemExit(f"{fn.name} step keyword must be explicit")
+        found[keyword.arg] = ast.literal_eval(keyword.value)
+    for key in ("seq", "recipe", "target_finding_fp", "target_index", "params"):
+        if key not in found:
+            raise SystemExit(f"{fn.name} step missing {key}")
+    if not isinstance(found["params"], dict):
+        raise SystemExit(f"{fn.name} params are not a dict")
+    return found
+
+
+def events_from_test(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    raw = ast.literal_eval(assigned(fn, "events"))
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit(f"{fn.name} events are empty")
+    events: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise SystemExit(f"{fn.name} event is not a dict")
+        if "payload" in item:
+            raise SystemExit(f"{fn.name} event stores payload content")
+        events.append(item)
+    return events
+
+
+def run_apply(mod: Any, events: list[Any], step_fields: dict[str, Any]) -> str:
+    step = mod.PlanStep(
+        seq=step_fields["seq"],
+        recipe=step_fields["recipe"],
+        target_finding_fp=step_fields["target_finding_fp"],
+        target_index=step_fields["target_index"],
+        params=step_fields["params"],
+    )
+    try:
+        mod.apply_compaction_projection_reunion(events, step)
+    except mod.PreconditionFailed as exc:
+        return str(exc)
+    raise SystemExit("pin apply returned Ok for a refusal proof")
+
+
+def refusal_vector(
+    vector_id: str,
+    *,
+    entire_test: bool,
+    events: list[dict[str, Any]],
+    target_index: Any,
+    params: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    if type(entire_test) is not bool:
+        raise SystemExit("entire_test is not a bool")
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_refusal",
+            "fn": "apply_compaction_projection_reunion",
+            "entire_test": entire_test,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": {
+                "target_index": tagged(target_index),
+                "params": tagged(params),
+            },
+        },
+        "expected": {
+            "mode": "refusal",
+            "error_type": "PreconditionFailed",
+            "message": message,
+        },
+    }
+
+
+def recipe_vector(mod: Any) -> dict[str, Any]:
+    recipe = mod.RECIPE_COMPACTION_PROJECTION_REUNION
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    if recipe.apply is not mod.apply_compaction_projection_reunion:
+        raise SystemExit("pin apply is not the recipe apply")
+    if recipe.affected_region is None:
+        raise SystemExit("pin recipe has no affected region")
+    handles = list(recipe.handles)
+    preconditions = list(recipe.preconditions)
+    if handles != ["SL108"]:
+        raise SystemExit(f"pin handles drifted {handles}")
+    if preconditions != ["no_sl203", "single_boundary_split"]:
+        raise SystemExit(f"pin preconditions drifted {preconditions}")
+    return {
+        "id": "recipe_compaction_projection_reunion",
+        "construct": {
+            "type": "recipe_constant",
+            "fn": "RECIPE_COMPACTION_PROJECTION_REUNION",
+            "entire_test": False,
+        },
+        "expected": {
+            "mode": "recipe",
+            "name": recipe.name,
+            "handles": handles,
+            "preconditions": preconditions,
+            "lossy": require_bool("lossy", recipe.lossy),
+            "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+            "min_policy": recipe.min_policy,
+            "version": recipe.version,
+            "excludes_execution_dependence": require_bool(
+                "excludes_execution_dependence",
+                recipe.excludes_execution_dependence,
+            ),
+            "apply_present": require_bool("apply_present", recipe.apply is not None),
+            "affected_region_present": require_bool(
+                "affected_region_present",
+                recipe.affected_region is not None,
+            ),
+        },
+    }
+
+
+def covered_vectors(mod: Any, text: str) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for name, vector_id in COVERED.items():
+        fn = function_named(text, name)
+        assert_whole_refusal(fn)
+        events = events_from_test(fn)
+        fields = step_from_test(fn)
+        message = run_apply(mod, events, fields)
+        pattern = raises_match(fn)
+        if re.search(pattern, message) is None:
+            raise SystemExit(f"{name} pin message does not match the test")
+        if message in seen:
+            raise SystemExit(f"{name} message is not distinct")
+        seen.add(message)
+        vectors.append(
+            refusal_vector(
+                vector_id,
+                entire_test=True,
+                events=events,
+                target_index=fields["target_index"],
+                params=fields["params"],
+                message=message,
+            )
+        )
+    return vectors
+
+
+def extra_refusals(mod: Any, covered_messages: set[str]) -> list[dict[str, Any]]:
+    missing_events: list[dict[str, Any]] = []
+    missing_fields = {
+        "seq": 0,
+        "recipe": RECIPE,
+        "target_finding_fp": "f0",
+        "target_index": None,
+        "params": {},
+    }
+    missing = run_apply(mod, missing_events, missing_fields)
+    pair_events = [
+        {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 0, "parent_id": None},
+        {"id": "c2", "kind": "tool_call", "correlation_id": "c1", "seq": 1, "parent_id": None},
+        {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 2, "parent_id": "c1"},
+    ]
+    pair_fields = {
+        "seq": 0,
+        "recipe": RECIPE,
+        "target_finding_fp": "f0",
+        "target_index": None,
+        "params": {"correlation_id": "c1"},
+    }
+    pair = run_apply(mod, pair_events, pair_fields)
+    if missing in covered_messages or pair in covered_messages or missing == pair:
+        raise SystemExit("extra refusal message is not distinct")
+    if "missing correlation_id" not in missing:
+        raise SystemExit("missing correlation message drifted")
+    if "must have exactly 1 call and 1 result" not in pair:
+        raise SystemExit("unclean pair message drifted")
+    return [
+        refusal_vector(
+            "reunion_refusal_missing_correlation_id",
+            entire_test=False,
+            events=missing_events,
+            target_index=None,
+            params={},
+            message=missing,
+        ),
+        refusal_vector(
+            "reunion_refusal_unclean_pair",
+            entire_test=False,
+            events=pair_events,
+            target_index=None,
+            params={"correlation_id": "c1"},
+            message=pair,
+        ),
+    ]
+
+
+def prove_bool_gap(mod: Any) -> None:
+    false_events = [
+        {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 0, "parent_id": None},
+        {"id": "b1", "kind": "compaction_boundary", "seq": 1, "parent_id": "c1"},
+        {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 2, "parent_id": "b1"},
+    ]
+    false_fields = {
+        "seq": 0,
+        "recipe": RECIPE,
+        "target_finding_fp": "f0",
+        "target_index": 0,
+        "params": {"correlation_id": "c1", "boundary_index": False},
+    }
+    true_events = [
+        {"id": "n0", "kind": "message", "seq": 0, "parent_id": None},
+        {"id": "c1", "kind": "tool_call", "correlation_id": "c1", "seq": 1, "parent_id": None},
+        {"id": "b1", "kind": "compaction_boundary", "seq": 2, "parent_id": "c1"},
+        {"id": "r1", "kind": "tool_result", "correlation_id": "c1", "seq": 3, "parent_id": "b1"},
+    ]
+    true_fields = {
+        "seq": 0,
+        "recipe": RECIPE,
+        "target_finding_fp": "f0",
+        "target_index": None,
+        "params": {"correlation_id": "c1", "boundary_index": True},
+    }
+    if run_apply(mod, false_events, false_fields) != ENDPOINT:
+        raise SystemExit("pin False boundary_index did not refuse the endpoint")
+    if run_apply(mod, true_events, true_fields) != ENDPOINT:
+        raise SystemExit("pin True boundary_index did not refuse the endpoint")
+
+
+def coverage_note(fn: ast.FunctionDef) -> str:
+    if fn.name == "test_compaction_projection_reunion_fixture":
+        return FIXTURE_NOTE
+    if fn.name == "test_purity_and_immutability":
+        return PURITY_NOTE
+    if fn.name == "test_plan_and_apply_compaction_reunion_full_flow":
+        return PLAN_NOTE
+    if fn.name == "test_no_synthetic_success_multiset_proof":
+        return MULTISET_NOTE
+    if fn.name == "test_conservative_recipes_registration_and_handles":
+        return REGISTER_NOTE
+    if touches_recipe(fn):
+        raise SystemExit(f"unclassified reunion test {fn.name}")
+    return DIFFERENT_NOTE
+
+
+def discover_coverage(text: str) -> list[dict[str, Any]]:
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    touched = {fn.name for fn in functions if touches_recipe(fn)}
+    if touched != set(TOUCHES):
+        raise SystemExit(f"reunion test set drifted {sorted(touched)}")
+    rows: list[dict[str, Any]] = []
+    for fn in functions:
+        covered = fn.name in COVERED
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": "covered" if covered else "not_applicable",
+                "vector_id": COVERED[fn.name] if covered else None,
+                "note": "" if covered else coverage_note(fn),
+            }
+        )
+    covered_count = sum(row["status"] == "covered" for row in rows)
+    if covered_count != len(COVERED):
+        raise SystemExit("covered count drifted")
+    return rows
+
+
+def payload_strings(node: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "payload":
+                found.extend(collect_strings(value))
+            else:
+                found.extend(payload_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(payload_strings(item))
+    return found
+
+
+def collect_strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node else []
+    if isinstance(node, dict):
+        found: list[str] = []
+        for value in node.values():
+            found.extend(collect_strings(value))
+        return found
+    if isinstance(node, list):
+        found = []
+        for item in node:
+            found.extend(collect_strings(item))
+        return found
+    return []
+
+
+def dump(doc: Any, banned_payload: list[str]) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text or SEAM_REGION in text or SEAM_DETERMINISM in text or SEAM_CODEC in text:
+        raise SystemExit("refusing banned sentence in JSON")
+    if '"t": "bool"' in text:
+        raise SystemExit("refusing a tagged bool in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit(f"refusing path fragment in JSON: {banned}")
+    for item in banned_payload:
+        if item and item in text:
+            raise SystemExit("refusing fixture payload content in JSON")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def confirm_abstention() -> None:
+    text = git_show_bytes(f"{PYTHON_COMMIT}:{ABSTENTION_FILE}").decode("utf-8")
+    if "def test_region_functions_totality_fuzz" not in text:
+        raise SystemExit("pin totality test missing")
+    if "affected_region_compaction_projection_reunion" not in text:
+        raise SystemExit("pin abstention file lost the region function")
+    if "parametrize" not in text:
+        raise SystemExit("pin totality test is not a sweep")
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    confirm_abstention()
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    fixture = json.loads(git_show_bytes(f"{PYTHON_COMMIT}:{FIXTURE}").decode("utf-8"))
+    banned_payload = payload_strings(fixture)
+    if not banned_payload:
+        raise SystemExit("fixture payload strings missing")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    mod = load_mod()
+    prove_bool_gap(mod)
+    recipe = recipe_vector(mod)
+    covered = covered_vectors(mod, test_text)
+    extras = extra_refusals(mod, {item["expected"]["message"] for item in covered})
+    vectors = [recipe, *extras, *covered]
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc, banned_payload)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text)
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": TEST_FILE,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    write_text(OUT / "coverage.json", dump(coverage, banned_payload))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic compaction-projection-reunion parity. Refusal messages "
+            "come from the pinned blob. Fixture output, fingerprints, and "
+            "planner results stay uncovered. No fixture diff is stored."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance, banned_payload))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest, banned_payload))
+    covered_count = coverage["covered_count"]
+    skipped = coverage["not_applicable_count"]
+    print(f"{len(vectors)} {digest} covered={covered_count} not_applicable={skipped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
