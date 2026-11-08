@@ -1,0 +1,2285 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "side-effect-unknown-truncate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "known_parity_gaps": [
+    "GAP-side-effect-unknown-truncate-canonical: planner.plan is not run. A missing canonical codec call is not a successful plan. tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage checks a fingerprint for three fixtures. One fixture inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in compares a plan dict for three recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_acknowledgement compares plan dicts. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications plans and then applies. tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session plans two recipes. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-side-effect-unknown-truncate-session-copy: a SessionEvent prefix copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications uses SessionEvent records from the fixture. One recipe inside a sweep is not the whole test.",
+    "GAP-side-effect-unknown-truncate-payload: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications and tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session carry payload on the events. This set does not store payload content. A payload-free result is not that test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in, tests/repair/test_recipes_salvage.py::test_acknowledgement, and tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage load the same fixture.",
+    "GAP-side-effect-unknown-truncate-bool: a True cut slices in the pin when the session length is greater than one. The published function returns a different error. This set does not claim that success. A rust seam while the pin succeeds is not coverage. That success is not replayed.",
+    "GAP-side-effect-unknown-truncate-float: a non-positive float cut and a float past the end are rendered with str in the pin. The published function returns a different error. This set does not claim that refusal. An in-range float raises TypeError before a slice. That TypeError is an extra vector and is not a whole pinned test.",
+    "GAP-side-effect-unknown-truncate-sweep: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications applies three recipes and checks loss. One recipe inside a sweep is not the whole test. A successful truncate that also checks loss, plan, or canonical bytes is not covered by the event list alone. tests/repair/test_recipes_salvage.py::test_truncate_direct_apply_validation is three refusals of one function. The covered vector contains every refusal in that test."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_side_effect_unknown_truncate",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "side-effect-unknown-truncate",
+        "handles": [
+          "SL102"
+        ],
+        "preconditions": [
+          "salvage_policy",
+          "acknowledge_side_effects"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": false
+      }
+    },
+    {
+      "id": "truncate_direct_apply_validation",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": true,
+        "assert_count": 3,
+        "calls": [
+          {
+            "events": [],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Cannot truncate an empty session"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Cannot truncate at index 0: would empty or violate session root"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 5
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Cut index 5 is out of bounds for session of length 1"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "refusals",
+        "error_type": "PreconditionFailed",
+        "fn": "apply_side_effect_unknown_truncate"
+      }
+    },
+    {
+      "id": "truncate_refusal_missing_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Truncate recipe requires a valid target_index"
+      }
+    },
+    {
+      "id": "truncate_refusal_negative_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -2
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Cannot truncate at index -2: would empty or violate session root"
+      }
+    },
+    {
+      "id": "truncate_refusal_zero_cut_param",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Cannot truncate at index 0: would empty or violate session root"
+      }
+    },
+    {
+      "id": "truncate_refusal_param_cut_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Cut index 9 is out of bounds for session of length 4"
+      }
+    },
+    {
+      "id": "truncate_refusal_false_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": false
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Cannot truncate at index False: would empty or violate session root"
+      }
+    },
+    {
+      "id": "truncate_refusal_true_index_len_one",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Cut index True is out of bounds for session of length 1"
+      }
+    },
+    {
+      "id": "truncate_type_string_cut",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "str",
+                  "v": "not-an-index"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<=' not supported between instances of 'str' and 'int'"
+      }
+    },
+    {
+      "id": "truncate_type_list_cut",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "list",
+                  "items": [
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<=' not supported between instances of 'list' and 'int'"
+      }
+    },
+    {
+      "id": "truncate_type_dict_cut",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "k",
+                      {
+                        "t": "int",
+                        "v": 1
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<=' not supported between instances of 'dict' and 'int'"
+      }
+    },
+    {
+      "id": "truncate_type_in_range_float",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "float",
+            "v": 1.0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "slice indices must be integers or None or have an __index__ method"
+      }
+    },
+    {
+      "id": "truncate_ok_prefix",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 2
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "truncated-side-effects",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "truncate_ok_falsy_zero_falls_through",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "first_unsafe_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "truncated-side-effects",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "truncate_ok_falsy_false_falls_through",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "first_unsafe_index",
+                {
+                  "t": "bool",
+                  "v": false
+                }
+              ],
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "truncated-side-effects",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "truncate_ok_falsy_empty_string_falls_through",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_side_effect_unknown_truncate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-3"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "first_unsafe_index",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ],
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "truncated-side-effects",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
