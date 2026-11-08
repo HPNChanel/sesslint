@@ -1,16 +1,21 @@
 //! Privacy-safe diagnostic bundle skeleton (DEV-014, US-016, UC-07).
 //!
-//! Port of `src/sesslint/bundle.py` lines 1–209
+//! Port of `src/sesslint/bundle.py` lines 1–455
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
-//! Lines 210 onward are a later card. This file stops at the synthetic
-//! skeleton, the canonical JSON object, the basename remediation rewrite, and
-//! the bounded record and kind probes.
-//!
+//! Lines 1–209 are the synthetic skeleton, the canonical JSON object, the
+//! basename remediation rewrite, and the bounded record and kind probes.
 //! `sesslint._version.get_version_info`, `sesslint.report.short_hash`, and
 //! `sesslint.adapters.safe_value.safe_discriminator` are not linked. Each call
 //! that would reach one of them returns a typed error and does not build a
 //! dictionary or a kind counter.
+//!
+//! Lines 212–455 append [`build_bundle`], [`get_bundle_schema_path`], and
+//! [`load_bundle_schema`]. [`build_bundle`] stops on
+//! `sesslint.adapters.detect.validate_detection_thresholds` and returns no
+//! [`Bundle`]. It does not check the path, hash bytes, or call
+//! [`_build_created_by`]. The schema helpers stop on
+//! `sesslint._resources.schema_path` and do not build a schemas path.
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -18,7 +23,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Python `BUNDLE_SCHEMA_VERSION`.
 pub const BUNDLE_SCHEMA_VERSION: &str = "sesslint.bundle/v1";
@@ -331,6 +336,92 @@ pub fn _extract_kinds_fallback_limited(
         }
     }
     Ok(BTreeMap::new())
+}
+
+/// Display text when `sesslint.adapters.detect.validate_detection_thresholds`
+/// cannot be called.
+pub const VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE: &str =
+    "sesslint.adapters.detect.validate_detection_thresholds is not available";
+
+/// `sesslint.adapters.detect.validate_detection_thresholds` is not linked from this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidateDetectionThresholdsUnavailable;
+
+impl fmt::Display for ValidateDetectionThresholdsUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE)
+    }
+}
+
+impl Error for ValidateDetectionThresholdsUnavailable {}
+
+/// Display text when `sesslint._resources.schema_path` cannot be imported.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
+/// `sesslint._resources.schema_path` is not linked from this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SchemaPathUnavailable;
+
+impl fmt::Display for SchemaPathUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(SCHEMA_PATH_UNAVAILABLE)
+    }
+}
+
+impl Error for SchemaPathUnavailable {}
+
+/// Python `build_bundle`.
+///
+/// The first statement calls
+/// `sesslint.adapters.detect.validate_detection_thresholds`. That function is
+/// not linked. This returns [`ValidateDetectionThresholdsUnavailable`] and
+/// does not build a [`Bundle`]. It does not check `path`, hash bytes, or call
+/// [`_build_created_by`]. It does not continue to `resolve_effective_config`,
+/// `check_file`, `render_json`, or `short_hash`.
+///
+/// `format`, `confidence_min`, and `margin_min` are Python `None` when the
+/// caller omitted them. `profile` is Python's default `"neutral"` when omitted.
+/// Those arguments are not read.
+///
+/// # Errors
+///
+/// Always [`ValidateDetectionThresholdsUnavailable`]. Success is [`Infallible`].
+pub fn build_bundle(
+    path: &Path,
+    format: Option<&str>,
+    profile: &str,
+    confidence_min: Option<f64>,
+    margin_min: Option<f64>,
+) -> Result<Infallible, ValidateDetectionThresholdsUnavailable> {
+    let _ = (path, format, profile, confidence_min, margin_min);
+    Err(ValidateDetectionThresholdsUnavailable)
+}
+
+/// Python `get_bundle_schema_path`.
+///
+/// The first statement imports `sesslint._resources.schema_path`. That
+/// function is not linked. This does not build a `schemas/` path and does
+/// not read a schema file.
+///
+/// # Errors
+///
+/// Always [`SchemaPathUnavailable`].
+pub fn get_bundle_schema_path() -> Result<PathBuf, SchemaPathUnavailable> {
+    Err(SchemaPathUnavailable)
+}
+
+/// Python `load_bundle_schema`.
+///
+/// Calls [`get_bundle_schema_path`] before any file check. The resource import
+/// fails there, so this returns that same error. This does not read a schema
+/// file and does not parse JSON.
+///
+/// # Errors
+///
+/// Always [`SchemaPathUnavailable`]. Success is [`Infallible`].
+pub fn load_bundle_schema() -> Result<Infallible, SchemaPathUnavailable> {
+    let _schema_path = get_bundle_schema_path()?;
+    Err(SchemaPathUnavailable)
 }
 
 fn encode_json(value: &JsonValue, indent: i64) -> String {
@@ -1090,11 +1181,14 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        Bundle, JsonValue, ShortHashUnavailable, VersionInfoUnavailable, _build_created_by,
-        _count_records_bounded, _extract_kinds_fallback, _extract_kinds_fallback_limited,
-        _sanitize_evidence, _sanitize_remediation, BUNDLE_SCHEMA_VERSION, DEFAULT_JSON_INDENT,
-        FIXTURE_TEMPLATE, MAX_PROBE_LINES, MAX_READLINE_BYTES, RECORD_CHUNK_BYTES,
-        SAFE_DISCRIMINATOR_UNAVAILABLE, SHORT_HASH_UNAVAILABLE, VERSION_INFO_UNAVAILABLE,
+        build_bundle, get_bundle_schema_path, load_bundle_schema, Bundle, JsonValue,
+        SchemaPathUnavailable, ShortHashUnavailable, ValidateDetectionThresholdsUnavailable,
+        VersionInfoUnavailable, _build_created_by, _count_records_bounded, _extract_kinds_fallback,
+        _extract_kinds_fallback_limited, _sanitize_evidence, _sanitize_remediation,
+        BUNDLE_SCHEMA_VERSION, DEFAULT_JSON_INDENT, FIXTURE_TEMPLATE, MAX_PROBE_LINES,
+        MAX_READLINE_BYTES, RECORD_CHUNK_BYTES, SAFE_DISCRIMINATOR_UNAVAILABLE,
+        SCHEMA_PATH_UNAVAILABLE, SHORT_HASH_UNAVAILABLE, VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE,
+        VERSION_INFO_UNAVAILABLE,
     };
 
     #[test]
@@ -1431,6 +1525,86 @@ mod tests {
         assert!(_extract_kinds_fallback_limited(&split, 2).is_err());
     }
 
+    #[test]
+    fn build_bundle_stops_on_the_detection_threshold_import() {
+        let tree = TempTree::new("bundle-build");
+        let missing = tree.path.join("missing-synth.jsonl");
+        let missing_error = assert_thresholds(build_bundle(&missing, None, "neutral", None, None));
+        assert!(!missing.exists());
+        assert!(!missing_error.to_string().contains("missing-synth"));
+        assert_eq!(
+            format!("{missing_error:?}"),
+            "ValidateDetectionThresholdsUnavailable"
+        );
+
+        let directory = tree.path.join("synthetic-dir");
+        fs::create_dir(&directory).unwrap();
+        let directory_error = assert_thresholds(build_bundle(
+            &directory,
+            Some("auto"),
+            "neutral",
+            Some(0.0),
+            Some(0.0),
+        ));
+        assert_eq!(directory_error, missing_error);
+        assert!(directory.is_dir());
+
+        let file = tree.path.join("synthetic-session.jsonl");
+        let body = b"synthetic-bundle-marker\n";
+        fs::write(&file, body).unwrap();
+        let digest = Sha256::digest(body);
+        let digest_hex = format!("{digest:x}");
+        let file_error = assert_thresholds(build_bundle(
+            &file,
+            Some("synthetic"),
+            "neutral",
+            Some(f64::NAN),
+            Some(-1.0),
+        ));
+        assert_eq!(file_error, missing_error);
+        let rendered = format!("{file_error} {file_error:?}");
+        assert!(!rendered.contains("synthetic-bundle-marker"));
+        assert!(!rendered.contains(&digest_hex));
+        assert!(!rendered.contains("synthetic-session"));
+        assert_ne!(file_error.to_string(), VERSION_INFO_UNAVAILABLE);
+        assert_ne!(file_error.to_string(), SHORT_HASH_UNAVAILABLE);
+        assert_ne!(file_error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert_eq!(fs::read(&file).unwrap(), body);
+
+        assert_version(_build_created_by());
+    }
+
+    #[test]
+    fn schema_helpers_stop_on_schema_path() {
+        let path_error = get_bundle_schema_path().unwrap_err();
+        assert_eq!(path_error, SchemaPathUnavailable);
+        assert_eq!(path_error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert_eq!(
+            path_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(!path_error.to_string().contains("schemas"));
+        assert!(!path_error.to_string().contains("sesslint.bundle.v1.json"));
+        assert!(!path_error.to_string().contains("Bundle schema not found"));
+        let as_error: &dyn Error = &path_error;
+        assert!(as_error.source().is_none());
+
+        let load_error = match load_bundle_schema() {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(load_error, path_error);
+        assert_eq!(
+            load_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(std::error::Error::source(&load_error).is_none());
+        assert_ne!(
+            load_error.to_string(),
+            VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE
+        );
+    }
+
     fn assert_version(result: Result<Infallible, VersionInfoUnavailable>) {
         let error = match result {
             Ok(never) => match never {},
@@ -1443,6 +1617,27 @@ mod tests {
         );
         let as_error: &dyn Error = &error;
         assert_eq!(as_error.to_string(), VERSION_INFO_UNAVAILABLE);
+    }
+
+    fn assert_thresholds(
+        result: Result<Infallible, ValidateDetectionThresholdsUnavailable>,
+    ) -> ValidateDetectionThresholdsUnavailable {
+        let error = match result {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(error.to_string(), VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE);
+        assert_eq!(
+            error.to_string(),
+            "sesslint.adapters.detect.validate_detection_thresholds is not available"
+        );
+        let as_error: &dyn Error = &error;
+        assert_eq!(
+            as_error.to_string(),
+            VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE
+        );
+        assert!(as_error.source().is_none());
+        error
     }
 
     fn assert_short_hash(result: Result<Infallible, ShortHashUnavailable>) {
