@@ -1,0 +1,701 @@
+{
+  "rows": [
+    {
+      "test": "src/sesslint/repair/__init__.py::__all__",
+      "status": "not_applicable",
+      "python_all_len": 90
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_export_only",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_deterministic_bytes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_byte_identical_to_one_shot",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_then_apply_same_run",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_legacy_plan_flag_still_applies",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_stale_source_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_tampered_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_salvage_policy_derived",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_dry_run_validates_only",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_refuses_overrides",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_plan_out_conflict",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_refuses_source_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_refuses_hard_link_to_source",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_refuses_output_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_apply_plan_requires_output_unless_dry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_api_plan_repair_and_apply_plan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_api_apply_plan_stale_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_api_apply_plan_tampered_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_api_repair_plan_mutex",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_load_plan_strict_round_trip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/fuzz/test_fuzz_plans.py::test_export_load_apply_mutated_plan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/fuzz/test_fuzz_plans.py::test_planner_duplicate_run_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_abstention_matrix.py::test_abstention_12_cell_matrix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_basic_execute",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_self_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_existing_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_live_store",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_tampered_plan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_plan_cap_overflow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_policy_mismatch",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_sl203_toctou",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_output_invalid_synthetic_tool_result",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_kill_before_rename",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_dry_run",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_exit_codes_table",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_manifest_schema_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_only_mutator",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_direct_dict_raises_type_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_source_mutated_concurrently",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cross_device_replace_error_mapping",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_unicode_and_spaces_in_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_repair_without_plan_e2e",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_dry_run_with_tampered_plan_refuses",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_disk_full_enospc",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_read_only_target_directory",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_manifest_write_failure_cleans_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_invalid_format",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_source_events_direct_parameter",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_plan_source_mismatch_cross_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_plan_source_mismatch_mutated_source",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_crafted_conservative_plan_with_salvage_step",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_executor_refuses_vendor_emit_on_canonical_source",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_compute_assurance_ceiling_matrix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_preplanted_manifest_collision",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_mid_publish_crash_rollback",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_real_adapter_version_plumbing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_salvage_e2e_manifest_ceiling",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_executor_policy_gate_minimum_policy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_plan_input_regressions.py::test_malformed_plan_container_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_plan_input_regressions.py::test_unknown_plan_profile_is_typed_and_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_registry_registration_and_lookup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_registry_duplicate_name_rejected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_registry_unknown_precondition_rejected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_custom_precondition_registration",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_built_in_predicates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_basic_plan_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_blocked_plan_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_empty_plan_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_fingerprint_stability",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_first_match_wins",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_cap_overflow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_duplicate_finding_fingerprint_deduped",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_target_missing_event_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_manual_and_unknown_repairability_blocked",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_no_recipe_available_blocked",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_no_writes_static_audit",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_no_writes_runtime_read_only_proof",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_vendor_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_perf_10k_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_planner_conservative_blocks_salvage_recipe",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_planner_conservative_invariant_raises_on_lossy_step",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_planner.py::test_planner_policy_fingerprint_distinctness",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_conservative_recipes_registration_and_handles",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_register_all_idempotent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_identical_duplicate_collapse_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_compaction_projection_reunion_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_fixture",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_empty_session",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_out_of_bounds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_checkpoint_in_suffix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_zero_candidates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_self_candidate",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_branch",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_segment",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_zero_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_multiple_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_reunion_refusal_boundary_at_endpoint",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_differing_fingerprints",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_checkpoint_or_boundary",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_mixed_kinds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_sl203_refusal_blocks_other_conservative_recipes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_sl203_refusal_when_side_effects_unknown",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_no_synthetic_success_multiset_proof",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_no_synthetic_success_static_grep",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_purity_and_immutability",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_idempotence_where_defined",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_adversarial_1k_identical_duplicates_cap",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_second_index_resolves_and_collapses",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_collapse_rewrites_child_parent_pointers",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_rewrites_child_parent_pointers",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_parent_restore_excludes_successor_candidates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_compaction_reunion_full_flow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_duplicate_projection_full_flow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_plan_and_apply_parent_restore_full_flow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_sl005_entry_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_release_matrix.py::test_public_repair_matrix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_release_matrix.py::test_matrix_scope_is_complete",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_completed_mutating_call_not_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_dangling_tool_call_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_unknown_side_effects_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_unpaired_correlation_id_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_reused_tool_call_id_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_multiple_tool_results_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_sl203_subject_is_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_missing_region_function",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_forced_exception_in_region_function",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_unproven_region_flag",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_2_dangling_call_in_truncated_region",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_3_unknown_side_effects_on_relink_target",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_5_sl203_anywhere_global_refusal_unchanged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_positive_e2e_realistic_tool_session_repaired",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_parent_restore_disjoint_from_intermediate_mutating_tool",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_multistep_conservative_repair_no_index_drift_in_executor",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_recipe_without_affected_region_keeps_global_gating",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_reversed_tool_pairing_marked_ambiguous",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_check_step_scope_syncs_ids_to_indices_for_side_effect_check",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_module_exports",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_purity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_and_plan_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_verify_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_build_bundle_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_precheck_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_numeric_range_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_threshold_override_reports_undetected_input_honestly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_threshold_override_marks_undetected_files_unsupported",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_scan_path_resolves_effective_config_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_unified_forwards_thresholds_to_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_threshold_validation_identical_across_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_performs_single_detection_with_profile_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_detection_call_count_exactly_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_schema_parity.py::test_schema_runtime_plan_type_parity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_schema_parity.py::test_all_schemas_are_valid_draft_202012",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_recipes_directory_exists",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_all_registered_recipes_have_docs",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_no_extra_or_stale_recipe_docs",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_recipe_doc_structure_and_sections",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_recipe_doc_fixture_reference_exists",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_recipe_doc_metadata_matches_registry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_readme_recipe_catalog_matches_registry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_recipes_readme_catalog_matches_registry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_releasing_checklist_recipe_count",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_catalog_lock_catches_missing_recipe",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_catalog_lock_catches_extra_recipe",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_catalog_lock_catches_misclassified_recipe",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_registry_docs.py::test_catalog_lock_catches_mismatched_handled_codes",
+      "status": "not_applicable"
+    }
+  ]
+}

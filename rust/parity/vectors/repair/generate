@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair package barrel parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import subprocess
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+REPAIR_INIT_PATH = "src/sesslint/repair/__init__.py"
+REPAIR_INIT_PY_SHA256 = (
+    "7f8ffb2a4432851dd2e2bf1f36ec754bf8d23221e8d8f148456a53ac2d2a9f5d"
+)
+REPAIR_LIB_RS_SHA256 = (
+    "b0a2919bee3bc0b12fb0100cc0d6264e8354086ddc768c017b47ec3e1a622138"
+)
+MODULE = "sesslint.repair"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    (
+        "GAP-repair-package-register-not-called: Python repair/__init__.py calls "
+        "register_all_conservative_recipes(), register_all_salvage_recipes(), and "
+        "register_all_sl002_recipes() at import time. Rust exposes the three "
+        "register_all aliases but does not invoke them at crate load."
+    ),
+    (
+        "GAP-repair-package-string-exports: PRECONDITION_FUNCS, REGISTRY, and "
+        "run_all_checks appear in Python __all__ and in repair::ALL as names only; "
+        "they are not re-exported as public Rust values and run_all_checks is not "
+        "a Rust function."
+    ),
+    (
+        "GAP-repair-submodule-apis: repair submodules have dedicated module parity "
+        "vectors; a name in __all__ does not count as barrel behavioral coverage "
+        "for this card."
+    ),
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/cli/test_plan_apply.py",
+    "tests/fuzz/test_fuzz_plans.py",
+    "tests/repair/test_abstention_matrix.py",
+    "tests/repair/test_executor.py",
+    "tests/repair/test_plan_input_regressions.py",
+    "tests/repair/test_planner.py",
+    "tests/repair/test_recipes_conservative.py",
+    "tests/repair/test_release_matrix.py",
+    "tests/repair/test_scoped_abstention.py",
+    "tests/test_api_surface.py",
+    "tests/test_plan_schema_parity.py",
+    "tests/test_registry_docs.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"sk_live_"),
+    re.compile(r"sk_test_"),
+    re.compile(r"rk_live_"),
+    re.compile(r"rk_test_"),
+    re.compile(r"sbp_[0-9a-f]{40}"),
+    re.compile(r"sesslint-wt-"),
+    re.compile(r"FOR_WORK"),
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_text(rev_path: str) -> str:
+    raw = subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+    return raw.decode("utf-8")
+
+
+def verify_init_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != REPAIR_INIT_PY_SHA256:
+        raise SystemExit(
+            "repair/__init__.py pin sha256 mismatch: "
+            f"expected {REPAIR_INIT_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_repair_lib_rs_sha256() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "repair" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != REPAIR_LIB_RS_SHA256:
+        raise SystemExit(
+            "repair/src/lib.rs sha256 mismatch: "
+            f"expected {REPAIR_LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def load_python_all() -> list[str]:
+    text = git_show_text(f"{PYTHON_COMMIT}:{REPAIR_INIT_PATH}")
+    verify_init_pin_digest(text.encode("utf-8"))
+    verify_repair_lib_rs_sha256()
+    tree = ast.parse(text)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    seq = node.value
+                    if not isinstance(seq, ast.List):
+                        raise SystemExit("__all__ must be a list literal")
+                    names: list[str] = []
+                    for elt in seq.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            names.append(elt.value)
+                        else:
+                            raise SystemExit("__all__ entries must be string literals")
+                    if len(names) != 90:
+                        raise SystemExit(f"unexpected __all__ length: {len(names)}")
+                    if names[0] != "ALLOWED_LOSS_CLASSES":
+                        raise SystemExit(f"unexpected __all__[0]: {names[0]!r}")
+                    if names[-1] != "apply_torn_terminal_record_discard":
+                        raise SystemExit(f"unexpected __all__ last: {names[-1]!r}")
+                    if names[names.index("PRECONDITION_FUNCS")] != "PRECONDITION_FUNCS":
+                        raise SystemExit("missing PRECONDITION_FUNCS")
+                    if names[names.index("REGISTRY")] != "REGISTRY":
+                        raise SystemExit("missing REGISTRY")
+                    if names[names.index("run_all_checks")] != "run_all_checks":
+                        raise SystemExit("missing run_all_checks")
+                    return names
+    raise SystemExit("missing __all__ in repair/__init__.py")
+
+
+def vectors_from_python_all(py_all: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "python_dunder_all",
+            "construct": {"type": "public_name_list"},
+            "expected": {"names": py_all},
+        }
+    ]
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = git_show_text(f"{PYTHON_COMMIT}:{rel}")
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str], py_all: list[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    rows.append(
+        {
+            "test": f"src/sesslint/repair/__init__.py::__all__",
+            "status": "not_applicable",
+            "python_all_len": len(py_all),
+        }
+    )
+    not_applicable += 1
+    for rel in COVERAGE_TEST_FILES:
+        try:
+            tests = list_tests_in_file(rel)
+        except subprocess.CalledProcessError:
+            continue
+        for name in tests:
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual, "status": "not_applicable"}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if b"\r" in raw:
+        raise SystemExit("committed output must use LF only")
+    for pattern in _BANNED_PATTERNS:
+        if pattern.search(text):
+            raise SystemExit(f"committed output matches banned pattern: {pattern.pattern}")
+
+
+def main() -> int:
+    py_all = load_python_all()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vectors_from_python_all(py_all)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "repair_init_py_sha256": REPAIR_INIT_PY_SHA256,
+        "repair_lib_rs_sha256": REPAIR_LIB_RS_SHA256,
+        "python_all": py_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair package barrel parity (__all__ name list and "
+            "order from the pinned repair/__init__.py; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/repair/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors), py_all)
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
