@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic identical-duplicate-collapse parity. Refusal messages come from the pinned blob. Fixture output, payload fingerprints, and planner results stay uncovered. No fixture diff is stored.",
+  "generator": "rust/parity/recipes/identical-duplicate-collapse/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-identical-duplicate-collapse-affected-region: affected_region_identical_duplicate_collapse in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
+    "GAP-identical-duplicate-collapse-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply, the second-index collapse, and the child-pointer rewrite succeed in the pin. That success is not replayed. tests/repair/test_scoped_abstention.py::test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair executes. tests/repair/test_scoped_abstention.py::test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin plans and executes. tests/repair/test_scoped_abstention.py::test_multistep_conservative_repair_no_index_drift_in_executor executes. tests/repair/test_t04_recipes.py::test_adjacent_dup_still_collapses plans. Those tests assert a result and do not raise. That result is not replayed. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-identical-duplicate-collapse-fingerprint: a pair with a payload and no content_hash asks the pin for a content fingerprint. This set does not hash a fingerprint and does not store payload content. The published function returns a different error. This set does not claim that refusal.",
+    "GAP-identical-duplicate-collapse-payload-test: tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_checkpoint_or_boundary and tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_mixed_kinds are each one apply refusal. The events carry a payload. This set does not store payload content. A payload-free refusal is not that test."
+  ]
+}
