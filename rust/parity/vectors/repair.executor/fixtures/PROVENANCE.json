@@ -1,0 +1,5 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic fixtures for repair.executor parity (SQLite magic probe, session paths, symlinks).",
+  "origin": "synthetic"
+}

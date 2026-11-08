@@ -1,0 +1,214 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.executor",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "executor_py_sha256": "e9e9237352cd2937c346f6c8cb6334596cb792d89ace44c1cfa3791cdb863a7b",
+  "executor_rs_sha256": "11707f597dcb50abb8d94d0e20444fe54018f6988ca89755612d4f9c5ac2d30b",
+  "known_parity_gaps": [
+    "GAP-repair-executor-import-stops: execute after the step cap, load_session_source for an existing file, and load_source_for_format import sesslint.adapters.load. Rust stops at compute_plan_fingerprint, snapshot_input, or is_vendor_format seams."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "SQLITE_MAGIC",
+          "_ATOMIC_TEST_HOOKS",
+          "execute",
+          "is_live_store_path",
+          "load_plan",
+          "load_session_source",
+          "run_all_checks"
+        ]
+      }
+    },
+    {
+      "id": "sqlite_magic_bytes",
+      "construct": {
+        "type": "sqlite_magic"
+      },
+      "expected": {
+        "b64": "U1FMaXRlIGZvcm1hdCAzAA=="
+      }
+    },
+    {
+      "id": "module_private_constants",
+      "construct": {
+        "type": "module_private_constants"
+      },
+      "expected": {
+        "origin_key": "\u0000sesslint.origin",
+        "step_index_params": [
+          "at_index",
+          "boundary_index",
+          "cut_index",
+          "entry_index",
+          "first_index",
+          "first_unsafe_index",
+          "index",
+          "use_index"
+        ],
+        "step_index_list_params": [
+          "record_indexes",
+          "result_indexes"
+        ],
+        "atomic_hook_keys": [
+          "pre_write",
+          "pre_rename",
+          "post_apply",
+          "mid_publish",
+          "post_publish"
+        ]
+      }
+    },
+    {
+      "id": "is_live_store_suffix_db",
+      "construct": {
+        "type": "is_live_store_path",
+        "path": "rx-parity-agent.db"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_live_store_nonmagic_fixture",
+      "construct": {
+        "type": "is_live_store_path",
+        "fixture": "nonmagic.bin"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_live_store_magic_fixture",
+      "construct": {
+        "type": "is_live_store_path",
+        "fixture": "magic_header.dat"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "load_session_missing_path",
+      "construct": {
+        "type": "load_session_not_found",
+        "path": "rx-parity-missing-session.jsonl"
+      },
+      "expected": {
+        "message": "Session file not found: rx-parity-missing-session.jsonl"
+      }
+    },
+    {
+      "id": "load_session_empty_path",
+      "construct": {
+        "type": "load_session_not_found",
+        "path": ""
+      },
+      "expected": {
+        "message": "Session file not found: ."
+      }
+    },
+    {
+      "id": "load_session_directory_path",
+      "construct": {
+        "type": "load_session_not_found",
+        "fixture": "session_dir"
+      },
+      "expected": {
+        "message": "Session file not found: rust/parity/vectors/repair.executor/fixtures/session_dir"
+      }
+    },
+    {
+      "id": "load_session_broken_symlink",
+      "construct": {
+        "type": "load_session_with_findings_not_found",
+        "fixture": "session_broken.jsonl",
+        "data_b64": "c3ludGhldGljLXJ4LXA0Mw=="
+      },
+      "expected": {
+        "message": "Session file not found: rust/parity/vectors/repair.executor/fixtures/session_broken.jsonl"
+      }
+    },
+    {
+      "id": "load_session_symlink_file_seam",
+      "construct": {
+        "type": "load_session_snapshot_seam",
+        "fixture": "session_link.jsonl"
+      },
+      "expected": {
+        "pin_continues": true,
+        "rust_assertion": {
+          "mode": "snapshot_input_unavailable"
+        }
+      }
+    },
+    {
+      "id": "load_source_for_format_import_seam",
+      "construct": {
+        "type": "load_source_for_format_gap",
+        "fixture": "session_target.jsonl",
+        "format": null
+      },
+      "expected": {
+        "pin_imports_adapters": true,
+        "rust_assertion": {
+          "mode": "is_vendor_format_unavailable"
+        }
+      }
+    },
+    {
+      "id": "execute_cap_257",
+      "construct": {
+        "type": "execute_cap"
+      },
+      "expected": {
+        "message": "Plan step count (257) exceeds maximum allowed cap (256)"
+      }
+    },
+    {
+      "id": "execute_fingerprint_import_seam",
+      "construct": {
+        "type": "execute_fingerprint_gap"
+      },
+      "expected": {
+        "pin_exception": "PlanTampered",
+        "rust_assertion": {
+          "mode": "fingerprint_unavailable"
+        }
+      }
+    },
+    {
+      "id": "source_positions_duplicate_origin",
+      "construct": {
+        "type": "source_positions_duplicate"
+      },
+      "expected": {
+        "message": "Repair duplicated source event 1"
+      }
+    },
+    {
+      "id": "relocate_step_removed_target",
+      "construct": {
+        "type": "relocate_step_removed"
+      },
+      "expected": {
+        "message": "Step 7 (recipe 'drop-record') targets source event 2, which an earlier step removed"
+      }
+    },
+    {
+      "id": "load_plan_salvage_under_conservative",
+      "construct": {
+        "type": "load_plan_salvage_policy_mismatch"
+      },
+      "expected": {
+        "message": "Plan requires 'salvage' policy due to salvage-class steps or declared loss, but invocation requested 'conservative' policy"
+      }
+    }
+  ]
+}

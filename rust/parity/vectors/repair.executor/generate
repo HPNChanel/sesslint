@@ -1,0 +1,574 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.executor parity vectors from the pinned executor blob (stdlib only)."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+EXECUTOR_PY_SHA256 = (
+    "e9e9237352cd2937c346f6c8cb6334596cb792d89ace44c1cfa3791cdb863a7b"
+)
+EXECUTOR_RS_SHA256 = (
+    "11707f597dcb50abb8d94d0e20444fe54018f6988ca89755612d4f9c5ac2d30b"
+)
+MODULE = "sesslint.repair.executor"
+PIN_BLOB = f"{PYTHON_COMMIT}:src/sesslint/repair/executor.py"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-repair-executor-import-stops: execute after the step cap, load_session_source "
+    "for an existing file, and load_source_for_format import sesslint.adapters.load. Rust "
+    "stops at compute_plan_fingerprint, snapshot_input, or is_vendor_format seams.",
+)
+
+# The cap sentence is not test_plan_cap_overflow: that test also passes a
+# source path and asserts the output file was not created.
+COVERED_BY_VECTORS: Final[dict[str, str]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+_BANNED_LITERALS = (
+    b"sesslint-wt-",
+    b"FOR_WORK",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in _BANNED_LITERALS:
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned literal {needle!r}")
+
+
+def verify_digests() -> None:
+    blob = git_show_bytes(PIN_BLOB)
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != EXECUTOR_PY_SHA256:
+        raise SystemExit(
+            f"executor.py pin sha256 mismatch: expected {EXECUTOR_PY_SHA256}, got {digest}"
+        )
+    rs_blob = git_show_bytes("HEAD:rust/crates/repair/src/executor.rs")
+    rs_digest = hashlib.sha256(rs_blob).hexdigest()
+    if rs_digest != EXECUTOR_RS_SHA256:
+        raise SystemExit(
+            f"executor.rs sha256 mismatch: expected {EXECUTOR_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def load_executor_module() -> Any:
+    verify_digests()
+    root = repo_root()
+    py_path = root / "src" / "sesslint" / "repair" / "executor.py"
+    if hashlib.sha256(py_path.read_bytes()).hexdigest() != EXECUTOR_PY_SHA256:
+        raise SystemExit("workspace executor.py does not match pin digest")
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.repair import executor  # noqa: WPS433
+
+    return executor
+
+
+def vector_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def fixture_dir() -> Path:
+    return vector_root() / "fixtures"
+
+
+def rel_vector_path(*parts: str) -> Path:
+    return Path("rust", "parity", "vectors", "repair.executor", *parts)
+
+
+def ensure_fixtures() -> None:
+    root = fixture_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "nonmagic.bin").write_bytes(b"synthetic-nonmagic-rx-p43\n")
+    magic = b"SQLite format 3\x00" + b"\x00" * 8
+    (root / "magic_header.dat").write_bytes(magic)
+  # Directory path for session-not-found vectors.
+    session_dir = root / "session_dir"
+    session_dir.mkdir(exist_ok=True)
+    (session_dir / ".keep").write_bytes(b"")
+    target = root / "session_target.jsonl"
+    target.write_bytes(b'{"schema_version":"sesslint.session/v1"}\n')
+    link = root / "session_link.jsonl"
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    broken = root / "session_broken.jsonl"
+    if broken.exists() or broken.is_symlink():
+        broken.unlink()
+    try:
+        link.symlink_to("session_target.jsonl")
+        broken.symlink_to("session_missing_target.jsonl")
+    except OSError as err:
+        raise SystemExit(f"fixture symlinks required: {err}") from err
+
+
+def portable_message(text: str) -> str:
+    return text.replace("\\", "/")
+
+
+def vemsg(fn: Any, *exceptions: type[BaseException]) -> str:
+    allowed = exceptions or (FileNotFoundError, ValueError, TypeError)
+    try:
+        fn()
+    except allowed as exc:  # type: ignore[misc]
+        return portable_message(str(exc))
+    raise SystemExit("expected controlled exception")
+
+
+def emsg(exc_type: type[BaseException], fn: Any) -> str:
+    try:
+        fn()
+    except exc_type as exc:
+        return str(exc)
+    raise SystemExit(f"expected {exc_type.__name__}")
+
+
+def salvage_plan_dict(executor: Any) -> dict[str, Any]:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+
+    step = PlanStep.from_dict(
+        {
+            "seq": 1,
+            "recipe": "drop-record",
+            "target_finding_fp": "fp",
+            "target_index": 0,
+            "min_policy": "salvage",
+            "recipe_version": "1.0.0",
+            "params": {},
+            "lossy": True,
+            "loss": {"none": 2},
+        }
+    )
+    return {
+        "version": "sesslint.plan/v1",
+        "source_hash": "synthetic-rx-p43-hash",
+        "profile": "neutral",
+        "steps": [step.to_dict()],
+        "blocked": [],
+        "loss_accounting": {"total_lost": 0, "preview": {}},
+        "fingerprint": "abc",
+        "policy": "salvage",
+    }
+
+
+def build_over_cap_plan(executor: Any) -> Any:
+    from sesslint.repair.errors import OutputInvalid  # noqa: WPS433
+    from sesslint.repair.planner import MAX_STEPS, PlanStep, RepairPlan  # noqa: WPS433
+
+    steps = [
+        PlanStep.from_dict(
+            {
+                "seq": index,
+                "recipe": "drop-record",
+                "target_finding_fp": f"fp-{index}",
+                "target_index": 0,
+                "min_policy": "conservative",
+                "recipe_version": "1.0.0",
+                "params": {},
+                "lossy": False,
+                "loss": {},
+            }
+        )
+        for index in range(MAX_STEPS + 1)
+    ]
+    plan = RepairPlan(
+        source_hash="synthetic",
+        profile="neutral",
+        steps=tuple(steps),
+        blocked=(),
+        loss_accounting=__import__("sesslint.repair.planner", fromlist=["Loss"]).Loss(
+            preview={}
+        ),
+        fingerprint="deadbeef",
+        policy="conservative",
+    )
+    message = emsg(
+        OutputInvalid,
+        lambda: executor.execute(
+            source_path=rel_vector_path("fixtures", "nonmagic.bin"),
+            plan=plan,
+            dry_run=True,
+        ),
+    )
+    return message
+
+
+def run_expected(executor: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"names": list(executor.__all__)}
+    if kind == "sqlite_magic":
+        return {"b64": base64.b64encode(executor.SQLITE_MAGIC).decode("ascii")}
+    if kind == "module_private_constants":
+        return {
+            "origin_key": executor._ORIGIN_KEY,
+            "step_index_params": list(executor._STEP_INDEX_PARAMS),
+            "step_index_list_params": list(executor._STEP_INDEX_LIST_PARAMS),
+            "atomic_hook_keys": list(executor._ATOMIC_TEST_HOOKS.keys()),
+        }
+    if kind == "is_live_store_path":
+        if construct.get("fixture"):
+            full = rel_vector_path("fixtures", construct["fixture"])
+        else:
+            full = Path(construct["path"])
+        return {"value": executor.is_live_store_path(full)}
+    if kind == "load_session_not_found":
+        if construct.get("fixture"):
+            path = rel_vector_path("fixtures", construct["fixture"])
+        else:
+            path = Path(construct["path"])
+        return {
+            "message": vemsg(
+                lambda: executor.load_session_source(path),
+                FileNotFoundError,
+            )
+        }
+    if kind == "load_session_with_findings_not_found":
+        if construct.get("fixture"):
+            path = rel_vector_path("fixtures", construct["fixture"])
+        else:
+            path = Path(construct["path"])
+        data = construct.get("data_b64")
+        payload = base64.b64decode(data) if data else None
+        return {
+            "message": vemsg(
+                lambda: executor.load_session_source_with_findings(path, data=payload),
+                FileNotFoundError,
+            )
+        }
+    if kind == "load_session_snapshot_seam":
+        rel = construct["fixture"]
+        disk = fixture_dir() / rel
+        if not disk.is_file():
+            raise SystemExit(f"fixture must be a file for seam vector: {rel}")
+        return {
+            "pin_continues": True,
+            "rust_assertion": {"mode": "snapshot_input_unavailable"},
+        }
+    if kind == "load_source_for_format_gap":
+        rel = construct["fixture"]
+        path = fixture_dir() / rel
+        if not path.is_file():
+            raise SystemExit(f"fixture must exist for gap vector: {rel}")
+        return {
+            "pin_imports_adapters": True,
+            "rust_assertion": {"mode": "is_vendor_format_unavailable"},
+        }
+    if kind == "execute_cap":
+        return {"message": build_over_cap_plan(executor)}
+    if kind == "execute_fingerprint_gap":
+        from sesslint.repair.planner import PlanStep, RepairPlan  # noqa: WPS433
+
+        step = PlanStep.from_dict(
+            {
+                "seq": 0,
+                "recipe": "drop-record",
+                "target_finding_fp": "fp",
+                "target_index": 0,
+                "min_policy": "conservative",
+                "recipe_version": "1.0.0",
+                "params": {},
+                "lossy": False,
+                "loss": {},
+            }
+        )
+        plan = RepairPlan(
+            source_hash="synthetic",
+            profile="neutral",
+            steps=(step,),
+            blocked=(),
+            loss_accounting=__import__(
+                "sesslint.repair.planner", fromlist=["Loss"]
+            ).Loss(preview={}),
+            fingerprint="deadbeef",
+            policy="conservative",
+        )
+        exc_type: type[BaseException]
+        try:
+            executor.execute(
+                source_path=rel_vector_path("fixtures", "nonmagic.bin"),
+                plan=plan,
+                dry_run=True,
+            )
+        except Exception as err:
+            exc_type = type(err)
+        else:
+            raise SystemExit("execute should fail past cap on pin")
+        return {
+            "pin_exception": exc_type.__name__,
+            "rust_assertion": {"mode": "fingerprint_unavailable"},
+        }
+    if kind == "source_positions_duplicate":
+        key = executor._ORIGIN_KEY
+        return {
+            "message": emsg(
+                __import__("sesslint.repair.errors", fromlist=["OutputInvalid"]).OutputInvalid,
+                lambda: executor._source_positions([{key: 1}, {key: 1}]),
+            )
+        }
+    if kind == "relocate_step_removed":
+        from sesslint.repair.planner import PlanStep  # noqa: WPS433
+
+        step = PlanStep.from_dict(
+            {
+                "seq": 7,
+                "recipe": "drop-record",
+                "target_finding_fp": "fp",
+                "target_index": 2,
+                "min_policy": "conservative",
+                "recipe_version": "1.0.0",
+                "params": {},
+                "lossy": False,
+                "loss": {},
+            }
+        )
+        return {
+            "message": emsg(
+                __import__("sesslint.repair.errors", fromlist=["OutputInvalid"]).OutputInvalid,
+                lambda: executor._relocate_step(step, {0: 0, 1: 1}, 3),
+            )
+        }
+    if kind == "load_plan_salvage_policy_mismatch":
+        return {
+            "message": emsg(
+                __import__("sesslint.repair.errors", fromlist=["PolicyMismatch"]).PolicyMismatch,
+                lambda: executor.load_plan(
+                    salvage_plan_dict(executor), policy="conservative"
+                ),
+            )
+        }
+    raise SystemExit(f"unknown construct type {kind!r}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {"id": "module_all_export_order", "construct": {"type": "module_all"}},
+        {"id": "sqlite_magic_bytes", "construct": {"type": "sqlite_magic"}},
+        {
+            "id": "module_private_constants",
+            "construct": {"type": "module_private_constants"},
+        },
+        {
+            "id": "is_live_store_suffix_db",
+            "construct": {"type": "is_live_store_path", "path": "rx-parity-agent.db"},
+        },
+        {
+            "id": "is_live_store_nonmagic_fixture",
+            "construct": {
+                "type": "is_live_store_path",
+                "fixture": "nonmagic.bin",
+            },
+        },
+        {
+            "id": "is_live_store_magic_fixture",
+            "construct": {
+                "type": "is_live_store_path",
+                "fixture": "magic_header.dat",
+            },
+        },
+        {
+            "id": "load_session_missing_path",
+            "construct": {
+                "type": "load_session_not_found",
+                "path": "rx-parity-missing-session.jsonl",
+            },
+        },
+        {
+            "id": "load_session_empty_path",
+            "construct": {"type": "load_session_not_found", "path": ""},
+        },
+        {
+            "id": "load_session_directory_path",
+            "construct": {
+                "type": "load_session_not_found",
+                "fixture": "session_dir",
+            },
+        },
+        {
+            "id": "load_session_broken_symlink",
+            "construct": {
+                "type": "load_session_with_findings_not_found",
+                "fixture": "session_broken.jsonl",
+                "data_b64": "c3ludGhldGljLXJ4LXA0Mw==",
+            },
+        },
+        {
+            "id": "load_session_symlink_file_seam",
+            "construct": {
+                "type": "load_session_snapshot_seam",
+                "fixture": "session_link.jsonl",
+            },
+        },
+        {
+            "id": "load_source_for_format_import_seam",
+            "construct": {
+                "type": "load_source_for_format_gap",
+                "fixture": "session_target.jsonl",
+                "format": None,
+            },
+        },
+        {
+            "id": "execute_cap_257",
+            "construct": {"type": "execute_cap"},
+        },
+        {
+            "id": "execute_fingerprint_import_seam",
+            "construct": {"type": "execute_fingerprint_gap"},
+        },
+        {
+            "id": "source_positions_duplicate_origin",
+            "construct": {"type": "source_positions_duplicate"},
+        },
+        {
+            "id": "relocate_step_removed_target",
+            "construct": {"type": "relocate_step_removed"},
+        },
+        {
+            "id": "load_plan_salvage_under_conservative",
+            "construct": {"type": "load_plan_salvage_policy_mismatch"},
+        },
+    ]
+
+
+def discover_coverage_rows() -> list[dict[str, Any]]:
+    root = repo_root()
+    rows: list[dict[str, Any]] = []
+    vector_ids = {spec["id"] for spec in vector_specs()}
+    col0 = re.compile(r"^def (test_\w+)")
+    indented = re.compile(r"^    def (test_\w+)")
+    for path in sorted(root.glob("tests/**/*.py")):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        mentions_executor = (
+            "sesslint.repair.executor" in text
+            or "repair.executor" in text
+            or re.search(r"from sesslint\.repair import[\s\S]*\bexecute\b", text)
+            is not None
+        )
+        if not mentions_executor:
+            continue
+        lines = text.splitlines()
+        has_col0 = any(col0.match(line) for line in lines)
+        names: list[tuple[str, str]] = []
+        for line in lines:
+            match = col0.match(line)
+            if match:
+                names.append((match.group(1), "column_0"))
+            elif not has_col0 and (match := indented.match(line)):
+                names.append((match.group(1), "indented"))
+        for name, column in names:
+            key = f"{rel}::{name}"
+            vector_id = COVERED_BY_VECTORS.get(key)
+            status = "not_applicable"
+            note = ""
+            if vector_id and vector_id in vector_ids:
+                status = "covered"
+                note = f"vector {vector_id}"
+            rows.append(
+                {
+                    "test": key,
+                    "column": column,
+                    "status": status,
+                    "vector_id": vector_id,
+                    "note": note,
+                }
+            )
+    return rows
+
+
+def main() -> int:
+    ensure_fixtures()
+    executor = load_executor_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        expected = run_expected(executor, spec["construct"])
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": expected,
+            }
+        )
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "executor_py_sha256": EXECUTOR_PY_SHA256,
+        "executor_rs_sha256": EXECUTOR_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    coverage_rows = discover_coverage_rows()
+    covered = sum(1 for row in coverage_rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in coverage_rows if row["status"] == "not_applicable")
+    coverage_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": coverage_rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage_doc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.executor parity (exports, SQLite detection, "
+            "session load prechecks, import-stop seams, and pure helpers)."
+        ),
+        "generator": "rust/parity/vectors/repair.executor/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

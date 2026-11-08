@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.executor parity (exports, SQLite detection, session load prechecks, import-stop seams, and pure helpers).",
+  "generator": "rust/parity/vectors/repair.executor/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-repair-executor-import-stops: execute after the step cap, load_session_source for an existing file, and load_source_for_format import sesslint.adapters.load. Rust stops at compute_plan_fingerprint, snapshot_input, or is_vendor_format seams."
+  ]
+}
