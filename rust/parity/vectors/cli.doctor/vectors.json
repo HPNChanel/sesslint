@@ -1,0 +1,134 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.doctor",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "doctor_py_sha256": "e550b2a8094c4f0d212cf33ea9e0abbc88f77ba9ea4db1c74c663aecae7c7c8d",
+  "doctor_rs_sha256": "5bba8088a44ff8728de3c92e8ca9d6f39be80584abac5d2c1d054dfc5d5e36a7",
+  "known_parity_gaps": [
+    "GAP-cli-doctor-config-error: Python run() starts with `from sesslint.config import ConfigError` before any path check and before `from sesslint.doctor import doctor_report`; Rust run() returns Display `sesslint.config.ConfigError is not available` at that import (no doctor_report, no getattr, no emit_text, no exit 0/2)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "doctor",
+        "help": "[read-only] Environment diagnostics for support reports.",
+        "description": "[read-only] Report what SessLint sees on this machine: tool and adapter versions, resolved config file, agent session roots, bounded quick verdicts. Counts only — never file names.",
+        "arguments": [
+          {
+            "positional": false,
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex",
+              "all"
+            ],
+            "metavar": null,
+            "help": "Restrict diagnostics to one agent (default: all)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--no-quick-checks"
+            ],
+            "dest": "no_quick_checks",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Skip the bounded per-file check pass (counts only)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "human",
+              "json"
+            ],
+            "metavar": null,
+            "help": "Output format (default: human)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit sesslint.doctor/v1 JSON (shortcut for --format json)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "output_format",
+              "json"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

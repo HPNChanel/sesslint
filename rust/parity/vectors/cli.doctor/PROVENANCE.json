@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.doctor configure declarations from pinned src/sesslint/cli/doctor.py (no checkout import). Run vectors omitted where sesslint.config is unavailable in isolated exec.",
+  "generator": "rust/parity/vectors/cli.doctor/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-doctor-config-error: Python run() starts with `from sesslint.config import ConfigError` before any path check and before `from sesslint.doctor import doctor_report`; Rust run() returns Display `sesslint.config.ConfigError is not available` at that import (no doctor_report, no getattr, no emit_text, no exit 0/2)."
+  ]
+}
