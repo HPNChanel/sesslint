@@ -1,0 +1,94 @@
+{
+  "module": "sesslint.repair.writeback",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 4,
+  "not_applicable_count": 11,
+  "rows": [
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_identity_passthrough",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_drops_line_when_all_events_dropped",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_synthesized_event_r1",
+      "status": "covered",
+      "vector_id": "refuses_synthesized_event_r1"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_partial_line_r2",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "adapter produced fewer than two events on the multi-block line at pin"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_rewritten_event_r3",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "Rust hits canonical record-hash on an earlier line before line-level R3"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_source_drift_r4",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "Rust stops at canonical_json_bytes instead of Python record-hash drift R4"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_reorder_r5",
+      "status": "covered",
+      "vector_id": "refuses_reorder_r5"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_single_doc_json_r6",
+      "status": "covered",
+      "vector_id": "refuses_single_doc_json_r6"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_single_jsonl_record_and_interior_cr_are_preserved",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_refuses_unsupported_format_r6",
+      "status": "covered",
+      "vector_id": "refuses_unsupported_format_r6"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_drop_lines_discards_torn_record",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_writeback_keeps_uninterpreted_lines",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_api_repair_vendor_torn_writeback",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "api.repair / api.verify integration outside repair::writeback"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_api_repair_vendor_emit_canonical",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "api.repair / api.verify integration outside repair::writeback"
+    },
+    {
+      "test": "tests/repair/test_writeback.py::test_api_verify_vendor_pair",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "api.repair / api.verify integration outside repair::writeback"
+    }
+  ]
+}

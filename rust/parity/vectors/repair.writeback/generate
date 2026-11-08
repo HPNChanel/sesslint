@@ -1,0 +1,775 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.writeback parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import base64
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+WRITEBACK_PY_SHA256 = (
+    "b03898de0ad01063e56535a345dad5e2a8d9c36988d74560a213b1094f05b31d"
+)
+WRITEBACK_RS_SHA256 = (
+    "5da293060ede3fc4fe2acfdbfa33b75be77da599238acfc402d1beb771f41e79"
+)
+MODULE = "sesslint.repair.writeback"
+HASHLIB_SEAM = "hashlib.sha256 is not available"
+CANONICAL_SEAM = "sesslint._canonical_codec.canonical_json_bytes is not available"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-writeback-hashlib: Python hashes emitted bytes with hashlib.sha256 for "
+    "ProjectionSummary; Rust returns hashlib.sha256 is not available and does not "
+    "construct ProjectionSummary.",
+    "GAP-writeback-canonical-record-hash: When source_record_hash is non-empty and the "
+    "line parses, Python recomputes canonical_bytes and compares; Rust returns "
+    "sesslint._canonical_codec.canonical_json_bytes is not available without hashing.",
+    "GAP-writeback-r4-record-drift: Python R4 after a successful re-parse compares "
+    "recomputed sha256 to stored hash (record hash drift message); Rust does not "
+    "perform that comparison after the canonical seam.",
+    "GAP-writeback-r3-with-record-hash: Python R3 on a later line while earlier lines "
+    "carry source_record_hash; Rust stops at canonical_json_bytes on the first hashed "
+    "line and does not reach line-level R3.",
+    "GAP-writeback-api-integration: tests/repair/test_writeback.py api.repair and "
+    "api.verify paths are outside repair::writeback.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, str]] = {
+    "tests/repair/test_writeback.py::test_writeback_refuses_unsupported_format_r6": (
+        "refuses_unsupported_format_r6"
+    ),
+    "tests/repair/test_writeback.py::test_writeback_refuses_single_doc_json_r6": (
+        "refuses_single_doc_json_r6"
+    ),
+    "tests/repair/test_writeback.py::test_writeback_refuses_synthesized_event_r1": (
+        "refuses_synthesized_event_r1"
+    ),
+    "tests/repair/test_writeback.py::test_writeback_refuses_reorder_r5": (
+        "refuses_reorder_r5"
+    ),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+_BANNED_LITERALS = (
+    b"sesslint-wt-",
+    b"FOR_WORK",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"], cwd=repo_root(), text=True
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"src/sesslint/{tail}.py", f"src/sesslint/{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mods: tuple[str, ...]) -> list[str]:
+    queue = list(root_mods)
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.scan",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.policy",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def verify_writeback_digests() -> None:
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/writeback.py")
+    py_digest = hashlib.sha256(py_blob).hexdigest()
+    if py_digest != WRITEBACK_PY_SHA256:
+        raise SystemExit(
+            f"writeback.py pin sha256 mismatch: expected {WRITEBACK_PY_SHA256}, got {py_digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "writeback.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != WRITEBACK_RS_SHA256:
+        raise SystemExit(
+            f"writeback.rs sha256 mismatch: expected {WRITEBACK_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def load_modules_with_retries(mods: list[str], *, final: str | None = None) -> None:
+    pending = [m for m in mods if m != final]
+    for _ in range(96):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod)
+                progress = True
+            except ModuleNotFoundError:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading pinned modules: {pending[:12]}")
+    if final is not None:
+        load_module(final)
+
+
+def load_pinned_writeback_stack() -> tuple[Any, Any, Any, Any]:
+    verify_writeback_digests()
+    ensure_packages()
+    roots = (
+        "sesslint.adapters.claude_code",
+        "sesslint.adapters.codex_rollout",
+        "sesslint.adapters.openai_agents",
+        "sesslint.adapters.canonical",
+        "sesslint.adapters.detect",
+        "sesslint.repair.writeback",
+    )
+    ordered = closure(roots)
+    claude_mod = "sesslint.adapters.claude_code"
+    detect_mod = "sesslint.adapters.detect"
+    writeback_mod = "sesslint.repair.writeback"
+    defer = {claude_mod, detect_mod, writeback_mod}
+    others = [m for m in ordered if m not in defer]
+    load_modules_with_retries(others)
+    load_module(claude_mod)
+    load_modules_with_retries(
+        [m for m in ordered if m in defer and m != writeback_mod],
+        final=detect_mod,
+    )
+    load_module(writeback_mod)
+    writeback = sys.modules["sesslint.repair.writeback"]
+    claude = sys.modules["sesslint.adapters.claude_code"]
+    canonical = sys.modules["sesslint.canonical"]
+    errors = sys.modules["sesslint.repair.errors"]
+    return writeback, claude, canonical, errors
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in _BANNED_LITERALS:
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned literal {needle!r}")
+
+
+def event_dict(event: Any) -> dict[str, Any]:
+    line = getattr(event, "source_line", None)
+    rh = getattr(event, "source_record_hash", None)
+    if not isinstance(rh, str):
+        rh = None
+    ident_fn = getattr(event, "content_identity_hash", None)
+    identity = str(ident_fn()) if callable(ident_fn) else ""
+    return {
+        "source_line": line,
+        "id": str(getattr(event, "id", "")),
+        "identity": identity,
+        "source_record_hash": rh,
+    }
+
+
+def events_have_nonempty_record_hash(events: list[Any]) -> bool:
+    for ev in events:
+        rh = getattr(ev, "source_record_hash", None)
+        if isinstance(rh, str) and rh:
+            return True
+    return False
+
+
+def b64(data: bytes) -> str:
+    return base64.standard_b64encode(data).decode("ascii")
+
+
+def emit_construct(
+    writeback: Any,
+    errors: Any,
+    *,
+    source: bytes,
+    source_events: list[Any],
+    output_events: list[Any],
+    emit_format: str,
+    drop_lines: list[int] | None = None,
+) -> dict[str, Any]:
+    drops = frozenset(drop_lines or ())
+    try:
+        out, summary = writeback.emit_vendor_bytes(
+            source,
+            source_events,
+            output_events,
+            emit_format,
+            drop_lines=drops,
+        )
+    except errors.VendorProjectionRefused as exc:
+        return {
+            "mode": "comparable",
+            "reason": exc.reason,
+            "message": str(exc),
+            "pin": {"mode": "refusal", "reason": exc.reason},
+        }
+    seam = (
+        CANONICAL_SEAM
+        if events_have_nonempty_record_hash(source_events)
+        else HASHLIB_SEAM
+    )
+    return {
+        "mode": "rust_seam",
+        "seam": seam,
+        "pin": {
+            "mode": "success",
+            "emitted_b64": b64(out),
+            "retained_lines": summary.retained_lines,
+            "dropped_lines": summary.dropped_lines,
+            "emitted_sha256": summary.emitted_sha256,
+            "emit_format": summary.emit_format,
+        },
+    }
+
+
+def basic_fixture(claude: Any) -> tuple[bytes, list[Any]]:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:fixtures/claude_code/basic.jsonl")
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as handle:
+        handle.write(blob)
+        path = Path(handle.name)
+    src = path.read_bytes()
+    events, _ = claude.load_claude_code(path)
+    path.unlink(missing_ok=True)
+    return src, list(events)
+
+
+def mk_event(canonical: Any, eid: str, seq: int, *, source_line: int | None) -> Any:
+    return canonical.SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2026-09-15T00:00:00Z",
+        actor="assistant",
+        kind="message",
+        source_line=source_line,
+    )
+
+
+def build_vectors(writeback: Any, claude: Any, canonical: Any, errors: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    src_basic, events_basic = basic_fixture(claude)
+
+    vectors.append(
+        {
+            "id": "refuses_unsupported_format_r6",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(b"{}\n"),
+                "source_events": [],
+                "output_events": [event_dict(mk_event(canonical, "e1", 0, source_line=1))],
+                "emit_format": "bogus-format",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=b"{}\n",
+                source_events=[],
+                output_events=[mk_event(canonical, "e1", 0, source_line=1)],
+                emit_format="bogus-format",
+            ),
+        }
+    )
+
+    doc_body = json.dumps(
+        {"export_version": "1.0.0", "items": [{"id": "i1"}]}, indent=2
+    ).encode("utf-8")
+    ev = mk_event(canonical, "i1", 0, source_line=4)
+    vectors.append(
+        {
+            "id": "refuses_single_doc_json_r6",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(doc_body),
+                "source_events": [event_dict(ev)],
+                "output_events": [event_dict(ev)],
+                "emit_format": "openai-agents",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=doc_body,
+                source_events=[ev],
+                output_events=[ev],
+                emit_format="openai-agents",
+            ),
+        }
+    )
+
+    synth = mk_event(canonical, "evt_synth", 99, source_line=None)
+    out_r1 = [*events_basic, synth]
+    vectors.append(
+        {
+            "id": "refuses_synthesized_event_r1",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(src_basic),
+                "source_events": [event_dict(e) for e in events_basic],
+                "output_events": [event_dict(e) for e in out_r1],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=src_basic,
+                source_events=events_basic,
+                output_events=out_r1,
+                emit_format="claude-code-jsonl",
+            ),
+        }
+    )
+
+    if len(events_basic) >= 2:
+        reordered = [events_basic[-1], *events_basic[:-1]]
+        vectors.append(
+            {
+                "id": "refuses_reorder_r5",
+                "construct": {
+                    "type": "emit_vendor_bytes",
+                    "source_b64": b64(src_basic),
+                    "source_events": [event_dict(e) for e in events_basic],
+                    "output_events": [event_dict(e) for e in reordered],
+                    "emit_format": "claude-code-jsonl",
+                    "drop_lines": None,
+                },
+                "expected": emit_construct(
+                    writeback,
+                    errors,
+                    source=src_basic,
+                    source_events=events_basic,
+                    output_events=reordered,
+                    emit_format="claude-code-jsonl",
+                ),
+            }
+        )
+
+    line1 = {"id": "m1", "type": "user_message", "message": "hi"}
+    line2 = {
+        "id": "m2",
+        "parentId": "m1",
+        "type": "assistant_message",
+        "message": "yo",
+        "content": [
+            {"type": "tool_use", "id": "call_9", "name": "x", "input": {}},
+            {"type": "tool_use", "id": "call_8", "name": "y", "input": {}},
+        ],
+    }
+    multi_src = (json.dumps(line1) + "\n" + json.dumps(line2) + "\n").encode("utf-8")
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as handle:
+        handle.write(multi_src)
+        multi_path = Path(handle.name)
+    _, multi_events = claude.load_claude_code(multi_path)
+    multi_path.unlink(missing_ok=True)
+    multi_events = list(multi_events)
+    line2_events = [e for e in multi_events if e.source_line == 2]
+    if len(line2_events) >= 2:
+        survivors = [e for e in multi_events if e.source_line == 1] + line2_events[:1]
+        vectors.append(
+            {
+                "id": "refuses_partial_line_r2",
+                "construct": {
+                    "type": "emit_vendor_bytes",
+                    "source_b64": b64(multi_src),
+                    "source_events": [event_dict(e) for e in multi_events],
+                    "output_events": [event_dict(e) for e in survivors],
+                    "emit_format": "claude-code-jsonl",
+                    "drop_lines": None,
+                },
+                "expected": emit_construct(
+                    writeback,
+                    errors,
+                    source=multi_src,
+                    source_events=multi_events,
+                    output_events=survivors,
+                    emit_format="claude-code-jsonl",
+                ),
+            }
+        )
+
+    vectors.append(
+        {
+            "id": "identity_passthrough",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(src_basic),
+                "source_events": [event_dict(e) for e in events_basic],
+                "output_events": [event_dict(e) for e in events_basic],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=src_basic,
+                source_events=events_basic,
+                output_events=events_basic,
+                emit_format="claude-code-jsonl",
+            ),
+        }
+    )
+
+    last_line = events_basic[-1].source_line
+    survivors_drop = events_basic[:-1]
+    vectors.append(
+        {
+            "id": "drops_line_when_all_events_dropped",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(src_basic),
+                "source_events": [event_dict(e) for e in events_basic],
+                "output_events": [event_dict(e) for e in survivors_drop],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=src_basic,
+                source_events=events_basic,
+                output_events=survivors_drop,
+                emit_format="claude-code-jsonl",
+            ),
+        }
+    )
+
+    prefix_variants: list[dict[str, Any]] = []
+    for prefix in (b"{", b"{\r"):
+        data = prefix + b'"type":"user","uuid":"one","message":{"role":"user","content":"x"}}\n'
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as handle:
+            handle.write(data)
+            one_path = Path(handle.name)
+        _, one_events = claude.load_claude_code(one_path)
+        one_path.unlink(missing_ok=True)
+        one_events = list(one_events)
+        prefix_variants.append(
+            {
+                "source_b64": b64(data),
+                "source_events": [event_dict(e) for e in one_events],
+                "output_events": [event_dict(e) for e in one_events],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": None,
+                "expected": emit_construct(
+                    writeback,
+                    errors,
+                    source=data,
+                    source_events=one_events,
+                    output_events=one_events,
+                    emit_format="claude-code-jsonl",
+                ),
+            }
+        )
+    vectors.append(
+        {
+            "id": "preserves_interior_cr_parametrize",
+            "construct": {
+                "type": "emit_vendor_bytes_parametrize",
+                "variants": prefix_variants,
+            },
+            "expected": {"mode": "parametrize"},
+        }
+    )
+
+    torn_tail = b'{"id":"msg_03","type":"assistant_messa'
+    torn_src = src_basic + torn_tail
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as handle:
+        handle.write(torn_src)
+        torn_path = Path(handle.name)
+    torn_events, findings = claude.load_claude_code(torn_path)
+    torn_path.unlink(missing_ok=True)
+    torn_events = list(torn_events)
+    torn_line = max(
+        f.source.line for f in findings if f.code == "SL002" and f.source.line
+    )
+    vectors.append(
+        {
+            "id": "drop_lines_discards_torn_record",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(torn_src),
+                "source_events": [event_dict(e) for e in torn_events],
+                "output_events": [event_dict(e) for e in torn_events],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": [torn_line],
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=torn_src,
+                source_events=torn_events,
+                output_events=torn_events,
+                emit_format="claude-code-jsonl",
+                drop_lines=[torn_line],
+            ),
+        }
+    )
+
+    padded = src_basic + b"\n"
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as handle:
+        handle.write(padded)
+        pad_path = Path(handle.name)
+    pad_events, _ = claude.load_claude_code(pad_path)
+    pad_path.unlink(missing_ok=True)
+    pad_events = list(pad_events)
+    vectors.append(
+        {
+            "id": "keeps_uninterpreted_lines",
+            "construct": {
+                "type": "emit_vendor_bytes",
+                "source_b64": b64(padded),
+                "source_events": [event_dict(e) for e in pad_events],
+                "output_events": [event_dict(e) for e in pad_events],
+                "emit_format": "claude-code-jsonl",
+                "drop_lines": None,
+            },
+            "expected": emit_construct(
+                writeback,
+                errors,
+                source=padded,
+                source_events=pad_events,
+                output_events=pad_events,
+                emit_format="claude-code-jsonl",
+            ),
+        }
+    )
+
+    return vectors
+
+
+def discover_coverage_rows(vector_ids: set[str]) -> list[dict[str, Any]]:
+    tests = [
+        "tests/repair/test_writeback.py::test_writeback_identity_passthrough",
+        "tests/repair/test_writeback.py::test_writeback_drops_line_when_all_events_dropped",
+        "tests/repair/test_writeback.py::test_writeback_refuses_synthesized_event_r1",
+        "tests/repair/test_writeback.py::test_writeback_refuses_partial_line_r2",
+        "tests/repair/test_writeback.py::test_writeback_refuses_rewritten_event_r3",
+        "tests/repair/test_writeback.py::test_writeback_refuses_source_drift_r4",
+        "tests/repair/test_writeback.py::test_writeback_refuses_reorder_r5",
+        "tests/repair/test_writeback.py::test_writeback_refuses_single_doc_json_r6",
+        "tests/repair/test_writeback.py::test_single_jsonl_record_and_interior_cr_are_preserved",
+        "tests/repair/test_writeback.py::test_writeback_refuses_unsupported_format_r6",
+        "tests/repair/test_writeback.py::test_writeback_drop_lines_discards_torn_record",
+        "tests/repair/test_writeback.py::test_writeback_keeps_uninterpreted_lines",
+        "tests/repair/test_writeback.py::test_api_repair_vendor_torn_writeback",
+        "tests/repair/test_writeback.py::test_api_repair_vendor_emit_canonical",
+        "tests/repair/test_writeback.py::test_api_verify_vendor_pair",
+    ]
+    rows: list[dict[str, Any]] = []
+    for test in tests:
+        vector_id = COVERED_BY_VECTORS.get(test)
+        if vector_id and vector_id in vector_ids:
+            rows.append(
+                {
+                    "test": test,
+                    "status": "covered",
+                    "vector_id": vector_id,
+                }
+            )
+        elif test.endswith("test_writeback_refuses_partial_line_r2") and (
+            "refuses_partial_line_r2" not in vector_ids
+        ):
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "adapter produced fewer than two events on the multi-block line at pin",
+                }
+            )
+        elif test.endswith("test_writeback_refuses_source_drift_r4"):
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "Rust stops at canonical_json_bytes instead of Python record-hash drift R4",
+                }
+            )
+        elif test.endswith("test_writeback_refuses_rewritten_event_r3"):
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "Rust hits canonical record-hash on an earlier line before line-level R3",
+                }
+            )
+        elif test.endswith(
+            (
+                "test_writeback_identity_passthrough",
+                "test_writeback_drops_line_when_all_events_dropped",
+                "test_single_jsonl_record_and_interior_cr_are_preserved",
+                "test_writeback_drop_lines_discards_torn_record",
+                "test_writeback_keeps_uninterpreted_lines",
+            )
+        ):
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "pin asserts emitted bytes or a sha256 summary; Rust stops at canonical_json_bytes or hashlib.sha256",
+                }
+            )
+        elif "api_" in test:
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "api.repair / api.verify integration outside repair::writeback",
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "test": test,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "no matching vector construct",
+                }
+            )
+    return rows
+
+
+def main() -> int:
+    writeback, claude, canonical, errors = load_pinned_writeback_stack()
+    vectors = build_vectors(writeback, claude, canonical, errors)
+    out_dir = Path(__file__).resolve().parent
+    vector_ids = {item["id"] for item in vectors}
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "writeback_py_sha256": WRITEBACK_PY_SHA256,
+        "writeback_rs_sha256": WRITEBACK_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    coverage_rows = discover_coverage_rows(vector_ids)
+    covered = sum(1 for row in coverage_rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in coverage_rows if row["status"] == "not_applicable")
+    coverage_doc = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": coverage_rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage_doc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"coverage covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
