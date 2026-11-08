@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.bundle configure() and run() path-check fixtures from pinned src/sesslint/cli/bundle.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.bundle/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-bundle-build-bundle: Python run() imports sesslint.api.build_bundle after path checks and may build, warn, and print bundle JSON; Rust run() returns Display `sesslint.api.build_bundle is not available` immediately after evaluating that import name (no stderr, no exit 0, no build_bundle, no atomic_write_text)."
+  ]
+}
