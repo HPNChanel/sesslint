@@ -1,0 +1,9 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.sarif",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "sarif_py_sha256": "4d0486958ccdf9150141f8692c3949c24b7958f42488534d3f61c0be90975b50",
+  "vector_count": 6,
+  "vectors_sha256": "5e1a5f156b362c5458af766f467f2291ad0094889964dbf67cbef94385c7e718",
+  "generator": "rust/parity/vectors/sarif/generate"
+}
