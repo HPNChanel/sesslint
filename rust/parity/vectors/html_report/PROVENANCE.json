@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.html_report parity: healthy render_html shape, offline checks, escape sample, and documented refusal/scan-report gaps.",
+  "generator": "rust/parity/vectors/html_report/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-html-refusal-rationale: render_html with any finding calls get_finding_remediation in Python. Rust stops with sesslint.repair.refusals.refusal_rationale_for is not available and does not return a page.",
+    "GAP-html-scan-report: scan_report_html takes a sesslint.scan.ScanReport in Python. Rust stops with sesslint.scan.ScanReport is not available before any HTML is built."
+  ]
+}

@@ -1,0 +1,320 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.html_report",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "html_report_py_sha256": "bcbeebf86e1f1f62ccdcd2511508725dde5299c737158012a9598602be374abb",
+  "html_report_rs_sha256": "a81efa04e2d76f74157d308a996161bdf77fd0090dcb307e1a63853d8e6083fb",
+  "known_parity_gaps": [
+    "GAP-html-refusal-rationale: render_html with any finding calls get_finding_remediation in Python. Rust stops with sesslint.repair.refusals.refusal_rationale_for is not available and does not return a page.",
+    "GAP-html-scan-report: scan_report_html takes a sesslint.scan.ScanReport in Python. Rust stops with sesslint.scan.ScanReport is not available before any HTML is built."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "MAX_ROWS",
+          "render_html",
+          "scan_report_html"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "max_rows": 500
+      }
+    },
+    {
+      "id": "html_document_shape",
+      "construct": {
+        "type": "render_html",
+        "report_kind": "test_html_document_shape",
+        "session_id": "sess_html",
+        "source_fingerprint": "fp_html_123",
+        "tool_version": "0.2.0",
+        "assurance": "A3",
+        "limitation": "Graph invariants validated.",
+        "adapter": "canonical",
+        "profile": "neutral",
+        "coverage": {
+          "performed": [
+            "SL001",
+            "SL002",
+            "SL003",
+            "SL004",
+            "SL005",
+            "SL006",
+            "SL007",
+            "SL008",
+            "SL009",
+            "SL010",
+            "SL011",
+            "SL101",
+            "SL102",
+            "SL103",
+            "SL104",
+            "SL105",
+            "SL106",
+            "SL107",
+            "SL108",
+            "SL201",
+            "SL202",
+            "SL203",
+            "SL204",
+            "SL205",
+            "SL206",
+            "SL207",
+            "SL208",
+            "SL301",
+            "SL302",
+            "SL303",
+            "SL304",
+            "SL305",
+            "SL306",
+            "SL401",
+            "SL402"
+          ],
+          "skipped": []
+        }
+      },
+      "expected": {
+        "html": "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>SessLint report</title>\n<style>body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#f3f4f6;color:#111827}.wrap{max-width:960px;margin:0 auto;padding:24px}.banner{border-radius:8px;padding:16px 20px;color:#fff;font-weight:600;font-size:18px}.ok{background:#047857}.warn{background:#b45309}.err{background:#b91c1c}.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-top:16px}h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}th{color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.meta{color:#6b7280;font-size:12px;margin-top:4px}.tag{display:inline-block;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600}.t-healthy{background:#d1fae5;color:#065f46}.t-invalid,.t-unreadable{background:#fee2e2;color:#991b1b}.t-unsupported{background:#fef3c7;color:#92400e}.t-skipped{background:#e5e7eb;color:#374151}.sev-error,.sev-fatal{color:#b91c1c;font-weight:600}.sev-warning{color:#b45309;font-weight:600}.sev-info{color:#1d4ed8}.mono{font-family:ui-monospace,monospace;font-size:12px}</style>\n</head>\n<body>\n<div class=\"wrap\">\n<div class=\"banner ok\">Session is healthy</div>\n<div class=\"meta\">0 errors, 0 warnings - sesslint 0.2.0</div>\n<div class=\"card\"><h2>Summary</h2><table><tr><th>Field</th><th>Value</th></tr><tr><td>Session</td><td class=\"mono\">sess_html</td></tr><tr><td>Assurance</td><td>A3</td></tr><tr><td>Limitation</td><td>Graph invariants validated.</td></tr><tr><td>Source fingerprint</td><td class=\"mono\">fp_html_123</td></tr><tr><td>Adapter</td><td>canonical</td></tr><tr><td>Profile</td><td>neutral</td></tr><tr><td>Checks performed</td><td>SL001, SL002, SL003, SL004, SL005, SL006, SL007, SL008, SL009, SL010, SL011, SL101, SL102, SL103, SL104, SL105, SL106, SL107, SL108, SL201, SL202, SL203, SL204, SL205, SL206, SL207, SL208, SL301, SL302, SL303, SL304, SL305, SL306, SL401, SL402</td></tr><tr><td>Checks skipped</td><td>none</td></tr></table></div>\n\n</div>\n</body>\n</html>\n",
+        "must_contain": [
+          "<!DOCTYPE html>",
+          "<html lang=\"es\">",
+          "<style>",
+          "</html>",
+          "Session is healthy",
+          "sess_html",
+          "0.2.0"
+        ]
+      }
+    },
+    {
+      "id": "render_html_deterministic_empty",
+      "construct": {
+        "type": "render_html",
+        "report_kind": "deterministic_empty",
+        "session_id": "sess_html",
+        "source_fingerprint": "fp_html_123",
+        "tool_version": "0.2.0",
+        "assurance": "A3",
+        "limitation": "Graph invariants validated.",
+        "adapter": "canonical",
+        "profile": "neutral",
+        "coverage": {
+          "performed": [
+            "SL001",
+            "SL002",
+            "SL003",
+            "SL004",
+            "SL005",
+            "SL006",
+            "SL007",
+            "SL008",
+            "SL009",
+            "SL010",
+            "SL011",
+            "SL101",
+            "SL102",
+            "SL103",
+            "SL104",
+            "SL105",
+            "SL106",
+            "SL107",
+            "SL108",
+            "SL201",
+            "SL202",
+            "SL203",
+            "SL204",
+            "SL205",
+            "SL206",
+            "SL207",
+            "SL208",
+            "SL301",
+            "SL302",
+            "SL303",
+            "SL304",
+            "SL305",
+            "SL306",
+            "SL401",
+            "SL402"
+          ],
+          "skipped": []
+        }
+      },
+      "expected": {
+        "pin_equal": true
+      }
+    },
+    {
+      "id": "render_html_offline_healthy",
+      "construct": {
+        "type": "render_html",
+        "report_kind": "offline_healthy",
+        "session_id": "sess_html",
+        "source_fingerprint": "fp_html_123",
+        "tool_version": "0.2.0",
+        "assurance": "A3",
+        "limitation": "Graph invariants validated.",
+        "adapter": "canonical",
+        "profile": "neutral",
+        "coverage": {
+          "performed": [
+            "SL001",
+            "SL002",
+            "SL003",
+            "SL004",
+            "SL005",
+            "SL006",
+            "SL007",
+            "SL008",
+            "SL009",
+            "SL010",
+            "SL011",
+            "SL101",
+            "SL102",
+            "SL103",
+            "SL104",
+            "SL105",
+            "SL106",
+            "SL107",
+            "SL108",
+            "SL201",
+            "SL202",
+            "SL203",
+            "SL204",
+            "SL205",
+            "SL206",
+            "SL207",
+            "SL208",
+            "SL301",
+            "SL302",
+            "SL303",
+            "SL304",
+            "SL305",
+            "SL306",
+            "SL401",
+            "SL402"
+          ],
+          "skipped": []
+        }
+      },
+      "expected": {
+        "offline": {
+          "no_script": true,
+          "no_http": true,
+          "no_https": true,
+          "no_url_paren": true,
+          "no_src_eq": true,
+          "no_import": true
+        }
+      }
+    },
+    {
+      "id": "render_html_with_finding_gap",
+      "construct": {
+        "type": "render_html",
+        "report_kind": "one_warning",
+        "session_id": "sess_html",
+        "source_fingerprint": "fp_html_123",
+        "tool_version": "0.2.0",
+        "assurance": "A3",
+        "limitation": "Graph invariants validated.",
+        "adapter": "canonical",
+        "profile": "neutral",
+        "coverage": {
+          "performed": [
+            "SL001",
+            "SL002",
+            "SL003",
+            "SL004",
+            "SL005",
+            "SL006",
+            "SL007",
+            "SL008",
+            "SL009",
+            "SL010",
+            "SL011",
+            "SL101",
+            "SL102",
+            "SL103",
+            "SL104",
+            "SL105",
+            "SL106",
+            "SL107",
+            "SL108",
+            "SL201",
+            "SL202",
+            "SL203",
+            "SL204",
+            "SL205",
+            "SL206",
+            "SL207",
+            "SL208",
+            "SL301",
+            "SL302",
+            "SL303",
+            "SL304",
+            "SL305",
+            "SL306",
+            "SL401",
+            "SL402"
+          ],
+          "skipped": []
+        },
+        "finding_count": 1
+      },
+      "expected": {
+        "pin": {
+          "banner_class": "warn",
+          "html_bytes_len": 2806
+        },
+        "rust_assertion": {
+          "mode": "gap_refusal_rationale"
+        }
+      }
+    },
+    {
+      "id": "scan_report_html_gap",
+      "construct": {
+        "type": "scan_report_html",
+        "tool_version": "0.2.0",
+        "root_path": ".._abc123/dir"
+      },
+      "expected": {
+        "pin": {
+          "starts_with": "<!DOCTYPE html>\n<html lang=\"es\">",
+          "offline": {
+            "no_script": true,
+            "no_http": true,
+            "no_https": true,
+            "no_url_paren": true,
+            "no_src_eq": true,
+            "no_import": true
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_scan_report"
+        }
+      }
+    },
+    {
+      "id": "html_esc_sample",
+      "construct": {
+        "type": "html_escape",
+        "value": "<b>&"
+      },
+      "expected": {
+        "escaped": "&lt;b&gt;&amp;"
+      }
+    }
+  ]
+}
