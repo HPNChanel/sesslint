@@ -19,12 +19,24 @@
 //! `sesslint.report.minimize_path` before a dictionary or text exists.
 //! [`SessionDiff::to_json`] calls [`SessionDiff::to_dict`] first.
 //! [`SessionDiff::identical`] and [`SessionDiff::counts`] do not.
+//!
+//! Lines 318–408 append [`_load_side`], [`diff_sessions`],
+//! [`get_diff_schema_path`], and [`load_diff_schema`]. [`diff_sessions`]
+//! checks path A and then path B before [`_load_side`]. A missing path is
+//! `FileNotFoundError`. A directory, including a symlink to a directory, is
+//! [`DiffInputError`]. Once both paths are files, [`_load_side`] stops on
+//! `sesslint.adapters.detect.resolve_format` and returns no [`SessionDiff`].
+//! It does not call `minimize_path`, `load_events_for_format`, [`diff_events`],
+//! or `CLI_VERSION`. The schema helpers stop on
+//! `sesslint._resources.schema_path` and do not build a `schemas/` path.
+//! Empty [`diff_events`] still does not hash, and the report methods still
+//! stop on `minimize_path`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use codec::canonical_codec::CanonicalError;
 
@@ -51,7 +63,8 @@ type FallbackKey = (String, String, String);
 
 /// Structured input failure for diff (detection or load), exit code 2.
 ///
-/// This slice does not return it.
+/// [`diff_sessions`] returns this when an input is a directory, including a
+/// symlink to a directory. Alignment does not return it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiffInputError {
     message: String,
@@ -584,6 +597,169 @@ fn detail(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .copied()
         .map(|(key, value)| (key.to_owned(), value.to_owned()))
         .collect()
+}
+
+/// Display text when `sesslint.adapters.detect.resolve_format` cannot be called.
+pub const RESOLVE_FORMAT_UNAVAILABLE: &str =
+    "sesslint.adapters.detect.resolve_format is not available";
+
+/// `sesslint.adapters.detect.resolve_format` is not linked from this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResolveFormatUnavailable;
+
+impl fmt::Display for ResolveFormatUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(RESOLVE_FORMAT_UNAVAILABLE)
+    }
+}
+
+impl Error for ResolveFormatUnavailable {}
+
+/// Display text when `sesslint._resources.schema_path` cannot be imported.
+pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+
+/// `sesslint._resources.schema_path` is not linked from this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SchemaPathUnavailable;
+
+impl fmt::Display for SchemaPathUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(SCHEMA_PATH_UNAVAILABLE)
+    }
+}
+
+impl Error for SchemaPathUnavailable {}
+
+/// Failure from [`diff_sessions`].
+///
+/// A missing path uses the pin's `FileNotFoundError` sentence. A directory uses
+/// [`DiffInputError`]. A file pair uses the [`ResolveFormatUnavailable`] sentence.
+/// Display text does not include the Python exception type name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffSessionsError {
+    /// Python `FileNotFoundError`: `Path not found: {path}`.
+    PathNotFound(String),
+    /// Python `DiffInputError` for a directory, including a symlink to one.
+    Input(DiffInputError),
+    /// `sesslint.adapters.detect.resolve_format` is not linked.
+    ResolveFormat(ResolveFormatUnavailable),
+}
+
+impl fmt::Display for DiffSessionsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PathNotFound(path) => write!(formatter, "Path not found: {path}"),
+            Self::Input(error) => fmt::Display::fmt(error, formatter),
+            Self::ResolveFormat(error) => fmt::Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl Error for DiffSessionsError {}
+
+impl From<ResolveFormatUnavailable> for DiffSessionsError {
+    fn from(error: ResolveFormatUnavailable) -> Self {
+        Self::ResolveFormat(error)
+    }
+}
+
+/// Python `_load_side`.
+///
+/// The first call is `sesslint.adapters.detect.resolve_format`. That function
+/// is not linked, so this returns [`ResolveFormatUnavailable`]. It does not
+/// stat `path`, call `minimize_path` or `load_events_for_format`, or invent a
+/// format string. [`diff_sessions`] checks both paths before this runs.
+///
+/// # Errors
+///
+/// Always [`ResolveFormatUnavailable`]. Success is [`Infallible`].
+pub fn _load_side(
+    path: &Path,
+    explicit_format: Option<&str>,
+) -> Result<Infallible, ResolveFormatUnavailable> {
+    let _ = (path, explicit_format);
+    Err(ResolveFormatUnavailable)
+}
+
+/// Python `diff_sessions`.
+///
+/// `format_a` and `format_b` are Python `None` when the caller omitted them.
+/// Path A is checked, then path B, before [`_load_side`]. `exists` and
+/// `is_dir` follow symlinks, matching pathlib. A missing path, including a
+/// broken symlink, is `FileNotFoundError`. A directory, including a symlink
+/// to a directory, is [`DiffInputError`].
+///
+/// Once both paths are files, [`_load_side`] stops on `resolve_format`. This
+/// does not call `minimize_path`, `load_events_for_format`, [`diff_events`],
+/// or `CLI_VERSION`. It does not invent a format and does not build a
+/// [`SessionDiff`]. `format_b` is not read: the load of path A stops first.
+///
+/// # Errors
+///
+/// [`DiffSessionsError::PathNotFound`], [`DiffSessionsError::Input`], or
+/// [`DiffSessionsError::ResolveFormat`]. Success is [`Infallible`].
+pub fn diff_sessions(
+    a: impl AsRef<Path>,
+    b: impl AsRef<Path>,
+    format_a: Option<&str>,
+    format_b: Option<&str>,
+) -> Result<Infallible, DiffSessionsError> {
+    let path_a = a.as_ref();
+    let path_b = b.as_ref();
+    for path in [path_a, path_b] {
+        require_diff_file(path)?;
+    }
+    let _ = format_b;
+    let loaded = _load_side(path_a, format_a)?;
+    match loaded {}
+}
+
+/// Python `get_diff_schema_path`.
+///
+/// The first statement imports `sesslint._resources.schema_path`. That
+/// function is not linked. This does not build a `schemas/` path and does
+/// not read a schema file.
+///
+/// # Errors
+///
+/// Always [`SchemaPathUnavailable`].
+pub fn get_diff_schema_path() -> Result<PathBuf, SchemaPathUnavailable> {
+    Err(SchemaPathUnavailable)
+}
+
+/// Python `load_diff_schema`.
+///
+/// Calls [`get_diff_schema_path`] before any file check. The resource import
+/// fails there, so this returns that same error. This does not read a schema
+/// file and does not parse JSON.
+///
+/// # Errors
+///
+/// Always [`SchemaPathUnavailable`]. Success is [`Infallible`].
+pub fn load_diff_schema() -> Result<Infallible, SchemaPathUnavailable> {
+    let _schema_path = get_diff_schema_path()?;
+    Err(SchemaPathUnavailable)
+}
+
+/// `Path.exists` then `Path.is_dir`, both following symlinks.
+///
+/// A missing path, including a broken symlink, is `FileNotFoundError`.
+/// A directory, including a symlink to a directory, is [`DiffInputError`].
+fn require_diff_file(path: &Path) -> Result<(), DiffSessionsError> {
+    if !path.exists() {
+        return Err(DiffSessionsError::PathNotFound(path_text(path)));
+    }
+    if path.is_dir() {
+        let shown = path_text(path);
+        return Err(DiffSessionsError::Input(DiffInputError::new(format!(
+            "Diff input must be a file, not a directory: {shown}"
+        ))));
+    }
+    Ok(())
+}
+
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
@@ -1266,5 +1442,387 @@ mod tests {
         assert_eq!(displayed, "sesslint.report.minimize_path is not available");
         let as_error: &dyn Error = &error;
         assert_eq!(as_error.to_string(), displayed);
+    }
+}
+
+#[cfg(test)]
+mod session_load {
+    use std::error::Error;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        _load_side, diff_events, diff_sessions, get_diff_schema_path, load_diff_schema, path_text,
+        DiffEvent, DiffInputError, DiffSessionsError, ResolveFormatUnavailable,
+        SchemaPathUnavailable, SessionDiff, MINIMIZE_PATH_UNAVAILABLE, RESOLVE_FORMAT_UNAVAILABLE,
+        SCHEMA_PATH_UNAVAILABLE,
+    };
+
+    #[test]
+    fn missing_and_directory_paths_stop_before_load() {
+        let tree = TempTree::new("paths");
+        let missing_a = tree.path.join("absent-a.jsonl");
+        let file_b = tree.path.join("file-b.jsonl");
+        fs::write(&file_b, b"MARKER_B\n").unwrap();
+        let missing_first = sessions_err(&missing_a, &file_b, Some("fmt-a"), Some("fmt-b"));
+        assert_eq!(
+            missing_first,
+            DiffSessionsError::PathNotFound(path_text(&missing_a))
+        );
+        assert_eq!(
+            missing_first.to_string(),
+            format!("Path not found: {}", path_text(&missing_a))
+        );
+        assert!(!missing_first.to_string().contains("file-b.jsonl"));
+        assert!(!missing_first.to_string().contains("MARKER_B"));
+        assert!(!missing_first.to_string().contains("fmt-a"));
+        assert!(!missing_first.to_string().contains("resolve_format"));
+        assert_same_display(&missing_first);
+
+        let file_a = tree.path.join("file-a.jsonl");
+        fs::write(&file_a, b"MARKER_A\n").unwrap();
+        let missing_b = tree.path.join("absent-b.jsonl");
+        let missing_second = sessions_err(&file_a, &missing_b, None, Some("fmt-b"));
+        assert_eq!(
+            missing_second,
+            DiffSessionsError::PathNotFound(path_text(&missing_b))
+        );
+        assert_eq!(
+            missing_second.to_string(),
+            format!("Path not found: {}", path_text(&missing_b))
+        );
+        assert!(!missing_second.to_string().contains("MARKER_A"));
+        assert!(!missing_second.to_string().contains("resolve_format"));
+        assert_eq!(fs::read(&file_a).unwrap(), b"MARKER_A\n");
+
+        let dir_a = tree.path.join("dir-a");
+        fs::create_dir(&dir_a).unwrap();
+        fs::write(dir_a.join("child.jsonl"), b"CHILD_MARKER").unwrap();
+        let directory_first = sessions_err(&dir_a, &missing_b, Some("fmt-a"), None);
+        let directory_message = format!(
+            "Diff input must be a file, not a directory: {}",
+            path_text(&dir_a)
+        );
+        assert_eq!(
+            directory_first,
+            DiffSessionsError::Input(DiffInputError::new(directory_message.clone()))
+        );
+        assert_eq!(directory_first.to_string(), directory_message);
+        assert!(directory_first.to_string().contains("dir-a"));
+        assert!(!directory_first.to_string().contains("absent-b"));
+        assert!(!directory_first.to_string().contains("CHILD_MARKER"));
+        assert!(!directory_first.to_string().contains("child.jsonl"));
+        assert!(!directory_first.to_string().contains("resolve_format"));
+        assert_same_display(&directory_first);
+
+        let dir_b = tree.path.join("dir-b");
+        fs::create_dir(&dir_b).unwrap();
+        let directory_second = sessions_err(&file_a, &dir_b, None, None);
+        assert_eq!(
+            directory_second,
+            DiffSessionsError::Input(DiffInputError::new(format!(
+                "Diff input must be a file, not a directory: {}",
+                path_text(&dir_b)
+            )))
+        );
+        assert!(directory_second.to_string().contains("dir-b"));
+        assert!(!directory_second.to_string().contains("file-a.jsonl"));
+        assert!(!directory_second.to_string().contains("resolve_format"));
+
+        let via_dot = tree.path.join("dir-a").join("..").join("absent-dot.jsonl");
+        let dotted = sessions_err(&via_dot, &file_b, None, None);
+        assert_eq!(dotted, DiffSessionsError::PathNotFound(path_text(&via_dot)));
+        assert!(dotted.to_string().contains(".."));
+        assert!(dotted.to_string().contains("absent-dot.jsonl"));
+    }
+
+    #[test]
+    fn symlink_to_a_directory_is_a_directory() {
+        let tree = TempTree::new("links");
+        let target = tree.path.join("target-dir");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("inside.jsonl"), b"INSIDE_MARKER").unwrap();
+        let link = tree.path.join("link-dir");
+        symlink_dir(&target, &link).unwrap_or_else(|err| panic!("symlink dir: {err}"));
+        let file = tree.path.join("real.jsonl");
+        fs::write(&file, b"REAL_MARKER\n").unwrap();
+
+        let linked_dir = sessions_err(&link, &file, Some("fmt-a"), None);
+        assert_eq!(
+            linked_dir,
+            DiffSessionsError::Input(DiffInputError::new(format!(
+                "Diff input must be a file, not a directory: {}",
+                path_text(&link)
+            )))
+        );
+        assert!(linked_dir.to_string().contains("link-dir"));
+        assert!(!linked_dir.to_string().contains("target-dir"));
+        assert!(!linked_dir.to_string().contains("INSIDE_MARKER"));
+        assert!(!linked_dir.to_string().contains("resolve_format"));
+        assert_same_display(&linked_dir);
+
+        let linked_second = sessions_err(&file, &link, None, Some("fmt-b"));
+        assert_eq!(
+            linked_second,
+            DiffSessionsError::Input(DiffInputError::new(format!(
+                "Diff input must be a file, not a directory: {}",
+                path_text(&link)
+            )))
+        );
+        assert!(!linked_second.to_string().contains("REAL_MARKER"));
+
+        let original = tree.path.join("original.jsonl");
+        fs::write(&original, b"ORIGINAL_MARKER\n").unwrap();
+        let file_link = tree.path.join("link-file.jsonl");
+        symlink_file(&original, &file_link).unwrap_or_else(|err| panic!("symlink file: {err}"));
+        let file_pair = sessions_err(&file_link, &file, Some("not-a-format"), Some("other"));
+        assert_eq!(
+            file_pair,
+            DiffSessionsError::ResolveFormat(ResolveFormatUnavailable)
+        );
+        assert_eq!(file_pair.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+        assert!(!file_pair.to_string().contains("ORIGINAL_MARKER"));
+        assert!(!file_pair.to_string().contains("not-a-format"));
+        assert_eq!(fs::read(&original).unwrap(), b"ORIGINAL_MARKER\n");
+
+        let broken = tree.path.join("broken-link.jsonl");
+        symlink_file(&tree.path.join("missing-target.jsonl"), &broken)
+            .unwrap_or_else(|err| panic!("broken symlink: {err}"));
+        let broken_first = sessions_err(&broken, &file, None, None);
+        assert_eq!(
+            broken_first,
+            DiffSessionsError::PathNotFound(path_text(&broken))
+        );
+        assert_eq!(
+            broken_first.to_string(),
+            format!("Path not found: {}", path_text(&broken))
+        );
+        assert!(!broken_first.to_string().contains("resolve_format"));
+
+        let broken_second = sessions_err(&file, &broken, None, None);
+        assert_eq!(
+            broken_second,
+            DiffSessionsError::PathNotFound(path_text(&broken))
+        );
+    }
+
+    #[test]
+    fn two_files_stop_at_resolve_format() {
+        let tree = TempTree::new("files");
+        let file_a = tree.path.join("side-a.jsonl");
+        let file_b = tree.path.join("side-b.jsonl");
+        fs::write(&file_a, b"SECRET_PAYLOAD_XYZ\n").unwrap();
+        fs::write(&file_b, b"").unwrap();
+        let formats = [
+            (None, None),
+            (Some("claude-code-jsonl"), None),
+            (None, Some("codex")),
+            (Some("left-format"), Some("right-format")),
+        ];
+        for (format_a, format_b) in formats {
+            let error = sessions_err(&file_a, &file_b, format_a, format_b);
+            assert_eq!(
+                error,
+                DiffSessionsError::ResolveFormat(ResolveFormatUnavailable)
+            );
+            assert_eq!(
+                error.to_string(),
+                "sesslint.adapters.detect.resolve_format is not available"
+            );
+            assert_eq!(error.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+            assert!(!error.to_string().contains("SECRET_PAYLOAD_XYZ"));
+            assert!(!error.to_string().contains("side-a"));
+            assert!(!error.to_string().contains("side-b"));
+            assert!(!error.to_string().contains("left-format"));
+            assert!(!error.to_string().contains("right-format"));
+            assert!(!error.to_string().contains("claude-code-jsonl"));
+            assert_ne!(error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+            assert_ne!(
+                error.to_string(),
+                "sesslint.canonical.SessionEvent is not available"
+            );
+            assert_ne!(error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+            assert_same_display(&error);
+        }
+        assert_eq!(fs::read(&file_a).unwrap(), b"SECRET_PAYLOAD_XYZ\n");
+        assert_eq!(fs::read(&file_b).unwrap(), b"");
+
+        let same = sessions_err(&file_a, &file_a, None, None);
+        assert_eq!(same.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+    }
+
+    #[test]
+    fn load_side_does_not_stat_or_invent_a_format() {
+        let tree = TempTree::new("load");
+        let missing = tree.path.join("absent.jsonl");
+        let directory = tree.path.join("dir-load");
+        fs::create_dir(&directory).unwrap();
+        let file = tree.path.join("file-load.jsonl");
+        fs::write(&file, b"LOAD_MARKER\n").unwrap();
+
+        for (path, format) in [
+            (missing.as_path(), None),
+            (directory.as_path(), Some("claude-code-jsonl")),
+            (file.as_path(), Some("")),
+        ] {
+            let error = _load_side(path, format).unwrap_err();
+            assert_eq!(error, ResolveFormatUnavailable);
+            assert_eq!(error.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+            assert_eq!(
+                error.to_string(),
+                "sesslint.adapters.detect.resolve_format is not available"
+            );
+            assert!(!error.to_string().contains("LOAD_MARKER"));
+            assert!(!error.to_string().contains("claude-code"));
+            assert!(!error.to_string().contains("absent.jsonl"));
+            let as_error: &dyn Error = &error;
+            assert_eq!(as_error.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+            assert!(as_error.source().is_none());
+        }
+
+        let from_sessions = sessions_err(&file, &file, Some("synthetic"), None);
+        assert_eq!(
+            from_sessions.to_string(),
+            _load_side(&file, Some("synthetic"))
+                .unwrap_err()
+                .to_string()
+        );
+        assert!(directory.is_dir());
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn schema_helpers_stop_on_schema_path() {
+        let path_error = get_diff_schema_path().unwrap_err();
+        assert_eq!(path_error, SchemaPathUnavailable);
+        assert_eq!(path_error.to_string(), SCHEMA_PATH_UNAVAILABLE);
+        assert_eq!(
+            path_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(!path_error.to_string().contains("schemas"));
+        assert!(!path_error.to_string().contains(".json"));
+        assert!(!path_error.to_string().contains("Diff schema not found"));
+        let as_error: &dyn Error = &path_error;
+        assert!(as_error.source().is_none());
+        assert_ne!(path_error.to_string(), RESOLVE_FORMAT_UNAVAILABLE);
+
+        let load_error = match load_diff_schema() {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(load_error, path_error);
+        assert_eq!(
+            load_error.to_string(),
+            "sesslint._resources.schema_path is not available"
+        );
+        assert!(std::error::Error::source(&load_error).is_none());
+    }
+
+    #[test]
+    fn part_one_hash_and_report_seams_remain() {
+        let empty = diff_events(&[], &[]).expect("empty sequences do not hash");
+        assert!(empty.is_empty());
+
+        let hashed = diff_events(
+            &[DiffEvent {
+                id: "e0".to_owned(),
+                kind: "span".to_owned(),
+                parent_id: None,
+            }],
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(
+            hashed.to_string(),
+            "sesslint.canonical.SessionEvent is not available"
+        );
+
+        let report = SessionDiff {
+            a_path: "a.jsonl".to_owned(),
+            b_path: "b.jsonl".to_owned(),
+            a_format: "synthetic".to_owned(),
+            b_format: "synthetic".to_owned(),
+            a_event_count: 0,
+            b_event_count: 0,
+            tool_version: "0".to_owned(),
+            deltas: Vec::new(),
+        };
+        assert!(report.identical());
+        assert_eq!(report.counts()[0], ("added", 0));
+        let dict_error = report.to_dict(None).unwrap_err();
+        assert_eq!(dict_error.to_string(), MINIMIZE_PATH_UNAVAILABLE);
+        assert_eq!(
+            dict_error.to_string(),
+            "sesslint.report.minimize_path is not available"
+        );
+        assert_eq!(
+            report.to_json(None).unwrap_err().to_string(),
+            dict_error.to_string()
+        );
+        assert_eq!(
+            report.render_human(None).unwrap_err().to_string(),
+            dict_error.to_string()
+        );
+    }
+
+    fn sessions_err(
+        a: &Path,
+        b: &Path,
+        format_a: Option<&str>,
+        format_b: Option<&str>,
+    ) -> DiffSessionsError {
+        match diff_sessions(a, b, format_a, format_b) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        }
+    }
+
+    fn assert_same_display(error: &DiffSessionsError) {
+        let as_error: &dyn Error = error;
+        assert_eq!(as_error.to_string(), error.to_string());
+        assert!(as_error.source().is_none());
+    }
+
+    struct TempTree {
+        path: PathBuf,
+    }
+
+    impl TempTree {
+        fn new(label: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("sesslint-diff-{label}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    fn symlink_file(original: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
     }
 }
