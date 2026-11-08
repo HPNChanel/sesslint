@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.diff parity: constants, delta rendering, path gates, import seams, and empty diff_events.",
+  "generator": "rust/parity/vectors/diff/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-diff-minimize-path: SessionDiff.to_dict, to_json, and render_human import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available.",
+    "GAP-diff-resolve-format: diff_sessions and _load_side call sesslint.adapters.detect.resolve_format once both paths are files; Rust returns sesslint.adapters.detect.resolve_format is not available and builds no SessionDiff.",
+    "GAP-diff-content-hash: diff_events with any event calls SessionEvent.content_identity_hash; Rust returns sesslint.canonical.SessionEvent is not available and discards partial deltas.",
+    "GAP-diff-schema-path: get_diff_schema_path and load_diff_schema import sesslint._resources.schema_path; Rust returns sesslint._resources.schema_path is not available.",
+    "GAP-diff-cli-integration: CLI main tests and full diff_sessions success paths are not byte-compared here."
+  ]
+}
