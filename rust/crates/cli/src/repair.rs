@@ -1,13 +1,31 @@
 //! The ``sesslint repair`` subcommand.
 //!
-//! Port of `src/sesslint/cli/repair.py` lines 1-165
+//! Port of `src/sesslint/cli/repair.py` lines 1-165 (`configure`) and the
+//! `run` prefix through the three pre-import stops
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
 //! [`configure`] records the pin's argparse declarations in order. It does
 //! not parse argv and it does not construct a process parser. Shared flags
 //! come from the existing `options` helpers, in the pin's call order.
-//! This slice stops at `return sub`. Lines 168-631 stay in the next slice.
+//!
+//! [`run`] starts with the progress-mode selection the pin binds to
+//! `progress_cb`. [`CliContext::progress_callback`] takes `self` by value,
+//! moves stderr, and accepts `&CliArgs`, so it is not called. The selected
+//! mode is unused. Later [`CliContext::error`] writes still go to stderr.
+//!
+//! Checks the pin runs before each import are implemented. Batch mode stops
+//! at `sesslint.batch.BatchRepairReport`. Stdin stops at
+//! `sesslint.io.DEFAULT_MAX_FILE_BYTES`. An existing file stops at
+//! `sesslint.adapters.detect.VALID_FORMAT_OPTIONS`. Nothing after those
+//! imports is ported.
 
+use std::error::Error;
+use std::fmt;
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Component, Path, PathBuf, PrefixComponent};
+
+use crate::context::{CliContext, Setting};
 use crate::options::{
     add_adapter_option, add_config_option, add_policy_option, add_profile_option,
     add_progress_json_option, add_seal_args, ArgAction, ArgumentDecl, OptionParser,
@@ -509,6 +527,548 @@ impl Decl {
     }
 }
 
+/// Pin exit 2.
+///
+/// The code is 2. This type is not constructed with 0 or 1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UsageExit {
+    code: i32,
+}
+
+impl UsageExit {
+    const fn usage() -> Self {
+        Self { code: USAGE_CODE }
+    }
+
+    pub const fn code(self) -> i32 {
+        self.code
+    }
+}
+
+const USAGE_CODE: i32 = 2;
+
+/// Pin `ctx.progress_callback(args)`, the first statement of `run`.
+///
+/// [`run`] does not call [`CliContext::progress_callback`].
+pub const PROGRESS_CALLBACK_STMT: &str = "ctx.progress_callback(args)";
+
+/// `Error: --apply-plan is authoritative...` prefix, including the trailing space.
+pub const PLAN_OVERRIDE_PREFIX: &str =
+    "Error: --apply-plan is authoritative for the exported plan; remove override(s): ";
+
+/// Pin text when `--plan-out` is combined with `--apply-plan`.
+pub const PLAN_OUT_WITH_APPLY: &str = concat!(
+    "Error: --plan-out cannot be combined with --apply-plan ",
+    "(no plan is recomputed to export).",
+);
+
+/// `Error: --preview writes nothing...` prefix, including the trailing space.
+pub const PREVIEW_PREFIX: &str = "Error: --preview writes nothing; incompatible with ";
+
+/// Pin text when `-` is combined with other batch inputs.
+pub const STDIN_WITH_INPUTS: &str =
+    "Error: '-' (stdin) cannot be combined with other repair inputs.";
+
+/// Pin text when `--seal` is used in a batch mode.
+pub const SEAL_BATCH: &str = concat!(
+    "Error: --seal applies to single-file repair only ",
+    "(batch modes produce no single subject artifact).",
+);
+
+/// Pin text when `--output` is used in a batch mode.
+pub const OUTPUT_BATCH: &str =
+    "Error: --output applies to single-file repair; batch modes use --output-dir.";
+
+/// Pin text when `--apply-plan` or `--plan-out` is used in a batch mode.
+pub const PLAN_BATCH: &str = concat!(
+    "Error: --apply-plan/--plan-out are single-file options; ",
+    "batch computes plans internally per file.",
+);
+
+/// Pin text when batch mode has no `--output-dir`.
+pub const OUTPUT_DIR_REQUIRED: &str = "Error: batch repair requires --output-dir.";
+
+/// Pin text when single-file repair has no source path.
+pub const SOURCE_REQUIRED: &str = concat!(
+    "Error: repair requires a source path, or batch inputs ",
+    "(multiple paths, directories, or --from-scan with --output-dir).",
+);
+
+/// Pin text when `--seal` is combined with plan-only or `--preview`.
+///
+/// The dash in `repair — incompatible` is U+2014.
+pub const SEAL_INCOMPLETE: &str = concat!(
+    "Error: --seal requires a completed repair \u{2014} incompatible with ",
+    "--dry-run, plan-only export, or --preview (nothing is produced).",
+);
+
+/// Pin text when a writing repair has no `--output`.
+pub const OUTPUT_REQUIRED: &str =
+    "Error: --output is required unless --dry-run, --plan-out, or --preview is specified.";
+
+/// Pin prefix for the single-file directory refusal, including `": "`.
+pub const DIRECTORY_PREFIX: &str =
+    "Error: repair operates on a single session file, not a directory: ";
+
+/// Pin prefix for the missing-file refusal, including `": "`.
+pub const SOURCE_MISSING_PREFIX: &str = "Error: Source file not found: ";
+
+/// Display when `sesslint.batch.BatchRepairReport` cannot be imported.
+pub const BATCH_REPAIR_REPORT_UNAVAILABLE: &str =
+    "sesslint.batch.BatchRepairReport is not available";
+
+/// Display when `sesslint.io.DEFAULT_MAX_FILE_BYTES` cannot be imported.
+pub const DEFAULT_MAX_FILE_BYTES_UNAVAILABLE: &str =
+    "sesslint.io.DEFAULT_MAX_FILE_BYTES is not available";
+
+/// Display when `sesslint.adapters.detect.VALID_FORMAT_OPTIONS` cannot be imported.
+pub const VALID_FORMAT_OPTIONS_UNAVAILABLE: &str =
+    "sesslint.adapters.detect.VALID_FORMAT_OPTIONS is not available";
+
+/// Names the pin looks up, in refusal order. Not settings-vec order.
+const OVERRIDE_NAMES: [(&str, &str); 3] = [
+    ("policy", "--policy"),
+    ("profile", "--profile"),
+    ("adapter", "--adapter"),
+];
+
+/// Import block at the start of batch mode, in pin order.
+///
+/// Index 0 is the name [`run`] stops on. Later names are not called.
+pub const BATCH_IMPORT: [&str; 6] = [
+    "from sesslint.batch import BatchRepairReport",
+    "sesslint.batch.BatchRow",
+    "sesslint.batch.iter_batch_files",
+    "sesslint.batch.repair_many",
+    "sesslint.batch.resolve_scan_report_files",
+    "from sesslint.scan import DEFAULT_MAX_FILES",
+];
+
+/// Statements the stdin branch reaches, in pin order.
+///
+/// Index 0 is the import [`run`] stops on. Later statements are not run.
+pub const STDIN_IMPORT: [&str; 3] = [
+    "from sesslint.io import DEFAULT_MAX_FILE_BYTES",
+    "_read_stdin_bytes",
+    "tempfile.TemporaryDirectory",
+];
+
+/// Pure assignments and the import after an existing file, in pin order.
+///
+/// The four getattr assignments are not applied. Index 4 is the import
+/// [`run`] stops on. `get_profile` stays after that import and is not called.
+pub const AFTER_EXISTING_FILE: [&str; 6] = [
+    "getattr(args, \"policy\", \"conservative\")",
+    "getattr(args, \"profile\", \"neutral\")",
+    "getattr(args, \"acknowledge_side_effects\", False)",
+    "getattr(args, \"adapter\", \"auto\")",
+    "from sesslint.adapters.detect import VALID_FORMAT_OPTIONS",
+    "from sesslint.profiles.profile import get_profile",
+];
+
+/// Progress mode selected by the same flags as [`CliContext::progress_callback`].
+///
+/// [`run`] binds this and does not pass it on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProgressSelection {
+    Ndjson,
+    Silent,
+    Tty,
+}
+
+/// Which late import [`run`] reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoppedImport {
+    /// `sesslint.batch.BatchRepairReport`.
+    BatchRepairReport,
+    /// `sesslint.io.DEFAULT_MAX_FILE_BYTES`.
+    DefaultMaxFileBytes,
+    /// `sesslint.adapters.detect.VALID_FORMAT_OPTIONS`.
+    ValidFormatOptions,
+}
+
+impl fmt::Display for StoppedImport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::BatchRepairReport => BATCH_REPAIR_REPORT_UNAVAILABLE,
+            Self::DefaultMaxFileBytes => DEFAULT_MAX_FILE_BYTES_UNAVAILABLE,
+            Self::ValidFormatOptions => VALID_FORMAT_OPTIONS_UNAVAILABLE,
+        })
+    }
+}
+
+impl Error for StoppedImport {}
+
+/// Stop from [`run`] that is not usage exit 2.
+#[derive(Debug)]
+pub enum RunFailure {
+    /// `ctx.error` could not write.
+    Io(io::Error),
+    /// One of the three imports this slice stops on.
+    Unavailable(StoppedImport),
+}
+
+impl fmt::Display for RunFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(error) => write!(formatter, "{error}"),
+            Self::Unavailable(import) => fmt::Display::fmt(import, formatter),
+        }
+    }
+}
+
+impl Error for RunFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Unavailable(_) => None,
+        }
+    }
+}
+
+impl From<io::Error> for RunFailure {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+/// Attributes [`run`] reads.
+///
+/// Absent `Option` fields are Python `None`. Absent [`Self::emit`] is the
+/// getattr default `"auto"`. [`Self::stderr_isatty`] is not an argparse
+/// attribute. It is the private `CliContext` flag of the same name, copied
+/// here because that field cannot be read without editing `context.rs`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepairArgs {
+    pub progress_json: bool,
+    pub no_progress: bool,
+    /// Same bit [`CliContext::progress_callback`] reads as `stderr_isatty`.
+    pub stderr_isatty: bool,
+    pub path: Vec<PathBuf>,
+    pub output: Option<PathBuf>,
+    pub dry_run: bool,
+    pub preview: bool,
+    pub emit: Option<String>,
+    pub plan: Option<PathBuf>,
+    pub plan_out: Option<PathBuf>,
+    pub from_scan: Option<PathBuf>,
+    pub output_dir: Option<PathBuf>,
+    pub seal: Option<PathBuf>,
+}
+
+/// Stand-in for the `repair` subparser passed to [`run`].
+///
+/// The reached prefix does not format help and does not write.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RepairParser;
+
+/// Python `run(ctx, args, parser)` through the three pre-import stops.
+///
+/// The first statement selects a progress mode from `progress_json`, then
+/// `quiet` or `no_progress`, then `stderr_isatty`. [`CliContext::progress_callback`]
+/// is not called: it takes `self` by value, moves stderr, and accepts
+/// `&CliArgs` rather than [`RepairArgs`]. The mode is unused, so later
+/// [`CliContext::error`] calls still write.
+///
+/// Usage failures return [`UsageExit`] (code 2) before the import they sit
+/// in front of. A passed batch prefix returns [`StoppedImport::BatchRepairReport`]
+/// and does not walk files or read a scan report. Stdin returns
+/// [`StoppedImport::DefaultMaxFileBytes`] and does not read stdin or create
+/// a temp file. An existing file returns [`StoppedImport::ValidFormatOptions`].
+/// Exit 0 and exit 1 are not returned.
+pub fn run<W: Write>(
+    ctx: &mut CliContext<W>,
+    args: &RepairArgs,
+    _parser: &RepairParser,
+) -> Result<UsageExit, RunFailure> {
+    let _progress_cb = select_progress_mode(ctx, args);
+    if let Some(message) = plan_authoritative_error(ctx, args) {
+        return write_usage(ctx, &message);
+    }
+    let batch = is_batch(args);
+    if let Some(message) = preview_error(args, batch) {
+        return write_usage(ctx, &message);
+    }
+    if batch {
+        if let Some(message) = batch_usage_error(args) {
+            return write_usage(ctx, message);
+        }
+        return Err(stop_at(StoppedImport::BatchRepairReport));
+    }
+    single_file(ctx, args)
+}
+
+fn select_progress_mode<W>(ctx: &CliContext<W>, args: &RepairArgs) -> ProgressSelection {
+    if args.progress_json {
+        return ProgressSelection::Ndjson;
+    }
+    if ctx.quiet || args.no_progress {
+        return ProgressSelection::Silent;
+    }
+    if args.stderr_isatty {
+        return ProgressSelection::Tty;
+    }
+    ProgressSelection::Silent
+}
+
+fn plan_authoritative_error<W>(ctx: &CliContext<W>, args: &RepairArgs) -> Option<String> {
+    args.plan.as_ref()?;
+    let mut flags: Vec<&str> = Vec::new();
+    for (name, flag) in OVERRIDE_NAMES {
+        if let Some(setting) = lookup_setting(&ctx.settings, name) {
+            if setting.source == "cli" {
+                flags.push(flag);
+            }
+        }
+    }
+    if !flags.is_empty() {
+        return Some(format!("{PLAN_OVERRIDE_PREFIX}{}", flags.join(", ")));
+    }
+    if args.plan_out.is_some() {
+        return Some(PLAN_OUT_WITH_APPLY.to_owned());
+    }
+    None
+}
+
+fn lookup_setting<'a>(settings: &'a [(String, Setting)], name: &str) -> Option<&'a Setting> {
+    let mut found = None;
+    for (key, setting) in settings {
+        if key == name {
+            found = Some(setting);
+        }
+    }
+    found
+}
+
+fn is_batch(args: &RepairArgs) -> bool {
+    if args.from_scan.is_some() {
+        return true;
+    }
+    let mut targets = 0usize;
+    let mut lone: Option<&Path> = None;
+    for path in &args.path {
+        if is_stdin_marker(path) {
+            continue;
+        }
+        targets += 1;
+        if targets > 1 {
+            return true;
+        }
+        lone = Some(path.as_path());
+    }
+    match lone {
+        Some(path) => followed_is_dir(path),
+        None => false,
+    }
+}
+
+fn preview_error(args: &RepairArgs, batch: bool) -> Option<String> {
+    if !args.preview {
+        return None;
+    }
+    let mut conflicts: Vec<&str> = Vec::new();
+    if args.output.is_some() {
+        conflicts.push("--output");
+    }
+    if args.plan.is_some() {
+        conflicts.push("--apply-plan/--plan");
+    }
+    if args.plan_out.is_some() {
+        conflicts.push("--plan-out");
+    }
+    if batch {
+        conflicts.push("batch modes");
+    }
+    if emit_text(args) != "auto" {
+        conflicts.push("--emit");
+    }
+    if conflicts.is_empty() {
+        None
+    } else {
+        Some(format!("{PREVIEW_PREFIX}{}", conflicts.join(", ")))
+    }
+}
+
+fn emit_text(args: &RepairArgs) -> &str {
+    match args.emit.as_deref() {
+        Some(value) => value,
+        None => "auto",
+    }
+}
+
+fn batch_usage_error(args: &RepairArgs) -> Option<&'static str> {
+    if args.path.iter().any(|path| is_stdin_marker(path)) {
+        return Some(STDIN_WITH_INPUTS);
+    }
+    if args.seal.is_some() {
+        return Some(SEAL_BATCH);
+    }
+    if args.output.is_some() {
+        return Some(OUTPUT_BATCH);
+    }
+    if args.plan.is_some() || args.plan_out.is_some() {
+        return Some(PLAN_BATCH);
+    }
+    if args.output_dir.is_none() {
+        return Some(OUTPUT_DIR_REQUIRED);
+    }
+    None
+}
+
+fn single_file<W: Write>(
+    ctx: &mut CliContext<W>,
+    args: &RepairArgs,
+) -> Result<UsageExit, RunFailure> {
+    let Some(src) = args.path.first() else {
+        return write_usage(ctx, SOURCE_REQUIRED);
+    };
+    let plan_only = args.dry_run || (args.plan_out.is_some() && args.output.is_none());
+    if args.seal.is_some() && (plan_only || args.preview) {
+        return write_usage(ctx, SEAL_INCOMPLETE);
+    }
+    if !plan_only && !args.preview && args.output.is_none() {
+        return write_usage(ctx, OUTPUT_REQUIRED);
+    }
+    if is_stdin_marker(src) {
+        return Err(stop_at(StoppedImport::DefaultMaxFileBytes));
+    }
+    if followed_is_dir(src) {
+        return write_usage(ctx, &directory_error(src));
+    }
+    if !followed_is_file(src) {
+        return write_usage(ctx, &missing_file_error(src));
+    }
+    Err(stop_at(StoppedImport::ValidFormatOptions))
+}
+
+fn write_usage<W: Write>(ctx: &mut CliContext<W>, message: &str) -> Result<UsageExit, RunFailure> {
+    ctx.error(message)?;
+    Ok(UsageExit::usage())
+}
+
+fn directory_error(path: &Path) -> String {
+    format!("{DIRECTORY_PREFIX}{}", path_text(path))
+}
+
+fn missing_file_error(path: &Path) -> String {
+    format!("{SOURCE_MISSING_PREFIX}{}", path_text(path))
+}
+
+fn stop_at(import: StoppedImport) -> RunFailure {
+    match import {
+        StoppedImport::BatchRepairReport => {
+            let _import = evaluated_batch_import();
+        }
+        StoppedImport::DefaultMaxFileBytes => {
+            let _import = evaluated_stdin_import();
+        }
+        StoppedImport::ValidFormatOptions => {
+            let _import = evaluated_format_import();
+        }
+    }
+    RunFailure::Unavailable(import)
+}
+
+fn evaluated_batch_import() -> &'static str {
+    let [import, _row, _iter_batch_files, _repair_many, _resolve_scan, _max_files] = BATCH_IMPORT;
+    import
+}
+
+fn evaluated_stdin_import() -> &'static str {
+    let [import, _read_stdin, _tempdir] = STDIN_IMPORT;
+    import
+}
+
+fn evaluated_format_import() -> &'static str {
+    let [_policy, _profile, _ack, _adapter, import, _get_profile] = AFTER_EXISTING_FILE;
+    import
+}
+
+fn is_stdin_marker(path: &Path) -> bool {
+    path_text(path) == "-"
+}
+
+fn followed_is_dir(path: &Path) -> bool {
+    match fs::metadata(metadata_path(path)) {
+        Ok(metadata) => metadata.is_dir(),
+        Err(_) => false,
+    }
+}
+
+fn followed_is_file(path: &Path) -> bool {
+    match fs::metadata(metadata_path(path)) {
+        Ok(metadata) => metadata.is_file(),
+        Err(_) => false,
+    }
+}
+
+fn metadata_path(path: &Path) -> &Path {
+    if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    }
+}
+
+/// `str(pathlib.Path(...))` for the current OS.
+///
+/// `.` components are dropped. `..` is kept. The empty path is `.`.
+fn path_text(path: &Path) -> String {
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix_component) => {
+                prefix = prefix_text(&prefix_component);
+            }
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => parts.push("..".to_owned()),
+            Component::Normal(text) => parts.push(text.to_string_lossy().into_owned()),
+        }
+    }
+    join_python_path(&prefix, rooted, &parts)
+}
+
+fn prefix_text(component: &PrefixComponent<'_>) -> String {
+    let text = component.as_os_str().to_string_lossy();
+    #[cfg(windows)]
+    {
+        text.replace('/', "\\")
+    }
+    #[cfg(not(windows))]
+    {
+        text.into_owned()
+    }
+}
+
+fn join_python_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+    let sep = std::path::MAIN_SEPARATOR;
+    if prefix.is_empty() && !rooted && parts.is_empty() {
+        return ".".to_owned();
+    }
+    let mut out = String::new();
+    if !prefix.is_empty() {
+        out.push_str(prefix);
+    }
+    if rooted && !out.ends_with(sep) {
+        out.push(sep);
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let drive_relative = index == 0 && !rooted && prefix.ends_with(':');
+        if !out.is_empty() && !out.ends_with(sep) && !drive_relative {
+            out.push(sep);
+        }
+        out.push_str(part);
+    }
+    if out.is_empty() {
+        ".".to_owned()
+    } else {
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -518,9 +1078,24 @@ mod tests {
         OUTPUT_DIR_HELP, OUTPUT_HELP, PATH_HELP, PLAN_HELP, PLAN_OUT_HELP, PREVIEW_HELP, TYPE_PATH,
     };
     use super::{
+        directory_error, evaluated_batch_import, evaluated_format_import, evaluated_stdin_import,
+        followed_is_dir, followed_is_file, missing_file_error, path_text, run,
+        select_progress_mode, ProgressSelection, RepairArgs, RepairParser, RunFailure,
+        StoppedImport, UsageExit, AFTER_EXISTING_FILE, BATCH_IMPORT,
+        BATCH_REPAIR_REPORT_UNAVAILABLE, DEFAULT_MAX_FILE_BYTES_UNAVAILABLE, DIRECTORY_PREFIX,
+        OUTPUT_BATCH, OUTPUT_DIR_REQUIRED, OUTPUT_REQUIRED, PLAN_BATCH, PLAN_OUT_WITH_APPLY,
+        PROGRESS_CALLBACK_STMT, SEAL_BATCH, SEAL_INCOMPLETE, SOURCE_MISSING_PREFIX,
+        SOURCE_REQUIRED, STDIN_IMPORT, STDIN_WITH_INPUTS, VALID_FORMAT_OPTIONS_UNAVAILABLE,
+    };
+    use super::{
         DeclaredDefault, DeclaredType, DefaultKeyword, LocalArgument, Nargs, RecordedArgument,
         RepairSubcommandSpec,
     };
+    use std::fs;
+    use std::io::{self, Write};
+    use std::path::{Path, PathBuf};
+
+    use crate::context::{CliContext, Setting, SettingValue};
     use crate::options::{
         add_adapter_option, add_config_option, add_policy_option, add_profile_option,
         add_progress_json_option, add_seal_args, ArgAction, ArgDefault, ArgumentDecl,
@@ -1117,16 +1692,735 @@ mod tests {
     }
 
     #[test]
-    fn source_file_is_lf_and_stops_before_run() {
+    fn source_file_is_lf_and_defines_run() {
         let source = include_str!("repair.rs");
         assert_eq!(source.bytes().filter(|byte| *byte == b'\r').count(), 0);
         assert!(!source.contains('\r'));
         assert!(source.contains('\n'));
         let run_fn = ["fn ", "run"].concat();
-        assert!(!source.contains(&run_fn));
+        assert!(source.contains(&run_fn));
         assert!(source.contains(HELP));
         assert!(source.contains("add_seal_args"));
         assert!(source.contains("add_policy_option"));
         assert!(source.contains("\\u{2014}") || source.contains('\u{2014}'));
+        assert!(source.contains(BATCH_REPAIR_REPORT_UNAVAILABLE));
+        assert!(source.contains(DEFAULT_MAX_FILE_BYTES_UNAVAILABLE));
+        assert!(source.contains(VALID_FORMAT_OPTIONS_UNAVAILABLE));
+        let body = command_slice(source);
+        let select_at = body.find("select_progress_mode").expect("select");
+        let plan_at = body.find("plan_authoritative_error").expect("plan");
+        assert!(select_at < plan_at);
+        assert!(body.contains("_progress_cb"));
+        assert!(!body.contains(".progress_callback("));
+        assert!(!body.contains("unwrap"));
+        assert!(!body.contains("expect"));
+        assert!(!body.contains("unsafe"));
+    }
+
+    fn command_slice(source: &str) -> &str {
+        let start = source.find("pub fn run").expect("run");
+        let rest = &source[start..];
+        let end = rest[1..]
+            .find("\nfn ")
+            .map(|index| index + 1)
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    fn fresh_args() -> RepairArgs {
+        RepairArgs {
+            progress_json: false,
+            no_progress: false,
+            stderr_isatty: false,
+            path: Vec::new(),
+            output: None,
+            dry_run: false,
+            preview: false,
+            emit: None,
+            plan: None,
+            plan_out: None,
+            from_scan: None,
+            output_dir: None,
+            seal: None,
+        }
+    }
+
+    fn with_newline(message: &str) -> Vec<u8> {
+        let mut bytes = message.as_bytes().to_vec();
+        bytes.push(b'\n');
+        bytes
+    }
+
+    fn setting(source: &str) -> Setting {
+        Setting::new(
+            SettingValue::Str("synthetic-setting-value".to_owned()),
+            source,
+        )
+    }
+
+    fn exec(
+        quiet: bool,
+        settings: Vec<(String, Setting)>,
+        args: &RepairArgs,
+    ) -> (Result<UsageExit, RunFailure>, Vec<u8>) {
+        let mut buf = Vec::new();
+        let result = {
+            let mut ctx =
+                CliContext::new(quiet, false, None, settings, &mut buf, args.stderr_isatty);
+            run(&mut ctx, args, &RepairParser)
+        };
+        (result, buf)
+    }
+
+    fn assert_usage(result: Result<UsageExit, RunFailure>, buf: &[u8], message: &str) {
+        match result {
+            Ok(exit) => {
+                assert_eq!(exit.code(), 2);
+                assert_ne!(exit.code(), 0);
+                assert_ne!(exit.code(), 1);
+            }
+            Err(error) => panic!("{error}"),
+        }
+        assert_eq!(buf, with_newline(message).as_slice());
+        assert!(!buf.contains(&b'\r'));
+        assert!(!buf
+            .windows(24)
+            .any(|window| window == b"synthetic-setting-value"));
+    }
+
+    fn assert_stop(result: Result<UsageExit, RunFailure>, buf: &[u8], display: &str) {
+        match result {
+            Err(error) => {
+                assert_eq!(error.to_string(), display);
+                assert!(!error.to_string().contains('\r'));
+                assert!(!error.to_string().contains("synthetic-setting-value"));
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+        assert!(buf.is_empty());
+        assert_ne!(display, "0");
+        assert_ne!(display, "1");
+    }
+
+    struct TempTree {
+        path: PathBuf,
+    }
+
+    impl TempTree {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "sesslint-cli-repair-{label}-{}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap_or_else(|err| panic!("temp dir: {err}"));
+            Self { path }
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn touch(path: &Path) {
+        fs::write(path, b"").unwrap_or_else(|err| panic!("touch: {err}"));
+    }
+
+    fn symlink_dir(original: &Path, link: &Path) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    fn symlink_file(original: &Path, link: &Path) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    #[test]
+    fn progress_mode_uses_pin_flag_order_and_stays_unused_by_errors() {
+        let cases = [
+            (true, true, true, true, ProgressSelection::Ndjson),
+            (false, true, false, true, ProgressSelection::Silent),
+            (false, false, true, true, ProgressSelection::Silent),
+            (false, false, false, true, ProgressSelection::Tty),
+            (false, false, false, false, ProgressSelection::Silent),
+        ];
+        for (progress_json, quiet, no_progress, isatty, expected) in cases {
+            let mut args = fresh_args();
+            args.progress_json = progress_json;
+            args.no_progress = no_progress;
+            args.stderr_isatty = isatty;
+            let ctx = CliContext::new(quiet, false, None, Vec::new(), Vec::<u8>::new(), isatty);
+            assert_eq!(select_progress_mode(&ctx, &args), expected);
+            let (result, buf) = exec(quiet, Vec::new(), &args);
+            assert_usage(result, &buf, SOURCE_REQUIRED);
+        }
+        assert_eq!(PROGRESS_CALLBACK_STMT, "ctx.progress_callback(args)");
+    }
+
+    #[test]
+    fn display_stops_are_exact_and_distinct() {
+        let stops = [
+            (
+                StoppedImport::BatchRepairReport,
+                BATCH_REPAIR_REPORT_UNAVAILABLE,
+            ),
+            (
+                StoppedImport::DefaultMaxFileBytes,
+                DEFAULT_MAX_FILE_BYTES_UNAVAILABLE,
+            ),
+            (
+                StoppedImport::ValidFormatOptions,
+                VALID_FORMAT_OPTIONS_UNAVAILABLE,
+            ),
+        ];
+        for (import, display) in stops {
+            assert_eq!(import.to_string(), display);
+            assert_eq!(RunFailure::Unavailable(import).to_string(), display);
+            assert!(!display.contains("Error:"));
+            assert!(!display.contains('\n'));
+            assert!(!display.contains('\r'));
+        }
+        assert_ne!(
+            BATCH_REPAIR_REPORT_UNAVAILABLE,
+            DEFAULT_MAX_FILE_BYTES_UNAVAILABLE
+        );
+        assert_ne!(
+            BATCH_REPAIR_REPORT_UNAVAILABLE,
+            VALID_FORMAT_OPTIONS_UNAVAILABLE
+        );
+        assert_eq!(evaluated_batch_import(), BATCH_IMPORT[0]);
+        assert_eq!(evaluated_stdin_import(), STDIN_IMPORT[0]);
+        assert_eq!(evaluated_format_import(), AFTER_EXISTING_FILE[4]);
+        assert_ne!(evaluated_batch_import(), BATCH_IMPORT[2]);
+        assert_ne!(evaluated_stdin_import(), STDIN_IMPORT[1]);
+        assert_ne!(evaluated_format_import(), AFTER_EXISTING_FILE[5]);
+    }
+
+    #[test]
+    fn plan_cli_overrides_keep_policy_profile_adapter_order() {
+        let settings = vec![
+            ("adapter".to_owned(), setting("cli")),
+            ("profile".to_owned(), setting("cli")),
+            ("policy".to_owned(), setting("cli")),
+        ];
+        let mut args = fresh_args();
+        args.plan = Some(PathBuf::from("plan.json"));
+        args.plan_out = Some(PathBuf::from("plan-out.json"));
+        args.preview = true;
+        args.path.push(PathBuf::from("missing.json"));
+        let (result, buf) = exec(true, settings, &args);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --apply-plan is authoritative for the exported plan; remove override(s): --policy, --profile, --adapter",
+        );
+    }
+
+    #[test]
+    fn partial_cli_overrides_skip_env_config_and_default() {
+        let settings = vec![
+            ("policy".to_owned(), setting("env:SESSLINT_POLICY")),
+            (
+                "profile".to_owned(),
+                setting("config:/synthetic/sesslint.toml"),
+            ),
+            ("adapter".to_owned(), setting("cli")),
+            ("policy".to_owned(), setting("default")),
+        ];
+        let mut args = fresh_args();
+        args.plan = Some(PathBuf::from("plan.json"));
+        let (result, buf) = exec(false, settings, &args);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --apply-plan is authoritative for the exported plan; remove override(s): --adapter",
+        );
+    }
+
+    #[test]
+    fn last_setting_wins_and_config_source_is_not_refused() {
+        let refused = vec![
+            ("policy".to_owned(), setting("config")),
+            ("policy".to_owned(), setting("cli")),
+        ];
+        let mut args = fresh_args();
+        args.plan = Some(PathBuf::from("plan.json"));
+        let (result, buf) = exec(false, refused, &args);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --apply-plan is authoritative for the exported plan; remove override(s): --policy",
+        );
+
+        let allowed = vec![
+            ("policy".to_owned(), setting("cli")),
+            ("policy".to_owned(), setting("config")),
+            ("profile".to_owned(), setting("env:SESSLINT_PROFILE")),
+            ("adapter".to_owned(), setting("config")),
+        ];
+        args.plan_out = Some(PathBuf::from("out-plan.json"));
+        let (result, buf) = exec(false, allowed, &args);
+        assert_usage(result, &buf, PLAN_OUT_WITH_APPLY);
+    }
+
+    #[test]
+    fn cli_none_value_is_still_an_override() {
+        let settings = vec![(
+            "profile".to_owned(),
+            Setting::new(SettingValue::None, "cli"),
+        )];
+        let mut args = fresh_args();
+        args.plan = Some(PathBuf::from("plan.json"));
+        let (result, buf) = exec(false, settings, &args);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --apply-plan is authoritative for the exported plan; remove override(s): --profile",
+        );
+    }
+
+    #[test]
+    fn preview_conflicts_join_in_pin_order() {
+        let tree = TempTree::new("preview-batch");
+        let dir = tree.path.join("sessions");
+        fs::create_dir(&dir).unwrap_or_else(|err| panic!("dir: {err}"));
+        let mut with_plan = fresh_args();
+        with_plan.preview = true;
+        with_plan.output = Some(PathBuf::from("out.json"));
+        with_plan.plan = Some(PathBuf::from("plan.json"));
+        with_plan.emit = Some("canonical".to_owned());
+        with_plan.path.push(dir.clone());
+        let (result, buf) = exec(false, Vec::new(), &with_plan);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --preview writes nothing; incompatible with --output, --apply-plan/--plan, batch modes, --emit",
+        );
+
+        let mut with_plan_out = fresh_args();
+        with_plan_out.preview = true;
+        with_plan_out.output = Some(PathBuf::from("out.json"));
+        with_plan_out.plan_out = Some(PathBuf::from("plan-out.json"));
+        with_plan_out.emit = Some("vendor".to_owned());
+        with_plan_out.path.push(dir);
+        let (result, buf) = exec(false, Vec::new(), &with_plan_out);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --preview writes nothing; incompatible with --output, --plan-out, batch modes, --emit",
+        );
+
+        let mut both = fresh_args();
+        both.preview = true;
+        both.plan = Some(PathBuf::from("plan.json"));
+        both.plan_out = Some(PathBuf::from("plan-out.json"));
+        both.path.push(PathBuf::from("a.json"));
+        let (result, buf) = exec(false, Vec::new(), &both);
+        assert_usage(result, &buf, PLAN_OUT_WITH_APPLY);
+    }
+
+    #[test]
+    fn preview_emit_and_batch_are_independent() {
+        let tree = TempTree::new("preview-emit");
+        let missing = tree.path.join("missing.json");
+        let mut emit_only = fresh_args();
+        emit_only.preview = true;
+        emit_only.emit = Some("vendor".to_owned());
+        emit_only.path.push(missing.clone());
+        let (result, buf) = exec(false, Vec::new(), &emit_only);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --preview writes nothing; incompatible with --emit",
+        );
+
+        let mut auto_emit = fresh_args();
+        auto_emit.preview = true;
+        auto_emit.emit = Some("auto".to_owned());
+        auto_emit.dry_run = true;
+        auto_emit.path.push(missing.clone());
+        let (result, buf) = exec(false, Vec::new(), &auto_emit);
+        assert_usage(result, &buf, &missing_file_error(&missing));
+
+        let tree = TempTree::new("preview-dir");
+        let mut batch_only = fresh_args();
+        batch_only.preview = true;
+        batch_only.path.push(tree.path.clone());
+        let (result, buf) = exec(false, Vec::new(), &batch_only);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --preview writes nothing; incompatible with batch modes",
+        );
+        let text = String::from_utf8(buf).unwrap_or_else(|err| panic!("utf-8: {err}"));
+        assert!(!text.contains("not a directory"));
+    }
+
+    #[test]
+    fn batch_usage_checks_run_in_pin_order() {
+        let mut args = fresh_args();
+        args.path.push(PathBuf::from("-"));
+        args.path.push(PathBuf::from("a.json"));
+        args.path.push(PathBuf::from("b.json"));
+        args.seal = Some(PathBuf::from("ledger"));
+        args.output = Some(PathBuf::from("out.json"));
+        args.plan = Some(PathBuf::from("plan.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, STDIN_WITH_INPUTS);
+
+        args.path.clear();
+        args.path.push(PathBuf::from("a.json"));
+        args.path.push(PathBuf::from("b.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, SEAL_BATCH);
+
+        args.seal = None;
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, OUTPUT_BATCH);
+
+        args.output = None;
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, PLAN_BATCH);
+
+        args.plan = None;
+        args.plan_out = Some(PathBuf::from("plan-out.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, PLAN_BATCH);
+
+        args.plan_out = None;
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, OUTPUT_DIR_REQUIRED);
+    }
+
+    #[test]
+    fn batch_prefix_stops_on_batch_repair_report() {
+        let tree = TempTree::new("batch-stop");
+        let file_a = tree.path.join("a.json");
+        let file_b = tree.path.join("b.json");
+        touch(&file_a);
+        touch(&file_b);
+        let mut args = fresh_args();
+        args.path.push(file_a);
+        args.path.push(file_b);
+        args.output_dir = Some(tree.path.join("out"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_stop(result, &buf, BATCH_REPAIR_REPORT_UNAVAILABLE);
+
+        let mut from_scan = fresh_args();
+        from_scan.from_scan = Some(tree.path.join("missing-report.json"));
+        from_scan.output_dir = Some(tree.path.join("out"));
+        let (result, buf) = exec(false, Vec::new(), &from_scan);
+        assert_stop(result, &buf, BATCH_REPAIR_REPORT_UNAVAILABLE);
+        assert_eq!(
+            evaluated_batch_import(),
+            "from sesslint.batch import BatchRepairReport"
+        );
+    }
+
+    #[test]
+    fn symlink_to_directory_counts_as_a_directory() {
+        let tree = TempTree::new("symlink-dir");
+        let target = tree.path.join("target-dir");
+        fs::create_dir(&target).unwrap_or_else(|err| panic!("target: {err}"));
+        touch(&target.join("inside.json"));
+        let link = tree.path.join("link-dir");
+        symlink_dir(&target, &link).unwrap_or_else(|err| panic!("symlink dir: {err}"));
+        assert!(followed_is_dir(&link));
+        assert!(!followed_is_file(&link));
+
+        let mut bare = fresh_args();
+        bare.path.push(link.clone());
+        let (result, buf) = exec(false, Vec::new(), &bare);
+        assert_usage(result, &buf, OUTPUT_DIR_REQUIRED);
+        let text = String::from_utf8(buf).unwrap_or_else(|err| panic!("utf-8: {err}"));
+        assert!(!text.contains("not a directory"));
+        assert!(!text.contains("target-dir"));
+        assert!(!text.contains("inside.json"));
+
+        let mut with_dir = fresh_args();
+        with_dir.path.push(link.clone());
+        with_dir.output_dir = Some(tree.path.join("out"));
+        let (result, buf) = exec(false, Vec::new(), &with_dir);
+        assert_stop(result, &buf, BATCH_REPAIR_REPORT_UNAVAILABLE);
+
+        let shown = path_text(&link);
+        assert_eq!(directory_error(&link), format!("{DIRECTORY_PREFIX}{shown}"));
+        assert!(shown.contains("link-dir"));
+        assert!(!shown.contains("target-dir"));
+        assert!(directory_error(&link).contains("not a directory"));
+    }
+
+    #[test]
+    fn plain_directory_is_batch_before_the_single_file_sentence() {
+        let tree = TempTree::new("plain-dir");
+        let mut args = fresh_args();
+        args.path.push(tree.path.clone());
+        args.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, OUTPUT_BATCH);
+        let text = String::from_utf8(buf).unwrap_or_else(|err| panic!("utf-8: {err}"));
+        assert!(!text.contains("not a directory"));
+    }
+
+    #[test]
+    fn stdin_stops_before_a_read_and_a_lone_dash_is_not_batch() {
+        let mut args = fresh_args();
+        args.path.push(PathBuf::from("-"));
+        args.output = Some(PathBuf::from("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_stop(result, &buf, DEFAULT_MAX_FILE_BYTES_UNAVAILABLE);
+
+        let mut dotted = fresh_args();
+        dotted.path.push(PathBuf::from("./-"));
+        dotted.dry_run = true;
+        let (result, buf) = exec(false, Vec::new(), &dotted);
+        assert_stop(result, &buf, DEFAULT_MAX_FILE_BYTES_UNAVAILABLE);
+
+        let mut needs_output = fresh_args();
+        needs_output.path.push(PathBuf::from("-"));
+        let (result, buf) = exec(false, Vec::new(), &needs_output);
+        assert_usage(result, &buf, OUTPUT_REQUIRED);
+
+        let mut preview = fresh_args();
+        preview.preview = true;
+        preview.path.push(PathBuf::from("-"));
+        let (result, buf) = exec(true, Vec::new(), &preview);
+        assert_stop(result, &buf, DEFAULT_MAX_FILE_BYTES_UNAVAILABLE);
+        assert_eq!(
+            evaluated_stdin_import(),
+            "from sesslint.io import DEFAULT_MAX_FILE_BYTES"
+        );
+        assert_ne!(evaluated_stdin_import(), STDIN_IMPORT[2]);
+    }
+
+    #[test]
+    fn dash_beside_one_file_follows_the_first_path() {
+        let tree = TempTree::new("dash-file");
+        let file = tree.path.join("session.json");
+        touch(&file);
+
+        let mut stdin_first = fresh_args();
+        stdin_first.path.push(PathBuf::from("-"));
+        stdin_first.path.push(file.clone());
+        stdin_first.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &stdin_first);
+        assert_stop(result, &buf, DEFAULT_MAX_FILE_BYTES_UNAVAILABLE);
+
+        let mut file_first = fresh_args();
+        file_first.path.push(file);
+        file_first.path.push(PathBuf::from("-"));
+        file_first.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &file_first);
+        assert_stop(result, &buf, VALID_FORMAT_OPTIONS_UNAVAILABLE);
+    }
+
+    #[test]
+    fn dash_beside_a_directory_is_the_stdin_batch_error() {
+        let tree = TempTree::new("dash-dir");
+        let mut args = fresh_args();
+        args.path.push(tree.path.clone());
+        args.path.push(PathBuf::from("-"));
+        args.output_dir = Some(tree.path.join("out"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, STDIN_WITH_INPUTS);
+
+        let mut from_scan = fresh_args();
+        from_scan.from_scan = Some(tree.path.join("report.json"));
+        from_scan.path.push(PathBuf::from("-"));
+        from_scan.output_dir = Some(tree.path.join("out"));
+        let (result, buf) = exec(false, Vec::new(), &from_scan);
+        assert_usage(result, &buf, STDIN_WITH_INPUTS);
+    }
+
+    #[test]
+    fn missing_path_and_broken_symlink_use_the_source_sentence() {
+        let tree = TempTree::new("missing");
+        let missing = tree.path.join("missing.json");
+        let mut args = fresh_args();
+        args.path.push(missing.clone());
+        args.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, &missing_file_error(&missing));
+        assert_eq!(
+            missing_file_error(&missing),
+            format!("{SOURCE_MISSING_PREFIX}{}", path_text(&missing))
+        );
+
+        let tree = TempTree::new("broken");
+        let link = tree.path.join("broken-link.json");
+        symlink_file(&tree.path.join("missing-target.json"), &link)
+            .unwrap_or_else(|err| panic!("broken symlink: {err}"));
+        let mut broken = fresh_args();
+        broken.path.push(link.clone());
+        broken.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &broken);
+        assert_usage(result, &buf, &missing_file_error(&link));
+        let text = String::from_utf8(buf).unwrap_or_else(|err| panic!("utf-8: {err}"));
+        assert!(text.contains("broken-link.json"));
+        assert!(!text.contains("missing-target.json"));
+        assert!(text.starts_with(SOURCE_MISSING_PREFIX));
+    }
+
+    #[test]
+    fn existing_file_and_symlink_to_file_stop_on_valid_format_options() {
+        let tree = TempTree::new("file-stop");
+        let file = tree.path.join("session.json");
+        touch(&file);
+        let mut args = fresh_args();
+        args.path.push(file.clone());
+        args.output = Some(tree.path.join("out.json"));
+        args.seal = Some(tree.path.join("ledger"));
+        let settings = vec![("policy".to_owned(), setting("cli"))];
+        let (result, buf) = exec(false, settings, &args);
+        assert_stop(result, &buf, VALID_FORMAT_OPTIONS_UNAVAILABLE);
+
+        let link = tree.path.join("link-file.json");
+        symlink_file(&file, &link).unwrap_or_else(|err| panic!("symlink file: {err}"));
+        assert!(followed_is_file(&link));
+        assert!(!followed_is_dir(&link));
+        let mut linked = fresh_args();
+        linked.path.push(link);
+        linked.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &linked);
+        assert_stop(result, &buf, VALID_FORMAT_OPTIONS_UNAVAILABLE);
+        assert_eq!(
+            evaluated_format_import(),
+            "from sesslint.adapters.detect import VALID_FORMAT_OPTIONS"
+        );
+    }
+
+    #[test]
+    fn single_file_refusals_precede_the_format_import() {
+        let tree = TempTree::new("single-order");
+        let file = tree.path.join("session.json");
+        touch(&file);
+
+        let mut empty = fresh_args();
+        empty.output = Some(PathBuf::from("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &empty);
+        assert_usage(result, &buf, SOURCE_REQUIRED);
+
+        let absent = tree.path.join("absent.json");
+        let mut sealed = fresh_args();
+        sealed.path.push(absent.clone());
+        sealed.dry_run = true;
+        sealed.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, Vec::new(), &sealed);
+        assert_usage(result, &buf, SEAL_INCOMPLETE);
+        assert_eq!(SEAL_INCOMPLETE.matches('\u{2014}').count(), 1);
+        let dash = SEAL_INCOMPLETE.find('\u{2014}').expect("em dash");
+        assert_eq!(
+            &SEAL_INCOMPLETE.as_bytes()[dash..dash + 3],
+            &[0xE2, 0x80, 0x94]
+        );
+
+        let mut plan_only = fresh_args();
+        plan_only.path.push(absent.clone());
+        plan_only.plan_out = Some(PathBuf::from("plan.json"));
+        plan_only.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, Vec::new(), &plan_only);
+        assert_usage(result, &buf, SEAL_INCOMPLETE);
+
+        let mut preview_seal = fresh_args();
+        preview_seal.preview = true;
+        preview_seal.seal = Some(PathBuf::from("ledger"));
+        preview_seal.path.push(file.clone());
+        let (result, buf) = exec(false, Vec::new(), &preview_seal);
+        assert_usage(result, &buf, SEAL_INCOMPLETE);
+
+        let mut preview_output = fresh_args();
+        preview_output.preview = true;
+        preview_output.output = Some(PathBuf::from("out.json"));
+        preview_output.seal = Some(PathBuf::from("ledger"));
+        preview_output.path.push(file.clone());
+        let (result, buf) = exec(false, Vec::new(), &preview_output);
+        assert_usage(
+            result,
+            &buf,
+            "Error: --preview writes nothing; incompatible with --output",
+        );
+
+        let mut needs_output = fresh_args();
+        needs_output.path.push(absent.clone());
+        let (result, buf) = exec(false, Vec::new(), &needs_output);
+        assert_usage(result, &buf, OUTPUT_REQUIRED);
+
+        let mut dry = fresh_args();
+        dry.dry_run = true;
+        dry.path.push(absent);
+        let (result, buf) = exec(false, Vec::new(), &dry);
+        assert_usage(result, &buf, &missing_file_error(&dry.path[0]));
+
+        let mut export_plan = fresh_args();
+        export_plan.path.push(file);
+        export_plan.plan_out = Some(tree.path.join("plan.json"));
+        let (result, buf) = exec(false, Vec::new(), &export_plan);
+        assert_stop(result, &buf, VALID_FORMAT_OPTIONS_UNAVAILABLE);
+    }
+
+    #[test]
+    fn not_a_dash_name_is_a_missing_file() {
+        let tree = TempTree::new("not-dash");
+        let path = tree.path.join("-.");
+        let mut args = fresh_args();
+        args.path.push(path.clone());
+        args.output = Some(tree.path.join("out.json"));
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, &missing_file_error(&path));
+        assert_ne!(path_text(&path), "-");
+    }
+
+    #[test]
+    fn empty_path_counts_as_the_cwd_directory() {
+        let mut args = fresh_args();
+        args.path.push(PathBuf::new());
+        let (result, buf) = exec(false, Vec::new(), &args);
+        assert_usage(result, &buf, OUTPUT_DIR_REQUIRED);
+        assert_eq!(path_text(Path::new("")), ".");
+        assert!(followed_is_dir(Path::new("")));
+    }
+
+    struct FailWrite;
+
+    impl Write for FailWrite {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "synthetic-write-fail",
+            ))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn error_write_failure_is_io_and_not_exit_2() {
+        let mut ctx = CliContext::new(false, false, None, Vec::new(), FailWrite, false);
+        let result = run(&mut ctx, &fresh_args(), &RepairParser);
+        match result {
+            Err(RunFailure::Io(error)) => {
+                assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+                assert_eq!(error.to_string(), "synthetic-write-fail");
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+            Err(error) => panic!("{error}"),
+        }
     }
 }
