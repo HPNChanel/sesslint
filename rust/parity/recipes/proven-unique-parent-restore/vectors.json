@@ -1,0 +1,1179 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "proven-unique-parent-restore",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "known_parity_gaps": [
+    "GAP-proven-unique-parent-restore-affected-region: affected_region_proven_unique_parent_restore in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
+    "GAP-proven-unique-parent-restore-candidates: once a parent id is ready, the pin calls find_qualifying_parent_candidates. The published function returns a different error. This set does not claim that refusal and does not replay a restored parent. tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_zero_candidates, tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_self_candidate, tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_branch, tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_segment, and tests/repair/test_recipes_conservative.py::test_parent_restore_excludes_successor_candidates are each one apply refusal after that call. tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture succeeds on the happy path and then refuses ambiguous candidates. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/checks/test_sl004_hardened.py::test_adversarial_decoy_prefix_collision, tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_branch, tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_segment, and tests/checks/test_sl004_hardened.py::test_adversarial_decoy_duplicate_candidates each run a detector, a plan, a precondition, and one apply. One apply inside that test is not the whole test. tests/test_challenger_stress.py::test_forged_step_nonexistent_parent, tests/test_challenger_stress.py::test_forged_step_prefix_collision, tests/test_challenger_stress.py::test_forged_step_cross_branch_candidate, tests/test_challenger_stress.py::test_forged_step_cross_segment_candidate, tests/test_challenger_stress.py::test_forged_step_duplicate_candidate, tests/test_challenger_stress.py::test_forged_step_self_reference, and tests/test_challenger_stress.py::test_forged_step_post_child_candidate_causal_inversion each refuse after the parent id is ready. tests/test_challenger_stress.py::test_events_mutated_in_memory_before_apply is three refusals. One refusal inside a sweep is not the whole test. tests/checks/test_adversarial_confinement_challenge.py::TestCrossLayerCoercionAttacks::test_apply_refuses_cross_branch_tampered_step, test_apply_refuses_cross_segment_tampered_step, test_apply_refuses_prefix_tampered_step, and test_apply_refuses_ambiguous_tampered_step refuse after the parent id is ready. An integer parent id on the event is rendered and then that walk runs. The published function returns a different error.",
+    "GAP-proven-unique-parent-restore-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply succeeds in the pin. That success is not replayed. tests/repair/test_recipes_conservative.py::test_plan_and_apply_parent_restore_full_flow plans and the apply succeeds. tests/repair/test_scoped_abstention.py::test_scenario_3_unknown_side_effects_on_relink_target plans and executes. tests/repair/test_scoped_abstention.py::test_parent_restore_disjoint_from_intermediate_mutating_tool plans and executes. tests/test_challenger_stress.py::test_multiple_children_sharing_same_parent and tests/test_challenger_stress.py::test_chained_missing_parents_handling plan and apply. The pin succeeds. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/test_challenger_stress.py::test_forged_step_through_executor_lifecycle and tests/test_challenger_stress.py::test_plan_tampered_detected plan and raise. tests/checks/test_adversarial_confinement_challenge.py::TestCrossLayerCoercionAttacks::test_e2e_executor_fails_closed_on_coercion_attempt executes. Those results are not replayed. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-proven-unique-parent-restore-render: a float, list, or mapping parent id is rendered with str in the pin and then the candidate walk runs. The published function returns a different error. This set does not claim that pin result.",
+    "GAP-proven-unique-parent-restore-payload: tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture carries payload on the happy path and on the ambiguous refusal. This set does not store payload content. A payload-free result is not that test.",
+    "GAP-proven-unique-parent-restore-sweep: tests/test_challenger_stress.py::test_forged_step_invalid_target_index checks several invalid indexes. One refusal inside a sweep is not the whole test. tests/test_challenger_stress.py::test_corrupted_params_variations is two missing-parent refusals. One refusal is not the whole test. tests/checks/test_adversarial_confinement_challenge.py::TestCrossLayerCoercionAttacks::test_apply_refuses_out_of_bounds_target_index checks several out-of-range indexes. One index inside a sweep is not the whole test. This set does not mark those tests covered."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_proven_unique_parent_restore",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "proven-unique-parent-restore",
+        "handles": [
+          "SL004"
+        ],
+        "preconditions": [
+          "no_sl203",
+          "unique_parent_candidate"
+        ],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": true
+      }
+    },
+    {
+      "id": "restore_refusal_missing_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_events",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_negative_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_index_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 9
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_param_index_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "index",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_negative_at_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "at_index",
+                {
+                  "t": "int",
+                  "v": -2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_non_int_index_hides_at_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "index",
+                {
+                  "t": "str",
+                  "v": "skip"
+                }
+              ],
+              [
+                "at_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_params_not_mapping",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "null"
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing or invalid target_index"
+      }
+    },
+    {
+      "id": "restore_refusal_missing_parent",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_null_parent",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-null"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_parent_string",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-empty"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_parent_param",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_prefix",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "parent_fingerprint_prefix",
+                {
+                  "t": "str",
+                  "v": ""
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_zero_parent_param",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "parent_id",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_parent_list",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "parent_id",
+                {
+                  "t": "list",
+                  "items": []
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_empty_parent_map",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "parent_id",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_at_index_zero_missing_parent",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "index",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "at_index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_not_mapping_missing_parent",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "null"
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    },
+    {
+      "id": "restore_refusal_param_index_zero_missing_parent",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_proven_unique_parent_restore",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "index",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "proven-unique-parent-restore: missing parent_id"
+      }
+    }
+  ]
+}
