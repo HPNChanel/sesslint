@@ -3,6 +3,9 @@
 //! Port of `src/sesslint/repair/executor.py` lines 1–301
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
+//! [`execute`] ports lines 386–476 and stops on `compute_plan_fingerprint`
+//! at line 477.
+//!
 //! Python's module-level imports are not run. This module does not register
 //! recipes, hash bytes, or publish a session file. [`RepairPlan::from_dict`]
 //! parses a mapping. JSON text is read by a hand parser into [`PlanValue`]
@@ -13,6 +16,7 @@
 //! A bool line cannot be stored. The `>= 1` filter applies to that int.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
@@ -1293,6 +1297,70 @@ pub fn load_source_for_format(
     Err(LoadSessionError::VendorFormat)
 }
 
+/// Failure from [`execute`].
+///
+/// The step-cap variant is the existing [`OutputInvalid`]. Its Display is the
+/// pin sentence. [`ExecuteError::FingerprintUnavailable`] displays
+/// `sesslint.repair.fingerprint.compute_plan_fingerprint is not available`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecuteError {
+    /// Python `OutputInvalid` when the step count is above the cap.
+    OutputInvalid(OutputInvalid),
+    /// `plan.to_dict()` cannot be passed to `compute_plan_fingerprint`.
+    FingerprintUnavailable,
+}
+
+impl fmt::Display for ExecuteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutputInvalid(error) => error.fmt(formatter),
+            Self::FingerprintUnavailable => formatter
+                .write_str("sesslint.repair.fingerprint.compute_plan_fingerprint is not available"),
+        }
+    }
+}
+
+impl Error for ExecuteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::OutputInvalid(error) => Some(error),
+            Self::FingerprintUnavailable => None,
+        }
+    }
+}
+
+/// Python: `execute`.
+///
+/// The plan parameter is `&RepairPlan`.
+///
+/// The step count is `plan.steps().len() as i64`. When it is greater than
+/// [`crate::planner::MAX_STEPS`], this returns [`OutputInvalid::new`] with
+/// Display `Plan step count ({n}) exceeds maximum allowed cap (256)`. The
+/// cap check opens no file.
+///
+/// The next pin statements are [`RepairPlan::to_dict`] and
+/// `compute_plan_fingerprint(plan_dict)` with `policy` omitted. `to_dict`
+/// returns `Vec<(String, PlanValue)>`.
+/// [`crate::fingerprint::compute_plan_fingerprint`] takes
+/// `&codec::canonical_codec::Value`. The two types stay distinct. Display is
+/// `sesslint.repair.fingerprint.compute_plan_fingerprint is not available`.
+///
+/// # Errors
+///
+/// Returns [`ExecuteError`]. Success is [`Infallible`]. This function does
+/// not panic.
+pub fn execute(plan: &RepairPlan) -> Result<Infallible, ExecuteError> {
+    let step_count = plan.steps().len() as i64;
+    if step_count > crate::planner::MAX_STEPS {
+        return Err(ExecuteError::OutputInvalid(OutputInvalid::new(format!(
+            "Plan step count ({step_count}) exceeds maximum allowed cap ({})",
+            crate::planner::MAX_STEPS
+        ))));
+    }
+    let _plan_dict: Vec<(String, PlanValue)> = plan.to_dict();
+    Err(ExecuteError::FingerprintUnavailable)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -2221,5 +2289,150 @@ mod session_source_load_tests {
         assert_ne!(err.to_string(), SNAPSHOT_INPUT);
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&file);
+    }
+}
+
+#[cfg(test)]
+mod execute_prefix_tests {
+    use std::error::Error;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use crate::errors::OutputInvalid;
+    use crate::planner::{
+        Loss, PlanStep, PlanStepFields, RepairPlan, RepairPlanFields, PLAN_VERSION,
+    };
+
+    use super::{execute, ExecuteError};
+
+    const CAP_257: &str = "Plan step count (257) exceeds maximum allowed cap (256)";
+    const FINGERPRINT: &str =
+        "sesslint.repair.fingerprint.compute_plan_fingerprint is not available";
+    const DECOY: &str = "sesslint-execute-rx-p43-decoy.jsonl";
+    const SENTINEL: &[u8] = b"synthetic-rx-p43\n";
+
+    fn synthetic_plan(steps: usize, policy: &str) -> RepairPlan {
+        let steps = (0..steps)
+            .map(|index| {
+                let seq = i128::try_from(index).expect("seq");
+                PlanStep::try_new(PlanStepFields::new(
+                    seq,
+                    "drop-record",
+                    format!("synthetic-fp-{index}"),
+                    None,
+                ))
+                .expect("step")
+            })
+            .collect();
+        RepairPlan::new(RepairPlanFields {
+            source_hash: DECOY.to_owned(),
+            profile: "neutral".to_owned(),
+            steps,
+            blocked: Vec::new(),
+            loss_accounting: Loss::default(),
+            fingerprint: "synthetic-plan-fp".to_owned(),
+            version: PLAN_VERSION.to_owned(),
+            policy: policy.to_owned(),
+        })
+    }
+
+    struct Scratch {
+        dir: PathBuf,
+        before: Vec<(String, Vec<u8>)>,
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.dir);
+            let _ = fs::remove_file(DECOY);
+        }
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join("sesslint-executor-rx-p43-execute")
+            .join(name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        fs::write(dir.join("sentinel.txt"), SENTINEL).expect("sentinel");
+        dir
+    }
+
+    fn listing(dir: &Path) -> Vec<(String, Vec<u8>)> {
+        let mut rows = Vec::new();
+        for entry in fs::read_dir(dir).expect("list") {
+            let entry = entry.expect("entry");
+            let path = entry.path();
+            let bytes = if path.is_file() {
+                fs::read(&path).expect("read")
+            } else {
+                Vec::new()
+            };
+            rows.push((entry.file_name().to_string_lossy().into_owned(), bytes));
+        }
+        rows.sort();
+        rows
+    }
+
+    fn prepare(name: &str) -> Scratch {
+        let _ = fs::remove_file(DECOY);
+        assert!(!Path::new(DECOY).exists());
+        let dir = scratch(name);
+        assert!(!dir.join(DECOY).exists());
+        let before = listing(&dir);
+        assert_eq!(before, vec![("sentinel.txt".to_owned(), SENTINEL.to_vec())]);
+        Scratch { dir, before }
+    }
+
+    fn assert_untouched(scratch: &Scratch) {
+        assert!(!Path::new(DECOY).exists());
+        assert!(!scratch.dir.join(DECOY).exists());
+        assert_eq!(listing(&scratch.dir), scratch.before);
+        assert_eq!(
+            fs::read(scratch.dir.join("sentinel.txt")).expect("sentinel"),
+            SENTINEL
+        );
+    }
+
+    #[test]
+    fn two_hundred_fifty_seven_steps_return_the_cap_and_do_not_touch_files() {
+        let scratch = prepare("cap");
+        let err = execute(&synthetic_plan(257, "conservative")).expect_err("cap");
+        assert_eq!(err.to_string(), CAP_257);
+        let ExecuteError::OutputInvalid(inner) = &err else {
+            panic!("expected OutputInvalid, got {err}");
+        };
+        assert_eq!(inner.message(), CAP_257);
+        assert_eq!(inner.code(), OutputInvalid::DEFAULT_CODE);
+        assert_eq!(err.to_string(), inner.message());
+        assert_eq!(
+            err.source().map(ToString::to_string),
+            Some(CAP_257.to_owned())
+        );
+        assert!(!err.to_string().contains("not available"));
+        assert_untouched(&scratch);
+    }
+
+    #[test]
+    fn two_hundred_fifty_six_or_fewer_steps_stop_at_the_fingerprint_seam() {
+        let cases = [
+            (0_usize, "conservative"),
+            (1, "salvage"),
+            (256, "conservative"),
+        ];
+        for (count, policy) in cases {
+            let scratch = prepare(&format!("fp-{count}-{policy}"));
+            let err = execute(&synthetic_plan(count, policy)).expect_err("fingerprint");
+            assert_eq!(
+                err.to_string(),
+                FINGERPRINT,
+                "count {count} policy {policy}"
+            );
+            assert!(matches!(err, ExecuteError::FingerprintUnavailable));
+            assert!(err.source().is_none());
+            assert!(!err.to_string().contains("exceeds maximum allowed cap"));
+            assert!(!err.to_string().contains(DECOY));
+            assert_untouched(&scratch);
+        }
     }
 }
