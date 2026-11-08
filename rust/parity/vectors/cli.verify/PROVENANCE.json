@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.verify configure declarations from pinned src/sesslint/cli/verify.py (no checkout import). Run vectors omitted where sesslint.api.verify is unavailable in isolated exec.",
+  "generator": "rust/parity/vectors/cli.verify/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-verify-api-verify: When either source or repaired path is missing, Python `parser.error` prints a usage banner then `sesslint verify: error: sesslint verify requires both source and repaired session paths.` and exits 2; Rust `run` writes only that error line (the CPython usage banner is not reproduced) and returns 2. When both paths are set, Python `run` reaches `from sesslint import api` and would call `api.verify`; Rust `run` stops with Display `sesslint.api.verify is not available` (no import, no emit_text, no seal, no exit 0 or 1). The usage banner and import seam are gaps, not covered rows."
+  ]
+}

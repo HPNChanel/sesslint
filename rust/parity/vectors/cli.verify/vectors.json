@@ -1,0 +1,331 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.verify",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "verify_py_sha256": "3814f3b8c6ea6d1cbc0a206dc1f0f08b6223cc9ee2174ebc60453a91164ffd29",
+  "verify_rs_sha256": "1ae0c358d59a921d2ac9d56b263877fcde96dabfa1da0b9f99a41a877ec39ef0",
+  "known_parity_gaps": [
+    "GAP-cli-verify-api-verify: When either source or repaired path is missing, Python `parser.error` prints a usage banner then `sesslint verify: error: sesslint verify requires both source and repaired session paths.` and exits 2; Rust `run` writes only that error line (the CPython usage banner is not reproduced) and returns 2. When both paths are set, Python `run` reaches `from sesslint import api` and would call `api.verify`; Rust `run` stops with Display `sesslint.api.verify is not available` (no import, no emit_text, no seal, no exit 0 or 1). The usage banner and import seam are gaps, not covered rows."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "verify",
+        "help": "[read-only] Verify integrity, hash bindings, and idempotence of a repaired session.",
+        "description": "[read-only] Verify integrity, hash bindings, and idempotence of a repaired session artifact.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "source",
+            "action": "store",
+            "nargs": "?",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to source session file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "repaired",
+            "action": "store",
+            "nargs": "?",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to repaired session file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--source"
+            ],
+            "dest": "source_flag",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "suppress",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--repaired"
+            ],
+            "dest": "repaired_flag",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "suppress",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--manifest"
+            ],
+            "dest": "manifest",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to repair manifest JSON file",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true,
+            "required_keyword": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--plan"
+            ],
+            "dest": "plan",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to repair plan JSON file (optional)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Output verify verdict as JSON to stdout",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--color"
+            ],
+            "dest": "color",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "metavar": null,
+            "help": "Control colored terminal output (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--no-color"
+            ],
+            "dest": "no_color",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Disable ANSI color styling",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-q",
+              "--quiet"
+            ],
+            "dest": "quiet",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Suppress non-error stderr output",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-v",
+              "--verbose"
+            ],
+            "dest": "verbose",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Print debug diagnostics (settings provenance, elapsed) to stderr",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--acknowledge-side-effects"
+            ],
+            "dest": "acknowledge_side_effects",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Acknowledge tool side-effects for salvage policy during verify idempotence check",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal"
+            ],
+            "dest": "seal",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "LEDGER",
+            "help": "Append a tamper-evident seal line to LEDGER (append-only hash-chained verdict record; 'sesslint seal --verify' re-checks it)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-no-path"
+            ],
+            "dest": "seal_no_path",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Omit the artifact path from the seal line (multi-machine ledgers)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false,
+            "required_keyword": null
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-genesis-of"
+            ],
+            "dest": "seal_genesis_of",
+            "action": "store",
+            "nargs": null,
+            "type_name": "str",
+            "choices": null,
+            "metavar": "HEX",
+            "help": "Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false,
+            "required_keyword": null
+          }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}
