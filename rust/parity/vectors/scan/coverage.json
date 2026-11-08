@@ -1,0 +1,1027 @@
+{
+  "rows": [
+    {
+      "test": "tests/cli/test_cli_presentation.py::test_ansi_table_width_alignment",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_cli_presentation.py::test_cli_scan_command_color_alignment",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_cli_presentation.py::test_skipped_reasons_aggregate_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_cli_presentation.py::test_skipped_reasons_line_no_hint_for_non_cap",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_cli_presentation.py::test_skipped_reasons_line_absent_without_skips",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_check_bytes_matches_check_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_scan_bytes_matches_scan_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_fingerprint_bytes_matches_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_check_bytes_fail_closed_variants",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_check_bytes_oversize_structured_result",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_scan_bytes_oversize_skipped",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_check_bytes_virtual_path_in_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_healthy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_json_matches_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_garbage_is_unsupported_by_default",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_mixed_paths_rejected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_skip_undetected_json",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_format_override",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_check_stdin_oversize_structured",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_scan_stdin_healthy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_scan_stdin_garbage",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_repair_stdin_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_repair_stdin_requires_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stdin_input.py::test_cli_repair_stdin_dry_run",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_decode_clean_no_dups",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_critical_key_dup_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_noncritical_key_dup_warning",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_nested_and_array_key_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_dup_occurrence_count",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_dup_cap_truncated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_strictness_preserved",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_fixture_critical_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_fixture_noncritical_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_fixture_nested_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_fixture_overflow_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_single_doc_key_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_malformed_record_with_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_iter_events_yields_dup_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_select_ignore_gating",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_check_scan_consistency",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_vendor_adapter_dup",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/io/test_dup_keys.py::test_no_payload_values_in_evidence",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_document_shape",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_is_offline_and_scriptless",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_deterministic_bytes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_verdict_banners",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_escapes_identifier_fields",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_no_absolute_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_findings_table_fields",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_findings_truncation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_scan_html_sections",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_scan_html_summary_and_truncation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_cli_check_html",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_cli_scan_html",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_under_home",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_home_itself",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_outside_home",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_with_spaces_and_unicode",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_already_minimized",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_scan_path_uses_minimized_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_aggregate.py::test_aggregate_5_bucket_partitioning",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_aggregate.py::test_cli_scan_mixed_dir_exit_code_1",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_aggregate.py::test_cli_check_directory_is_recursive_by_default",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_intact_chain_emits_nothing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_missing_middle_warns_on_child",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_ambiguous_target_warns",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_outside_scan_root_is_info_unresolved",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_head_ref_resolves_against_tip_only",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_check_single_file_never_emits_sl401",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_single_file_scan_emits_no_sl401",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_ignore_gate_suppresses_sl401",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_select_gate_suppresses_sl401",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_parallel_scan_resolves_links",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_findings_deterministic_order",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_self_link_is_resolved_not_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_stem_fallback_resolution",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_links_bounded_and_structural",
+      "status": "covered",
+      "vector_ids": [
+        "session_link_wire_round_trip"
+      ]
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_wire_round_trip_preserves_links",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_codex_forked_from_id_extracted",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_codex_parent_thread_id_resolves_via_meta_id",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_codex_missing_parent_still_fires",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_codex_first_session_meta_wins_session_id",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_codex_link_resolves_via_filename_uuid",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_scan_report_dict_shape_unchanged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_cross_file_links.py::test_missing_fixture_targets_record_coordinates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_dedupe.py::test_hardlink_deduplication",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cold_incremental_byte_identical_to_plain",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_warm_run_marks_hits_and_matches",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_no_incremental_flag_means_no_cache",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_single_file_incremental",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_one_byte_change_invalidates_only_that_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_rule_selection_change_invalidates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_format_change_invalidates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_fingerprint_covers_engine_and_rules",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_corrupt_db_tolerated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_unwritable_cache_dir_tolerated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_unreadable_verdicts_never_cached",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cache_dir_inside_scanned_tree_ignored",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cache_db_lives_in_cache_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cached_rows_carry_no_session_data",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_scan_cache_get_put_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_scan_cache_put_replaces_on_content_change",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_default_cache_dir_env_override",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_env_cache_dir_used_by_scan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_parallel_incremental_combines",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cli_incremental_and_cache_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_cli_incremental_human_marks_hits",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_incremental.py::test_check_dir_passthrough",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_missing_member_flags_unindexed_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_dangling_entry_flags_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_malformed_index_emits_only_malformed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_truncated_index_emits_only_truncated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_absent_index_is_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_single_file_check_never_emits_sl402",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_select_and_ignore_gate_sl402",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_deterministic_across_jobs",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_non_session_sidecars_not_members",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_filtered_file_satisfies_index_entry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_renamed_file_member_via_session_id",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_idless_entries_block_absence_allow_dangling",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_baseline_suppresses_new_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_nested_dirs_reconcile_per_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_evidence_is_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_scan_summary_line_file_not_in_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_scan_summary_line_index_side_kinds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_scan_summary_line_absent_when_clean",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_consistent_clean",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_unindexed_member_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_dangling_entry_flags_index",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_truncated_tail_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_malformed_mid_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_index_without_sessions_subtree_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_index_divergence.py::test_codex_evidence_is_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_file_result_wire_roundtrip_with_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_finding_from_dict_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_wire_roundtrip_skipped_result",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_output_byte_identical",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_repeat_runs_identical",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_mixed_fixture_matches_sequential",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_fixtures_tree_byte_identical_to_sequential",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_pool_start_method_is_spawn",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_parallel_progress_emits_in_file_order",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_jobs_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_single_file_ignores_jobs",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_cli_scan_jobs_json",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_cli_scan_jobs_auto",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_cli_scan_jobs_invalid",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_cli_scan_jobs_single_file_note",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_parallel.py::test_api_check_dir_jobs_passthrough",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_nul_in_tail_classified_unreadable",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_nul_at_chunk_boundary",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_invalid_utf8_in_tail",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_multibyte_char_split_across_chunks_is_valid",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_truncated_multibyte_at_eof_is_unreadable",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_probe_memory_is_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_probe_bounded.py::test_clean_utf8_file_not_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_binary_file_classified_as_unreadable",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_invalid_utf8_classified_as_unreadable",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_check_file_nonexistent_raises_filenotfound",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_scan_fault_isolation_on_unhandled_exception",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_scan_fault_isolation_on_file_too_large",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_read_errors.py::test_scan_fault_isolation_on_unhandled_scan_single_file_exception",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_by_code_exact",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_by_code_exact"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_by_code_sort_order",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_by_code_sort_order"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_worst_files_exact",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_worst_files_exact"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_worst_files_excludes_healthy",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_worst_files_excludes_healthy"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_top_limits_and_zero",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_top_one",
+        "aggregate_top_zero"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_top_negative_rejected",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_top_negative"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_group_by_none",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_group_by_none"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_group_by_invalid_rejected",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_group_by_invalid"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_aggregate_deterministic",
+      "status": "covered",
+      "vector_ids": [
+        "aggregate_deterministic"
+      ]
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_summary_to_dict_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_report_summary_omitted_when_none",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_json_summary",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_human_summary_block",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_group_by_none_hides_by_code",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_top_zero_hides_worst",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_both_disabled_no_block",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_scan_cli_top_negative_exit_2",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_human_renderer_summary_only_when_present",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_scan_summary.py::test_check_dir_report_has_no_summary_by_default",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_special_files.py::test_fifo_skipped_if_supported",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_special_files.py::test_special_file_skipped_via_stat_inspection",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_consistent_clean",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_unregistered_rollout_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_threads_row_missing_rollout_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_named_id_resolved_by_registry",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_named_id_nowhere_flagged",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_cross_check_when_jsonl_out_of_scope",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_spawn_edge_orphan",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_migration_skip_recorded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_malformed_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_foreign_sqlite_silent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_state_db_no_sessions_subtree",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_absent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_symlink",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_state_db.py::test_reader_content_columns_never_selected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_symlink.py::test_symlink_dir_skipped_by_default",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/scan/test_symlink.py::test_symlink_cycle_guarded_with_follow_symlinks",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_module_exports",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_purity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_and_plan_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_verify_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_build_bundle_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_precheck_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_numeric_range_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_threshold_override_reports_undetected_input_honestly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_threshold_override_marks_undetected_files_unsupported",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_scan_path_resolves_effective_config_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_unified_forwards_thresholds_to_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_threshold_validation_identical_across_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_performs_single_detection_with_profile_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_detection_call_count_exactly_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_profile_key_map_covers_all_formats",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_load_events_for_format_preserves_source_metadata",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_classifies_healthy_codex_rollout",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_detects_codex_corruption_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_codex_unsupported_version_bucket",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_codex_profile_gate",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_cli_scan_agent_codex_real_rollout",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_export_codex_rollout",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_bundle_codex_rollout_skeleton",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_verify_codex_repair_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_no_filter_scans_everything",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_ext_allowlist",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_ext_accepts_bare_names",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_exclude_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_exclude_glob",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_exclude_relative_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_cli_exclude_and_ext",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_filters.py::test_config_exclude_and_ext",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_schema.py::test_scan_schema_loads_and_self_consistent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_schema.py::test_scan_report_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_schema.py::test_scan_report_json_round_trip_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_schema.py::test_scan_report_skipped_reasons_aggregated",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_scan_schema.py::test_scan_report_skipped_reasons_omitted_when_empty",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_unknown_input_has_no_synthetic_integrity_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_vendor_scope_excludes_memory_and_tool_results",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_newest_and_since_select_before_cumulative_caps",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_file_limit_skips_without_malformed_finding_and_can_be_raised",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_finding_samples_do_not_change_counts_or_cached_results",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_check_digest_binds_parsed_snapshot_during_write",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_bad_timestamp_tolerance_rejected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_timestamp_tolerance_configuration",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_stdin_invalid_limit_is_usage_error",
+      "status": "not_applicable"
+    }
+  ]
+}
