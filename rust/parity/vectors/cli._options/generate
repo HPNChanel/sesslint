@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._options parity vectors from the pinned _options.py blob (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+OPTIONS_PY_SHA256 = (
+    "4ca584f58db908f9aef026adb87cf51bee6960884699c79fbcd5a9dc29e2f0ea"
+)
+MODULE = "sesslint.cli._options"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-options-positive-int-i64: _validate_positive_int accepts positive "
+        "integers beyond i64::MAX in Python; Rust refuses with "
+        "int value does not fit i64 (PositiveIntError::Magnitude), not pin int semantics."
+    ),
+]
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def install_adapter_detect_stub() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+    detect.VALID_FORMAT_OPTIONS = frozenset(
+        {
+            "auto",
+            "canonical",
+            "claude-code-jsonl",
+            "codex-rollout",
+            "openai-agents",
+        }
+    )
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters.detect = detect
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+
+def exec_options_module() -> types.ModuleType:
+    install_adapter_detect_stub()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_options.py")
+    verify_digest(blob, OPTIONS_PY_SHA256, "_options.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(MODULE, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {MODULE}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[MODULE] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def run_positive_int(mod: Any, text: str) -> dict[str, Any]:
+    try:
+        value = mod._validate_positive_int(text)
+    except argparse.ArgumentTypeError as err:
+        return {"result": "error", "message": str(err)}
+    if isinstance(value, int):
+        return {"result": "ok", "value_kind": "int", "value": value}
+    raise SystemExit(f"unexpected positive_int return type {type(value)}")
+
+
+def run_unit_interval(mod: Any, text: str) -> dict[str, Any]:
+    try:
+        value = mod._validate_unit_interval_float(text)
+    except argparse.ArgumentTypeError as err:
+        return {"result": "error", "message": str(err)}
+    if isinstance(value, float):
+        return {"result": "ok", "value_kind": "float", "value": format(value, "g")}
+    raise SystemExit(f"unexpected unit_interval return type {type(value)}")
+
+
+def run_adapter_option(mod: Any) -> dict[str, Any]:
+    parser = argparse.ArgumentParser()
+    mod.add_adapter_option(parser)
+    action = next(a for a in parser._actions if "--adapter" in a.option_strings)
+    choices = list(action.choices)
+    if action.default is not argparse.SUPPRESS:
+        raise SystemExit("adapter default must be argparse.SUPPRESS")
+    expected_choices = [
+        "auto",
+        "canonical",
+        "claude-code-jsonl",
+        "codex-rollout",
+        "openai-agents",
+    ]
+    if choices != expected_choices:
+        raise SystemExit(f"unexpected adapter choices: {choices}")
+    return {
+        "result": "ok",
+        "choices": choices,
+        "default": "argparse.SUPPRESS",
+        "default_distinct_from_none": True,
+        "default_distinct_from_false": True,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "positive_int_ok_42",
+            "construct": {"type": "validate_positive_int", "input": "42"},
+        },
+        {
+            "id": "positive_int_ok_trimmed",
+            "construct": {"type": "validate_positive_int", "input": "  42  "},
+        },
+        {
+            "id": "positive_int_ok_plus",
+            "construct": {"type": "validate_positive_int", "input": "+42"},
+        },
+        {
+            "id": "positive_int_ok_underscores",
+            "construct": {"type": "validate_positive_int", "input": "1_000"},
+        },
+        {
+            "id": "positive_int_invalid_empty",
+            "construct": {"type": "validate_positive_int", "input": ""},
+        },
+        {
+            "id": "positive_int_invalid_one_dot_zero",
+            "construct": {"type": "validate_positive_int", "input": "1.0"},
+        },
+        {
+            "id": "positive_int_invalid_hex",
+            "construct": {"type": "validate_positive_int", "input": "0x10"},
+        },
+        {
+            "id": "positive_int_invalid_true",
+            "construct": {"type": "validate_positive_int", "input": "True"},
+        },
+        {
+            "id": "positive_int_not_positive_zero",
+            "construct": {"type": "validate_positive_int", "input": "0"},
+        },
+        {
+            "id": "positive_int_not_positive_neg_2",
+            "construct": {"type": "validate_positive_int", "input": "-2"},
+        },
+        {
+            "id": "gap_positive_int_i64_overflow",
+            "construct": {
+                "type": "validate_positive_int",
+                "gap_id": "GAP-options-positive-int-i64",
+                "input": "9223372036854775808",
+            },
+        },
+        {
+            "id": "unit_interval_ok_half",
+            "construct": {"type": "validate_unit_interval_float", "input": "0.5"},
+        },
+        {
+            "id": "unit_interval_invalid_empty",
+            "construct": {"type": "validate_unit_interval_float", "input": ""},
+        },
+        {
+            "id": "unit_interval_invalid_true",
+            "construct": {"type": "validate_unit_interval_float", "input": "True"},
+        },
+        {
+            "id": "unit_interval_invalid_hex_float",
+            "construct": {"type": "validate_unit_interval_float", "input": "0x1p-1"},
+        },
+        {
+            "id": "unit_interval_oob_one",
+            "construct": {"type": "validate_unit_interval_float", "input": "1"},
+        },
+        {
+            "id": "unit_interval_oob_zero",
+            "construct": {"type": "validate_unit_interval_float", "input": "0"},
+        },
+        {
+            "id": "unit_interval_oob_nan",
+            "construct": {"type": "validate_unit_interval_float", "input": "nan"},
+        },
+        {
+            "id": "unit_interval_oob_inf",
+            "construct": {"type": "validate_unit_interval_float", "input": "inf"},
+        },
+        {
+            "id": "unit_interval_oob_neg_inf",
+            "construct": {"type": "validate_unit_interval_float", "input": "-inf"},
+        },
+        {
+            "id": "unit_interval_oob_1e16",
+            "construct": {"type": "validate_unit_interval_float", "input": "1e16"},
+        },
+        {
+            "id": "unit_interval_oob_neg_1e_minus_5",
+            "construct": {"type": "validate_unit_interval_float", "input": "-1e-5"},
+        },
+        {
+            "id": "unit_interval_oob_neg_zero",
+            "construct": {"type": "validate_unit_interval_float", "input": "-0"},
+        },
+        {
+            "id": "adapter_option_decl",
+            "construct": {"type": "add_adapter_option"},
+        },
+    ]
+
+
+def build_expected(mod: Any, row: dict[str, Any]) -> dict[str, Any]:
+    construct = row["construct"]
+    kind = construct["type"]
+    gap_id = construct.get("gap_id")
+
+    if kind == "validate_positive_int":
+        expected = run_positive_int(mod, str(construct["input"]))
+        if gap_id:
+            if expected.get("result") != "ok":
+                raise SystemExit(f"{row['id']}: pin must succeed for gap vector")
+            return {
+                "result": "gap",
+                "gap_id": gap_id,
+                "pin": expected,
+            }
+        return expected
+    if kind == "validate_unit_interval_float":
+        return run_unit_interval(mod, str(construct["input"]))
+    if kind == "add_adapter_option":
+        return run_adapter_option(mod)
+    raise SystemExit(f"unknown construct type {kind}")
+
+
+def assert_no_banned_patterns(payload: bytes) -> None:
+    if _BANNED_SUPABASE_PAT.search(payload):
+        raise SystemExit("vectors payload matches banned sbp_ pattern")
+    forbidden = (
+        b"sesslint-wt-",
+        b"FOR_WORK",
+        b"WORK_PROJECT",
+        b"sk_live_",
+        b"sk_test_",
+        b"rk_live_",
+        b"rk_test_",
+    )
+    lowered = payload.lower()
+    for needle in forbidden:
+        if needle.lower() in lowered:
+            raise SystemExit(f"vectors payload contains forbidden substring {needle!r}")
+
+
+def main() -> int:
+    mod = exec_options_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs()
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        construct = dict(row["construct"])
+        expected = build_expected(mod, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "options_py_sha256": OPTIONS_PY_SHA256,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    encoded = payload.encode("utf-8")
+    assert_no_banned_patterns(encoded)
+    if b"\r" in encoded:
+        raise SystemExit("vectors payload must be LF-only")
+
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(encoded).hexdigest()
+
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "rows": [],
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.cli._options validator and adapter declaration parity "
+            "from pinned _options.py."
+        ),
+        "generator": "rust/parity/vectors/cli._options/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
