@@ -1188,6 +1188,111 @@ fn utf8_span(first: u8) -> (usize, u8, u8) {
     }
 }
 
+use model::canonical::{SessionEvent, SessionHeader};
+
+/// Failure from [`load_session_source_with_findings`], [`load_session_source`],
+/// and [`load_source_for_format`].
+///
+/// [`Display`](fmt::Display) is the message only. A missing session file has
+/// no errno prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadSessionError {
+    /// `FileNotFoundError`: `Session file not found: {path}`.
+    FileNotFound(String),
+    /// `sesslint.adapters.load.snapshot_input` is not linked.
+    SnapshotInput,
+    /// `sesslint.adapters.load.is_vendor_format` is not linked.
+    VendorFormat,
+}
+
+impl fmt::Display for LoadSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FileNotFound(message) => formatter.write_str(message),
+            Self::SnapshotInput => {
+                formatter.write_str("sesslint.adapters.load.snapshot_input is not available")
+            }
+            Self::VendorFormat => {
+                formatter.write_str("sesslint.adapters.load.is_vendor_format is not available")
+            }
+        }
+    }
+}
+
+impl Error for LoadSessionError {}
+
+/// Python: `load_session_source_with_findings`.
+///
+/// `Path(path)` is checked with `is_file` before any import. A missing path,
+/// a directory, and a broken symlink display `Session file not found: {path}`
+/// with no errno prefix. A symlink to a file is a file. The path text matches
+/// `str(pathlib.Path(...))`.
+///
+/// The next statement is `from sesslint.adapters.load import snapshot_input`.
+/// That crate is not a dependency, so this returns
+/// `sesslint.adapters.load.snapshot_input is not available`. The file is not
+/// read. `read_header`, `iter_events`, `json.loads`, and `load_canonical` are
+/// not called. No header, events, or findings are invented.
+///
+/// `data` is accepted and not inspected.
+///
+/// # Errors
+///
+/// Returns [`LoadSessionError`]. This function does not panic.
+pub fn load_session_source_with_findings(
+    path: impl AsRef<Path>,
+    _data: Option<&[u8]>,
+) -> Result<(SessionHeader, Vec<SessionEvent>, Vec<Finding>), LoadSessionError> {
+    let path = path.as_ref();
+    if !path.is_file() {
+        let shown = python_path(path).native();
+        return Err(LoadSessionError::FileNotFound(format!(
+            "Session file not found: {shown}"
+        )));
+    }
+    Err(LoadSessionError::SnapshotInput)
+}
+
+/// Python: `load_session_source`.
+///
+/// Calls [`load_session_source_with_findings`] and, only if that succeeds,
+/// drops the findings. This slice has no success path.
+///
+/// # Errors
+///
+/// Returns [`LoadSessionError`] from the inner call. This function does not
+/// panic.
+pub fn load_session_source(
+    path: impl AsRef<Path>,
+) -> Result<(SessionHeader, Vec<SessionEvent>), LoadSessionError> {
+    let (header, events, _findings) = load_session_source_with_findings(path, None)?;
+    Ok((header, events))
+}
+
+/// Python `tuple[SessionHeader | None, list[SessionEvent], list[Finding]]`.
+///
+/// [`load_source_for_format`] does not return this value in this slice.
+pub type LoadedSourceForFormat = (Option<SessionHeader>, Vec<SessionEvent>, Vec<Finding>);
+
+/// Python: `load_source_for_format(path, format, data=None)`.
+///
+/// The first statement is
+/// `from sesslint.adapters.load import is_vendor_format, load_vendor_events, snapshot_input`.
+/// This returns `sesslint.adapters.load.is_vendor_format is not available`
+/// immediately. `path` is not statted. `format` and `data` are not inspected.
+/// [`load_session_source_with_findings`] is not called.
+///
+/// # Errors
+///
+/// Returns [`LoadSessionError`]. This function does not panic.
+pub fn load_source_for_format(
+    _path: impl AsRef<Path>,
+    _format: Option<&str>,
+    _data: Option<&[u8]>,
+) -> Result<LoadedSourceForFormat, LoadSessionError> {
+    Err(LoadSessionError::VendorFormat)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -1971,5 +2076,150 @@ mod tests {
         )]);
         let err = load_mapping(&broken, None).expect_err("from_dict");
         assert_eq!(err.to_string(), "Plan step missing required field 'seq'");
+    }
+}
+
+#[cfg(test)]
+mod session_source_load_tests {
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        load_session_source, load_session_source_with_findings, load_source_for_format,
+        python_path, LoadSessionError,
+    };
+
+    const SNAPSHOT_INPUT: &str = "sesslint.adapters.load.snapshot_input is not available";
+    const IS_VENDOR_FORMAT: &str = "sesslint.adapters.load.is_vendor_format is not available";
+
+    fn temp_path(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("sesslint-executor-rx-p43-source");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir.join(name)
+    }
+
+    fn not_found(path: &Path) -> String {
+        format!("Session file not found: {}", python_path(path).native())
+    }
+
+    fn assert_not_found(err: &LoadSessionError, path: &Path) {
+        let message = not_found(path);
+        assert_eq!(err.to_string(), message);
+        assert!(!message.contains("Errno"));
+        assert!(!message.starts_with('['));
+        assert!(matches!(err, LoadSessionError::FileNotFound(text) if text == &message));
+    }
+
+    fn link_file(original: &Path, link: &Path) {
+        let _ = std::fs::remove_file(link);
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link).expect("symlink");
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link).expect("symlink");
+        }
+    }
+
+    #[test]
+    fn missing_session_file_message_has_no_errno_prefix() {
+        let path = Path::new("sesslint-missing-session-rx-p43.jsonl");
+        let err = load_session_source_with_findings(path, None).expect_err("missing");
+        assert_not_found(&err, path);
+        assert_eq!(
+            err.to_string(),
+            "Session file not found: sesslint-missing-session-rx-p43.jsonl"
+        );
+        let err =
+            load_session_source_with_findings(path, Some(b"synthetic-rx-p43")).expect_err("data");
+        assert_not_found(&err, path);
+        let err = load_session_source(path).expect_err("wrapper");
+        assert_not_found(&err, path);
+        let empty = Path::new("");
+        let err = load_session_source_with_findings(empty, None).expect_err("empty");
+        assert_not_found(&err, empty);
+        assert_eq!(err.to_string(), "Session file not found: .");
+    }
+
+    #[test]
+    fn directory_session_path_message_has_no_errno_prefix() {
+        let dir = temp_path("session-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let err = load_session_source_with_findings(&dir, None).expect_err("dir");
+        assert_not_found(&err, &dir);
+        let err = load_session_source_with_findings(&dir, Some(b"{}")).expect_err("data");
+        assert_not_found(&err, &dir);
+        let err = load_session_source(&dir).expect_err("wrapper");
+        assert_not_found(&err, &dir);
+        let dot = Path::new(".");
+        let err = load_session_source_with_findings(dot, None).expect_err("dot");
+        assert_not_found(&err, dot);
+        assert_eq!(err.to_string(), "Session file not found: .");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn file_stops_at_snapshot_input_without_reading() {
+        let path = temp_path("synthetic-session.jsonl");
+        let bytes = b"synthetic-rx-p43\n";
+        std::fs::write(&path, bytes).expect("write");
+        let err = load_session_source_with_findings(&path, None).expect_err("stop");
+        assert_eq!(err.to_string(), SNAPSHOT_INPUT);
+        assert!(matches!(err, LoadSessionError::SnapshotInput));
+        let err =
+            load_session_source_with_findings(&path, Some(b"synthetic-rx-p43")).expect_err("data");
+        assert_eq!(err.to_string(), SNAPSHOT_INPUT);
+        let err = load_session_source(&path).expect_err("wrapper");
+        assert_eq!(err.to_string(), SNAPSHOT_INPUT);
+        assert_eq!(std::fs::read(&path).expect("read"), bytes);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn symlink_to_a_file_is_a_file_and_a_broken_link_is_not() {
+        let dir = temp_path("links");
+        std::fs::create_dir_all(&dir).expect("dir");
+        let target = dir.join("target.jsonl");
+        let bytes = b"synthetic-rx-p43\n";
+        std::fs::write(&target, bytes).expect("write");
+        let link = dir.join("link.jsonl");
+        let broken = dir.join("broken.jsonl");
+        link_file(&target, &link);
+        link_file(&dir.join("absent.jsonl"), &broken);
+        let err = load_session_source_with_findings(&link, None).expect_err("link");
+        assert_eq!(err.to_string(), SNAPSHOT_INPUT);
+        let err = load_session_source(&link).expect_err("wrapper");
+        assert_eq!(err.to_string(), SNAPSHOT_INPUT);
+        let err = load_session_source_with_findings(&broken, Some(b"synthetic-rx-p43"))
+            .expect_err("broken");
+        assert_not_found(&err, &broken);
+        assert_eq!(std::fs::read(&target).expect("read"), bytes);
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_file(&broken);
+        let _ = std::fs::remove_file(&target);
+    }
+
+    #[test]
+    fn vendor_format_stops_before_any_stat() {
+        let missing = Path::new("sesslint-missing-vendor-rx-p43.jsonl");
+        let err = load_source_for_format(missing, None, None).expect_err("missing");
+        assert_eq!(err.to_string(), IS_VENDOR_FORMAT);
+        assert!(matches!(err, LoadSessionError::VendorFormat));
+        assert!(!err.to_string().contains("Session file not found"));
+        let err = load_source_for_format(missing, Some("canonical"), Some(b"synthetic-rx-p43"))
+            .expect_err("args");
+        assert_eq!(err.to_string(), IS_VENDOR_FORMAT);
+        let dir = temp_path("vendor-dir");
+        std::fs::create_dir_all(&dir).expect("dir");
+        let err = load_source_for_format(&dir, Some("codex"), None).expect_err("dir");
+        assert_eq!(err.to_string(), IS_VENDOR_FORMAT);
+        let file = temp_path("vendor-file.jsonl");
+        std::fs::write(&file, b"synthetic-rx-p43\n").expect("write");
+        let err = load_source_for_format(&file, None, Some(b"{}")).expect_err("file");
+        assert_eq!(err.to_string(), IS_VENDOR_FORMAT);
+        assert_ne!(err.to_string(), SNAPSHOT_INPUT);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&file);
     }
 }
