@@ -1,0 +1,365 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.stats",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "stats_py_sha256": "81ae129ee7be03ff2264fccdd23925edb233c6d73b89eb07a4fced4ed56b577c",
+  "stats_rs_sha256": "aa959eba6e754bf574eb37737c0e6c41e6e6f8c3d3c2f51f85644a9398d4d846",
+  "known_parity_gaps": [
+    "GAP-stats-minimize-path: SessionStats.to_dict, SessionStats.render_human, and SessionStats.to_json import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available and does not emit output.",
+    "GAP-stats-scan-defaults: stats_paths with either max_files or max_bytes omitted imports sesslint.scan DEFAULT_MAX_FILES and DEFAULT_MAX_BYTES in Python; Rust stops with sesslint.scan.DEFAULT_MAX_FILES is not available before root checks.",
+    "GAP-stats-load-events: After candidate paths are built, stats_paths imports sesslint.adapters.load.load_events_for_format in Python; Rust stops with sesslint.adapters.load.load_events_for_format is not available.",
+    "GAP-stats-schema-path: get_stats_schema_path and load_stats_schema import sesslint._resources.schema_path in Python; Rust stops with sesslint._resources.schema_path is not available."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "STATS_SCHEMA_VERSION": "sesslint.stats/v1",
+        "MAX_TOOL_ROWS": 100,
+        "python_all": [
+          "MAX_TOOL_ROWS",
+          "STATS_SCHEMA_VERSION",
+          "SessionStats",
+          "get_stats_schema_path",
+          "load_stats_schema",
+          "stats_paths"
+        ]
+      }
+    },
+    {
+      "id": "percentile_empty",
+      "construct": {
+        "type": "percentile",
+        "sorted_vals": [],
+        "q_text": "0.5"
+      },
+      "expected": {
+        "value": 0
+      }
+    },
+    {
+      "id": "percentile_ranked",
+      "construct": {
+        "type": "percentile",
+        "sorted_vals": [
+          10,
+          20,
+          30,
+          40,
+          50
+        ],
+        "q_text": "0.5"
+      },
+      "expected": {
+        "value": 30
+      }
+    },
+    {
+      "id": "dist_sorted_copy",
+      "construct": {
+        "type": "dist",
+        "values": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      "expected": {
+        "max": 4,
+        "p50": 3,
+        "p95": 4,
+        "total": 10
+      }
+    },
+    {
+      "id": "tool_hash_read",
+      "construct": {
+        "type": "tool_hash",
+        "name": "Read"
+      },
+      "expected": {
+        "hash": "9b9a8d05a7ec353b"
+      }
+    },
+    {
+      "id": "count_events_tool_checkpoint",
+      "construct": {
+        "type": "count_events",
+        "events": [
+          {
+            "kind": "tool_call",
+            "actor": "assistant",
+            "payload": {
+              "tool_name": "Read"
+            }
+          },
+          {
+            "kind": "compaction_boundary",
+            "actor": "system",
+            "payload": {}
+          },
+          {
+            "kind": "checkpoint",
+            "actor": "user",
+            "payload": {}
+          }
+        ]
+      },
+      "expected": {
+        "counters": {
+          "events_total": 3,
+          "by_kind": {
+            "checkpoint": 1,
+            "compaction_boundary": 1,
+            "tool_call": 1
+          },
+          "by_actor": {
+            "assistant": 1,
+            "system": 1,
+            "user": 1
+          },
+          "by_tool_hash": {
+            "9b9a8d05a7ec353b": 1
+          },
+          "tool_calls_total": 1,
+          "compaction_boundaries": 1,
+          "checkpoints": 1
+        }
+      }
+    },
+    {
+      "id": "iter_files_excluded_and_order",
+      "construct": {
+        "type": "iter_files",
+        "roots": [
+          "fixtures/walk_tree"
+        ],
+        "max_files": 100
+      },
+      "expected": {
+        "files": [
+          "fixtures/walk_tree/a.txt",
+          "fixtures/walk_tree/z.txt",
+          "fixtures/walk_tree/d2/z.txt",
+          "fixtures/walk_tree/d1/z.txt"
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "id": "iter_files_max_files_cap",
+      "construct": {
+        "type": "iter_files",
+        "roots": [
+          "fixtures/walk_tree"
+        ],
+        "max_files": 2
+      },
+      "expected": {
+        "files": [
+          "fixtures/walk_tree/a.txt",
+          "fixtures/walk_tree/z.txt"
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "id": "session_stats_files_total",
+      "construct": {
+        "type": "session_stats_files_total"
+      },
+      "expected": {
+        "files_total": 9
+      }
+    },
+    {
+      "id": "session_stats_output_minimize_gap",
+      "construct": {
+        "type": "session_stats_output_gap"
+      },
+      "expected": {
+        "pin": {
+          "to_dict_keys": [
+            "schema_version",
+            "tool_version",
+            "root_path",
+            "files",
+            "by_adapter",
+            "events",
+            "tool_calls",
+            "compaction_boundaries",
+            "checkpoints",
+            "file_bytes",
+            "events_per_file"
+          ],
+          "json_prefix": "{\n  \"by_adapter\": {},\n  \"checkpo",
+          "human_prefix": "SessLint corpus statistics"
+        },
+        "rust_assertion": {
+          "mode": "minimize_path_unavailable"
+        }
+      }
+    },
+    {
+      "id": "stats_paths_missing_limits_directory",
+      "construct": {
+        "type": "stats_paths_missing_limits",
+        "paths": [
+          "fixtures/synthetic-dir"
+        ],
+        "recursive": false
+      },
+      "expected": {
+        "pin": {
+          "raises": "ValueError",
+          "message": "Path fixtures\\synthetic-dir is a directory. Use recursive=True to scan."
+        },
+        "rust_assertion": {
+          "mode": "scan_default_unavailable"
+        }
+      }
+    },
+    {
+      "id": "stats_paths_missing_path_pin_contract",
+      "construct": {
+        "type": "stats_paths_error",
+        "paths": [
+          "fixtures/synthetic-absent.jsonl"
+        ],
+        "pin_kwargs": {},
+        "rust": {
+          "mode": "scan_default_unavailable"
+        }
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "Path not found: fixtures\\synthetic-absent.jsonl"
+        },
+        "rust_assertion": {
+          "mode": "scan_default_unavailable"
+        }
+      }
+    },
+    {
+      "id": "stats_paths_missing_path_explicit_limits",
+      "construct": {
+        "type": "stats_paths_error",
+        "paths": [
+          "fixtures/synthetic-absent.jsonl"
+        ],
+        "recursive": false,
+        "pin_kwargs": {
+          "max_files": 4,
+          "max_bytes": 32
+        },
+        "rust": {
+          "mode": "path_not_found",
+          "leaf": "synthetic-absent.jsonl"
+        }
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "Path not found: fixtures\\synthetic-absent.jsonl"
+        },
+        "rust_assertion": {
+          "mode": "path_not_found",
+          "leaf": "synthetic-absent.jsonl"
+        }
+      }
+    },
+    {
+      "id": "stats_paths_directory_requires_recursive",
+      "construct": {
+        "type": "stats_paths_error",
+        "paths": [
+          "fixtures/synthetic-dir"
+        ],
+        "recursive": false,
+        "pin_kwargs": {
+          "max_files": 4,
+          "max_bytes": 32
+        },
+        "rust": {
+          "mode": "directory_requires_recursive",
+          "leaf": "synthetic-dir"
+        }
+      },
+      "expected": {
+        "pin": {
+          "raises": "ValueError",
+          "message": "Path fixtures\\synthetic-dir is a directory. Use recursive=True to scan."
+        },
+        "rust_assertion": {
+          "mode": "directory_requires_recursive",
+          "leaf": "synthetic-dir"
+        }
+      }
+    },
+    {
+      "id": "stats_paths_load_events_gap",
+      "construct": {
+        "type": "stats_paths_error",
+        "paths": [
+          "fixtures/synthetic-session.jsonl"
+        ],
+        "recursive": false,
+        "pin_kwargs": {
+          "max_files": 4,
+          "max_bytes": 32,
+          "format": "claude-code-jsonl"
+        },
+        "rust": {
+          "mode": "load_events_unavailable"
+        }
+      },
+      "expected": {
+        "pin": {
+          "files_processed": 0,
+          "files_undetected": 1,
+          "files_unreadable": 0,
+          "events_total": 0,
+          "files_total": 1
+        },
+        "rust_assertion": {
+          "mode": "load_events_unavailable"
+        }
+      }
+    },
+    {
+      "id": "get_stats_schema_path_gap",
+      "construct": {
+        "type": "get_stats_schema_path"
+      },
+      "expected": {
+        "pin": {
+          "raises": "ModuleNotFoundError",
+          "message": "No module named 'sesslint._resources'"
+        },
+        "rust_assertion": {
+          "mode": "schema_path_unavailable"
+        }
+      }
+    },
+    {
+      "id": "load_stats_schema_gap",
+      "construct": {
+        "type": "load_stats_schema"
+      },
+      "expected": {
+        "pin": {
+          "raises": "ModuleNotFoundError",
+          "message": "No module named 'sesslint._resources'"
+        },
+        "rust_assertion": {
+          "mode": "schema_path_unavailable"
+        }
+      }
+    }
+  ]
+}

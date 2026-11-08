@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.stats parity: percentile, dist, tool hash, event counters, directory walk, path seams, schema import gaps.",
+  "generator": "rust/parity/vectors/stats/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-stats-minimize-path: SessionStats.to_dict, SessionStats.render_human, and SessionStats.to_json import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available and does not emit output.",
+    "GAP-stats-scan-defaults: stats_paths with either max_files or max_bytes omitted imports sesslint.scan DEFAULT_MAX_FILES and DEFAULT_MAX_BYTES in Python; Rust stops with sesslint.scan.DEFAULT_MAX_FILES is not available before root checks.",
+    "GAP-stats-load-events: After candidate paths are built, stats_paths imports sesslint.adapters.load.load_events_for_format in Python; Rust stops with sesslint.adapters.load.load_events_for_format is not available.",
+    "GAP-stats-schema-path: get_stats_schema_path and load_stats_schema import sesslint._resources.schema_path in Python; Rust stops with sesslint._resources.schema_path is not available."
+  ]
+}

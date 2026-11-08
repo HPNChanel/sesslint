@@ -1,0 +1,597 @@
+#!/usr/bin/env python3
+"""Generate sesslint.stats parity vectors from pinned git blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+STATS_PY_SHA256 = (
+    "81ae129ee7be03ff2264fccdd23925edb233c6d73b89eb07a4fced4ed56b577c"
+)
+STATS_RS_SHA256 = (
+    "aa959eba6e754bf574eb37737c0e6c41e6e6f8c3d3c2f51f85644a9398d4d846"
+)
+MODULE = "sesslint.stats"
+COVERAGE_TEST_FILE = "tests/cli/test_stats.py"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-stats-minimize-path: SessionStats.to_dict, SessionStats.render_human, and "
+    "SessionStats.to_json import sesslint.report.minimize_path in Python; Rust returns "
+    "sesslint.report.minimize_path is not available and does not emit output.",
+    "GAP-stats-scan-defaults: stats_paths with either max_files or max_bytes omitted "
+    "imports sesslint.scan DEFAULT_MAX_FILES and DEFAULT_MAX_BYTES in Python; Rust "
+    "stops with sesslint.scan.DEFAULT_MAX_FILES is not available before root checks.",
+    "GAP-stats-load-events: After candidate paths are built, stats_paths imports "
+    "sesslint.adapters.load.load_events_for_format in Python; Rust stops with "
+    "sesslint.adapters.load.load_events_for_format is not available.",
+    "GAP-stats-schema-path: get_stats_schema_path and load_stats_schema import "
+    "sesslint._resources.schema_path in Python; Rust stops with "
+    "sesslint._resources.schema_path is not available.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/stats.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != STATS_PY_SHA256:
+        raise SystemExit(
+            f"stats.py pin sha256 mismatch: expected {STATS_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "stats.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != STATS_RS_SHA256:
+        raise SystemExit(
+            f"stats.rs sha256 mismatch: expected {STATS_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (b"sesslint-wt-", b"FOR_WORK"):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+
+
+def install_stubs() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    version = types.ModuleType("sesslint._version")
+    version.CLI_VERSION = "0.0.0-synthetic"
+    sys.modules["sesslint._version"] = version
+    pkg._version = version
+
+    canonical = types.ModuleType("sesslint.canonical")
+
+    class SessionEvent:
+        def __init__(
+            self,
+            *,
+            kind: str = "",
+            actor: str = "",
+            payload: dict[str, Any] | None = None,
+        ) -> None:
+            self.kind = kind
+            self.actor = actor
+            self.payload = payload if payload is not None else {}
+
+    canonical.SessionEvent = SessionEvent
+    sys.modules["sesslint.canonical"] = canonical
+    pkg.canonical = canonical
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+
+    def resolve_format(_fmt: str | None, _path: Path) -> tuple[None, None, list[Any]]:
+        return None, None, []
+
+    detect.resolve_format = resolve_format
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.detect = detect
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    scan = types.ModuleType("sesslint.scan")
+    scan.DEFAULT_MAX_FILES = 10_000
+    scan.DEFAULT_MAX_BYTES = 1024 * 1024 * 1024
+    sys.modules["sesslint.scan"] = scan
+    pkg.scan = scan
+
+    io_mod = types.ModuleType("sesslint.io")
+
+    def probe_text_encoding(_path: Path) -> None:
+        return None
+
+    io_mod.probe_text_encoding = probe_text_encoding
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+    load_mod = types.ModuleType("sesslint.adapters.load")
+
+    def load_events_for_format(_path: Path, _fmt: str) -> tuple[list[Any], list[Any]]:
+        raise RuntimeError("synthetic load stub")
+
+    load_mod.load_events_for_format = load_events_for_format
+    sys.modules["sesslint.adapters.load"] = load_mod
+    adapters.load = load_mod
+
+
+def load_stats_module() -> types.ModuleType:
+    verify_pin_hashes()
+    install_stubs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/stats.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("sesslint.stats", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned stats.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["sesslint.stats"] = mod
+        sys.modules["sesslint"].stats = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.resolve().relative_to(base.resolve()).as_posix()
+
+
+def default_counters() -> dict[str, Any]:
+    return {
+        "events_total": 0,
+        "by_kind": {},
+        "by_actor": {},
+        "by_tool_hash": {},
+        "tool_calls_total": 0,
+        "compaction_boundaries": 0,
+        "checkpoints": 0,
+    }
+
+
+def counters_payload(counters: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "events_total": counters["events_total"],
+        "by_kind": dict(sorted(counters["by_kind"].items())),
+        "by_actor": dict(sorted(counters["by_actor"].items())),
+        "by_tool_hash": dict(sorted(counters["by_tool_hash"].items())),
+        "tool_calls_total": counters["tool_calls_total"],
+        "compaction_boundaries": counters["compaction_boundaries"],
+        "checkpoints": counters["checkpoints"],
+    }
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    walk = fixtures / "walk_tree"
+    for directory in (
+        walk,
+        walk / ".git",
+        walk / "d1",
+        walk / "d2",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    (walk / "a.txt").write_text("", encoding="utf-8", newline="\n")
+    (walk / "z.txt").write_text("", encoding="utf-8", newline="\n")
+    (walk / ".git" / "hidden.txt").write_text("", encoding="utf-8", newline="\n")
+    (walk / ".sesslint.toml").write_text("", encoding="utf-8", newline="\n")
+    (walk / "sesslint.toml").write_text("", encoding="utf-8", newline="\n")
+    (walk / "d1" / "z.txt").write_text("", encoding="utf-8", newline="\n")
+    (walk / "d2" / "z.txt").write_text("", encoding="utf-8", newline="\n")
+    (fixtures / "synthetic-dir").mkdir(exist_ok=True)
+    (fixtures / "synthetic-session.jsonl").write_text(
+        '{"kind":"synthetic"}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def stats_paths_pin(
+    stats: Any,
+    out_dir: Path,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        paths = [Path(str(item)) for item in construct["paths"]]
+        kwargs: dict[str, Any] = {"recursive": bool(construct.get("recursive", False))}
+        if "format" in construct:
+            kwargs["format"] = construct["format"]
+        if "max_files" in construct:
+            kwargs["max_files"] = construct["max_files"]
+        if "max_bytes" in construct:
+            kwargs["max_bytes"] = construct["max_bytes"]
+        try:
+            result = stats.stats_paths(paths, **kwargs)
+        except FileNotFoundError as err:
+            return {"raises": "FileNotFoundError", "message": str(err)}
+        except ValueError as err:
+            return {"raises": "ValueError", "message": str(err)}
+        return {
+            "files_processed": result.files_processed,
+            "files_undetected": result.files_undetected,
+            "files_unreadable": result.files_unreadable,
+            "events_total": result.events_total,
+            "files_total": result.files_total,
+        }
+    finally:
+        os.chdir(prev)
+
+
+def build_expected(stats: Any, out_dir: Path, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_constants":
+        return {
+            "STATS_SCHEMA_VERSION": stats.STATS_SCHEMA_VERSION,
+            "MAX_TOOL_ROWS": stats.MAX_TOOL_ROWS,
+            "python_all": list(stats.__all__),
+        }
+    if kind == "percentile":
+        values = construct["sorted_vals"]
+        q = float(str(construct["q_text"]))
+        return {"value": stats._percentile(values, q)}
+    if kind == "dist":
+        return stats._dist(list(construct["values"]))
+    if kind == "tool_hash":
+        return {"hash": stats._tool_hash(str(construct["name"]))}
+    if kind == "count_events":
+        SessionEvent = stats.__dict__["SessionEvent"] if hasattr(stats, "SessionEvent") else None
+        if SessionEvent is None:
+            from sesslint.canonical import SessionEvent  # noqa: WPS433
+        counters = default_counters()
+        events = [
+            SessionEvent(
+                kind=row["kind"],
+                actor=row["actor"],
+                payload=dict(row.get("payload", {})),
+            )
+            for row in construct["events"]
+        ]
+        stats._count_events(events, counters)
+        return {"counters": counters_payload(counters)}
+    if kind == "iter_files":
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            roots = [Path(str(item)) for item in construct["roots"]]
+            files, skipped = stats._iter_files(roots, max_files=int(construct["max_files"]))
+            rel_files = [rel_posix(out_dir, path) for path in files]
+            rel_skipped = [rel_posix(out_dir, path) for path in skipped]
+            return {"files": rel_files, "skipped": rel_skipped}
+        finally:
+            os.chdir(prev)
+    if kind == "session_stats_files_total":
+        sample = stats.SessionStats(
+            root_path="corpus",
+            tool_version="0.0.0",
+            files_processed=2,
+            files_undetected=3,
+            files_unreadable=4,
+            by_adapter={},
+            events_total=0,
+            by_kind={},
+            by_actor={},
+            tool_calls_total=0,
+            by_tool_hash={},
+            compaction_boundaries=0,
+            checkpoints=0,
+            file_bytes={},
+            events_per_file={},
+        )
+        return {"files_total": sample.files_total}
+    if kind == "session_stats_output_gap":
+        sample = stats.SessionStats(
+            root_path="corpus",
+            tool_version="0.0.0",
+            files_processed=0,
+            files_undetected=0,
+            files_unreadable=0,
+            by_adapter={},
+            events_total=0,
+            by_kind={},
+            by_actor={},
+            tool_calls_total=0,
+            by_tool_hash={},
+            compaction_boundaries=0,
+            checkpoints=0,
+            file_bytes={},
+            events_per_file={},
+        )
+        report = types.ModuleType("sesslint.report")
+
+        def minimize_path(_path: Any, *, home: Any = None) -> str:
+            return "shown"
+
+        report.minimize_path = minimize_path
+        sys.modules["sesslint.report"] = report
+        sys.modules["sesslint"].report = report
+        return {
+            "pin": {
+                "to_dict_keys": list(sample.to_dict().keys()),
+                "json_prefix": sample.to_json()[:32],
+                "human_prefix": sample.render_human().splitlines()[0],
+            },
+            "rust_assertion": {"mode": "minimize_path_unavailable"},
+        }
+    if kind == "stats_paths_missing_limits":
+        return {
+            "pin": stats_paths_pin(
+                stats,
+                out_dir,
+                {
+                    "paths": construct["paths"],
+                    "recursive": construct.get("recursive", False),
+                },
+            ),
+            "rust_assertion": {"mode": "scan_default_unavailable"},
+        }
+    if kind == "stats_paths_error":
+        rust = construct.get("rust", {})
+        pin_construct = {
+            "paths": construct["paths"],
+            "recursive": construct.get("recursive", False),
+        }
+        pin_construct.update(construct.get("pin_kwargs", {}))
+        if pin_construct.get("format"):
+
+            def _resolve(_fmt: str | None, _path: Path) -> tuple[str, None, list[Any]]:
+                return str(pin_construct["format"]), None, []
+
+            sys.modules["sesslint.adapters.detect"].resolve_format = _resolve
+        out: dict[str, Any] = {"pin": stats_paths_pin(stats, out_dir, pin_construct)}
+        if "mode" in rust:
+            out["rust_assertion"] = rust
+        return out
+    if kind == "get_stats_schema_path":
+        try:
+            stats.get_stats_schema_path()
+        except Exception as err:  # noqa: BLE001
+            pin = {"raises": type(err).__name__, "message": str(err)}
+        return {"pin": pin, "rust_assertion": {"mode": "schema_path_unavailable"}}
+    if kind == "load_stats_schema":
+        try:
+            stats.load_stats_schema()
+        except Exception as err:  # noqa: BLE001
+            pin = {"raises": type(err).__name__, "message": str(err)}
+        return {"pin": pin, "rust_assertion": {"mode": "schema_path_unavailable"}}
+    raise SystemExit(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {"id": "module_constants", "construct": {"type": "module_constants"}},
+        {
+            "id": "percentile_empty",
+            "construct": {"type": "percentile", "sorted_vals": [], "q_text": "0.5"},
+        },
+        {
+            "id": "percentile_ranked",
+            "construct": {
+                "type": "percentile",
+                "sorted_vals": [10, 20, 30, 40, 50],
+                "q_text": "0.5",
+            },
+        },
+        {
+            "id": "dist_sorted_copy",
+            "construct": {"type": "dist", "values": [4, 1, 3, 2]},
+        },
+        {
+            "id": "tool_hash_read",
+            "construct": {"type": "tool_hash", "name": "Read"},
+        },
+        {
+            "id": "count_events_tool_checkpoint",
+            "construct": {
+                "type": "count_events",
+                "events": [
+                    {
+                        "kind": "tool_call",
+                        "actor": "assistant",
+                        "payload": {"tool_name": "Read"},
+                    },
+                    {"kind": "compaction_boundary", "actor": "system", "payload": {}},
+                    {"kind": "checkpoint", "actor": "user", "payload": {}},
+                ],
+            },
+        },
+        {
+            "id": "iter_files_excluded_and_order",
+            "construct": {
+                "type": "iter_files",
+                "roots": ["fixtures/walk_tree"],
+                "max_files": 100,
+            },
+        },
+        {
+            "id": "iter_files_max_files_cap",
+            "construct": {
+                "type": "iter_files",
+                "roots": ["fixtures/walk_tree"],
+                "max_files": 2,
+            },
+        },
+        {
+            "id": "session_stats_files_total",
+            "construct": {"type": "session_stats_files_total"},
+        },
+        {
+            "id": "session_stats_output_minimize_gap",
+            "construct": {"type": "session_stats_output_gap"},
+        },
+        {
+            "id": "stats_paths_missing_limits_directory",
+            "construct": {
+                "type": "stats_paths_missing_limits",
+                "paths": ["fixtures/synthetic-dir"],
+                "recursive": False,
+            },
+        },
+        {
+            "id": "stats_paths_missing_path_pin_contract",
+            "construct": {
+                "type": "stats_paths_error",
+                "paths": ["fixtures/synthetic-absent.jsonl"],
+                "pin_kwargs": {},
+                "rust": {"mode": "scan_default_unavailable"},
+            },
+        },
+        {
+            "id": "stats_paths_missing_path_explicit_limits",
+            "construct": {
+                "type": "stats_paths_error",
+                "paths": ["fixtures/synthetic-absent.jsonl"],
+                "recursive": False,
+                "pin_kwargs": {"max_files": 4, "max_bytes": 32},
+                "rust": {"mode": "path_not_found", "leaf": "synthetic-absent.jsonl"},
+            },
+        },
+        {
+            "id": "stats_paths_directory_requires_recursive",
+            "construct": {
+                "type": "stats_paths_error",
+                "paths": ["fixtures/synthetic-dir"],
+                "recursive": False,
+                "pin_kwargs": {"max_files": 4, "max_bytes": 32},
+                "rust": {
+                    "mode": "directory_requires_recursive",
+                    "leaf": "synthetic-dir",
+                },
+            },
+        },
+        {
+            "id": "stats_paths_load_events_gap",
+            "construct": {
+                "type": "stats_paths_error",
+                "paths": ["fixtures/synthetic-session.jsonl"],
+                "recursive": False,
+                "pin_kwargs": {"max_files": 4, "max_bytes": 32, "format": "claude-code-jsonl"},
+                "rust": {"mode": "load_events_unavailable"},
+            },
+        },
+        {"id": "get_stats_schema_path_gap", "construct": {"type": "get_stats_schema_path"}},
+        {"id": "load_stats_schema_gap", "construct": {"type": "load_stats_schema"}},
+    ]
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    names: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            names.append(line.split("(")[0].replace("def ", ""))
+    return names
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for name in list_tests_in_file(COVERAGE_TEST_FILE):
+        qual = f"{COVERAGE_TEST_FILE}::{name}"
+        needed = COVERED_BY_VECTORS.get(qual)
+        row: dict[str, object] = {"test": qual}
+        if needed is not None and all(item in vector_ids for item in needed):
+            status = "covered"
+            covered += 1
+            row["vector_ids"] = list(needed)
+        else:
+            status = "not_applicable"
+            not_applicable += 1
+        row["status"] = status
+        rows.append(row)
+    payload = {"rows": rows}
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def main() -> int:
+    stats = load_stats_module()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(stats, out_dir, construct)
+        vectors.append({"id": row["id"], "construct": construct, "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "stats_py_sha256": STATS_PY_SHA256,
+        "stats_rs_sha256": STATS_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.stats parity: percentile, dist, tool hash, event "
+            "counters, directory walk, path seams, schema import gaps."
+        ),
+        "generator": "rust/parity/vectors/stats/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vectors.json sha256={digest}")
+    print(f"vector_count={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
