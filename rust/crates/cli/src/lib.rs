@@ -23,7 +23,7 @@ pub mod triage;
 pub mod bundle;
 pub mod completion;
 pub mod diff;
-pub mod doctor {}
+pub mod doctor;
 pub mod export {}
 pub mod hook;
 pub mod mcp {}
