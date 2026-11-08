@@ -1,0 +1,19 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_sl002",
+  "recipe": "torn-terminal-record-discard",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_sl002_py_sha256": "535f3226281b68d39c62508d88afe3d85b9231c19f247246a0a939542f7e82a8",
+  "vector_count": 25,
+  "vectors_sha256": "012b8ce665fb902f160f9f05cd97a039a7309ec20a6df9bbc38bf92e73612d3c",
+  "generator": "rust/parity/recipes/torn-terminal-record-discard/generate",
+  "known_parity_gaps": [
+    "GAP-torn-terminal-record-discard-canonical: planner.plan, execute, and api.repair are not run. A missing canonical codec call is not a successful plan. Repair tests compare manifests, assurance, or output files. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-torn-terminal-record-discard-session-copy: a kept SessionEvent copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. The repair tests pass decoded events into the executor, which copies them before this function runs.",
+    "GAP-torn-terminal-record-discard-payload: repair tests carry payload or vendor message text. fixtures/hostile/torn_final.jsonl carries message text and has no payload key. This set does not store that content. A payload-free result is not that test. tests/export/test_export.py::test_export_refuses_torn_final loads the fixture and does not call this function.",
+    "GAP-torn-terminal-record-discard-float-target: a float target_index uses Python equality. When it equals the cut and that cut is the last index, the pin discards. The published function has no float target and keeps the events. The pin succeeds. That success is not replayed. When the same comparison holds on an empty list, the pin raises IndexError. The published function returns Ok. This set does not claim that refusal.",
+    "GAP-torn-terminal-record-discard-missing-attr: a step with no target_index raises AttributeError in the pin. TornTerminalStep always carries the field. Treating the absence as None returns Ok. The pin raises and the published function returns Ok. This set does not claim that refusal.",
+    "GAP-torn-terminal-record-discard-sweep: a repair test also checks, verifies, renumbers, or compares bytes. One recipe inside a sweep is not the whole test. tests/repair/test_scoped_abstention.py::test_scenario_2_dangling_call_in_truncated_region and tests/fuzz/test_repair_invariants.py::test_resealed_tampered_plan_is_refused_at_every_public_execution_boundary raise before this function runs. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz calls affected_region_torn_terminal_record_discard inside a five-function sweep. One function inside that sweep is not the whole test. tests/repair/test_sl001_excision.py is torn-record-excision, a different recipe.",
+    "GAP-torn-terminal-record-discard-dict-fallback: a value that is not a mapping and has no to_canonical_dict falls through to dict() in the pin. This crate does not simulate that fallback. When the pin raises ValueError or TypeError, the published function returns a different error. This set does not claim that error."
+  ]
+}

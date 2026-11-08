@@ -1,0 +1,1184 @@
+#!/usr/bin/env python3
+"""Generate torn-terminal-record-discard parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+Expected results are the pin's results. Fixture output, fingerprints, and
+planner results are not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "torn-terminal-record-discard"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_sl002"
+RECIPE = "torn-terminal-record-discard"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+FN = "apply_torn_terminal_record_discard"
+DOCS = "docs/recipes/torn-terminal-record-discard.md"
+FIXTURE = "fixtures/hostile/torn_final.jsonl"
+EXPECTATIONS = "fixtures/hostile/EXPECTATIONS.json"
+GENERATOR = "rust/parity/recipes/torn-terminal-record-discard/generate"
+KNOWN_PY_SHA = "535f3226281b68d39c62508d88afe3d85b9231c19f247246a0a939542f7e82a8"
+POP_MESSAGE = "pop from empty list"
+TS = "2026-09-05T12:00:00Z"
+
+GAP_CANONICAL = "GAP-torn-terminal-record-discard-canonical"
+GAP_COPY = "GAP-torn-terminal-record-discard-session-copy"
+GAP_PAYLOAD = "GAP-torn-terminal-record-discard-payload"
+GAP_FLOAT = "GAP-torn-terminal-record-discard-float-target"
+GAP_ATTR = "GAP-torn-terminal-record-discard-missing-attr"
+GAP_SWEEP = "GAP-torn-terminal-record-discard-sweep"
+GAP_FALLBACK = "GAP-torn-terminal-record-discard-dict-fallback"
+
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+SEAM_CODEC = "sesslint._canonical_codec.canonical_json_bytes is not available"
+SEAM_NORMALIZE = "sesslint._canonical_codec.normalize_canonical is not available"
+SEAM_FLOAT = "Python str(float) is not representable"
+SEAM_PYSTR = "Python str() of this event field is not representable"
+SEAM_REGISTER = "sesslint.repair.recipes_conservative.register_all is not available"
+
+KNOWN_PARITY_GAPS: tuple[str, ...] = (
+    f"{GAP_CANONICAL}: planner.plan, execute, and api.repair are not run. "
+    "A missing canonical codec call is not a successful plan. Repair tests "
+    "compare manifests, assurance, or output files. No fingerprint is hashed "
+    "and no fixture diff is stored. No output bytes are stored.",
+    f"{GAP_COPY}: a kept SessionEvent copies in the pin. This crate stops on "
+    "that value. A rust seam while the pin succeeds is not coverage. That "
+    "success is not replayed. The repair tests pass decoded events into the "
+    "executor, which copies them before this function runs.",
+    f"{GAP_PAYLOAD}: repair tests carry payload or vendor message text. "
+    f"{FIXTURE} carries message text and has no payload key. This set does "
+    "not store that content. A payload-free result is not that test. "
+    "tests/export/test_export.py::test_export_refuses_torn_final loads the "
+    "fixture and does not call this function.",
+    f"{GAP_FLOAT}: a float target_index uses Python equality. When it equals "
+    "the cut and that cut is the last index, the pin discards. The published "
+    "function has no float target and keeps the events. The pin succeeds. "
+    "That success is not replayed. When the same comparison holds on an empty "
+    "list, the pin raises IndexError. The published function returns Ok. "
+    "This set does not claim that refusal.",
+    f"{GAP_ATTR}: a step with no target_index raises AttributeError in the "
+    "pin. TornTerminalStep always carries the field. Treating the absence as "
+    "None returns Ok. The pin raises and the published function returns Ok. "
+    "This set does not claim that refusal.",
+    f"{GAP_SWEEP}: a repair test also checks, verifies, renumbers, or "
+    "compares bytes. One recipe inside a sweep is not the whole test. "
+    "tests/repair/test_scoped_abstention.py::"
+    "test_scenario_2_dangling_call_in_truncated_region and "
+    "tests/fuzz/test_repair_invariants.py::"
+    "test_resealed_tampered_plan_is_refused_at_every_public_execution_boundary "
+    "raise before this function runs. "
+    "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz "
+    "calls affected_region_torn_terminal_record_discard inside a five-function "
+    "sweep. One function inside that sweep is not the whole test. "
+    "tests/repair/test_sl001_excision.py is torn-record-excision, a different "
+    "recipe.",
+    f"{GAP_FALLBACK}: a value that is not a mapping and has no "
+    "to_canonical_dict falls through to dict() in the pin. This crate does "
+    "not simulate that fallback. When the pin raises ValueError or TypeError, "
+    "the published function returns a different error. This set does not "
+    "claim that error.",
+)
+
+REPAIR_NOTE = (
+    f"{GAP_CANONICAL} blocks planner.plan and the repair writer. It is not a "
+    "successful plan. "
+    f"{GAP_COPY} blocks the kept SessionEvent. The pin succeeds. A rust seam "
+    "while the pin succeeds is not coverage. That success is not replayed. "
+    f"{GAP_PAYLOAD} blocks event content. A payload-free result is not this "
+    "test. "
+    f"{GAP_SWEEP} blocks the rest of the test. One recipe inside a sweep is "
+    "not the whole test. No fingerprint is hashed and no fixture diff is "
+    "stored. No output bytes are stored."
+)
+BYTES_NOTE = f"{REPAIR_NOTE} The test compares output bytes. Those bytes are not stored."
+DIFFERENT_NOTE = f"different function from {FN}"
+
+NOTES: dict[str, str] = {
+    "tests/io/test_hostile.py::test_canonical_torn_final_repairable": (
+        f"{REPAIR_NOTE} The test writes an inline torn session and does not load {FIXTURE}."
+    ),
+    "tests/io/test_hostile.py::test_hostile_repair_refusal_on_non_repairable": (
+        f"{FIXTURE} is repairable, so this sweep skips it. The test does not "
+        f"call {FN} for that fixture. One fixture inside a sweep is not the "
+        "whole test."
+    ),
+    "tests/test_sl001_sl002.py::test_sl002_repair_round_trip": (
+        f"{REPAIR_NOTE} The executed plan also names seq-renumber."
+    ),
+    "tests/test_e2e_cycle.py::test_e2e_cycle_canonical_torn_terminal_record": (
+        f"{REPAIR_NOTE} verify is a different function."
+    ),
+    "tests/test_e2e_cycle.py::test_e2e_vendor_format_writeback": (
+        f"{REPAIR_NOTE} The test compares emitted vendor lines."
+    ),
+    "tests/cli/test_repair_cli.py::test_repair_cli_sl002_success": REPAIR_NOTE,
+    "tests/repair/test_torn_tail_identity.py::test_canonical_torn_tail_keeps_event_with_same_id": (
+        f"{BYTES_NOTE} The plan target_index is None, so this function keeps every decoded event."
+    ),
+    "tests/repair/test_torn_tail_identity.py::test_vendor_torn_tail_keeps_line_with_same_id": (
+        f"{BYTES_NOTE} The vendor fixture is not stored."
+    ),
+    (
+        "tests/fuzz/test_repair_invariants.py::"
+        "test_conservative_torn_tail_preserves_every_unique_decodable_record"
+    ): (f"{REPAIR_NOTE} One example inside a hypothesis sweep is not the whole test."),
+    "tests/repair/test_scoped_abstention.py::test_positive_e2e_realistic_tool_session_repaired": (
+        f"{REPAIR_NOTE} The executed plan also names seq-renumber."
+    ),
+    "tests/adapters/test_codex_rollout.py::test_repair_auto_emits_vendor_writeback": (
+        f"{REPAIR_NOTE} The recipe name is one assert. The test also checks "
+        "the manifest and the emitted record."
+    ),
+    "tests/repair/test_writeback.py::test_api_repair_vendor_torn_writeback": (
+        f"{BYTES_NOTE} The healthy vendor bytes are not stored."
+    ),
+    "tests/repair/test_writeback.py::test_api_repair_vendor_emit_canonical": (
+        f"{REPAIR_NOTE} emit canonical is a different writer."
+    ),
+    "tests/repair/test_writeback.py::test_api_verify_vendor_pair": (
+        f"{REPAIR_NOTE} verify is a different function."
+    ),
+    (
+        "tests/repair/test_snapshot_consistency.py::"
+        "test_write_back_keeps_line_the_current_bytes_no_longer_flag"
+    ): (
+        f"{GAP_CANONICAL} blocks the plan. It is not a successful plan. "
+        "execute is allowed to refuse after the tail is completed. A success "
+        "path compares output bytes. One path is not the whole test. No "
+        "output bytes are stored."
+    ),
+    "tests/repair/test_scoped_abstention.py::test_scenario_2_dangling_call_in_truncated_region": (
+        f"{GAP_SWEEP} The test raises RepairRefused before {FN}. The crafted "
+        "step is not applied. One executor-gate refusal is not this function. "
+        "No output bytes are stored."
+    ),
+    (
+        "tests/fuzz/test_repair_invariants.py::"
+        "test_resealed_tampered_plan_is_refused_at_every_public_execution_boundary"
+    ): (
+        f"{GAP_SWEEP} The test raises RepairRefused before {FN}. It is a "
+        "parametrized sweep of surfaces and input kinds. One forged step is "
+        "not the whole test. That discard is not replayed."
+    ),
+    "tests/export/test_export.py::test_export_refuses_torn_final": (
+        f"{DIFFERENT_NOTE}. export_to_canonical does not call {FN}. "
+        f"{FIXTURE} carries message content. This set does not store that "
+        "content."
+    ),
+    "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz": (
+        f"{DIFFERENT_NOTE}. The test calls "
+        "affected_region_torn_terminal_record_discard inside a five-function "
+        "sweep. One function inside the sweep is not the whole test."
+    ),
+    "tests/adapters/test_claude_code.py::test_torn_tail_SL002": (
+        f"{DIFFERENT_NOTE}. The test loads the adapter and does not call {FN}."
+    ),
+    "tests/adapters/test_claude_code.py::test_regression_encoding_sl001_mid_and_sl002_tail": (
+        f"{DIFFERENT_NOTE}. The test loads the adapter and does not call {FN}. "
+        "One encoding case inside the test is not this function."
+    ),
+    (
+        "tests/repair/test_scoped_abstention.py::"
+        "test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin"
+    ): (
+        f"{DIFFERENT_NOTE}. The executed plan names other recipes. The SL002 "
+        "plan has no steps, so this function is not called."
+    ),
+}
+
+SHAPES: tuple[dict[str, Any], ...] = (
+    {
+        "test": "tests/io/test_hostile.py::test_canonical_torn_final_repairable",
+        "calls": ("main", "check_file"),
+        "strings": ("SL002", "A0", "A4"),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": "tests/io/test_hostile.py::test_hostile_repair_refusal_on_non_repairable",
+        "calls": ("main", "check_file"),
+        "strings": ("repairable",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": "tests/test_sl001_sl002.py::test_sl002_repair_round_trip",
+        "calls": ("check_file", "plan", "repair"),
+        "strings": (RECIPE, "seq-renumber", "SL002"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": "tests/test_e2e_cycle.py::test_e2e_cycle_canonical_torn_terminal_record",
+        "calls": ("check_file", "repair", "verify"),
+        "strings": ("SL002", "A0", "A4"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": "tests/test_e2e_cycle.py::test_e2e_vendor_format_writeback",
+        "calls": ("check_file", "main"),
+        "strings": ("SL002", "verify"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": "tests/cli/test_repair_cli.py::test_repair_cli_sl002_success",
+        "calls": ("main", "check_file"),
+        "strings": ("SL002",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/repair/test_torn_tail_identity.py::"
+            "test_canonical_torn_tail_keeps_event_with_same_id"
+        ),
+        "calls": ("plan_repair", "repair"),
+        "strings": (RECIPE, "seq-renumber"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/repair/test_torn_tail_identity.py::test_vendor_torn_tail_keeps_line_with_same_id"
+        ),
+        "calls": ("repair",),
+        "strings": ("basic.jsonl",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/fuzz/test_repair_invariants.py::"
+            "test_conservative_torn_tail_preserves_every_unique_decodable_record"
+        ),
+        "calls": ("repair",),
+        "strings": ("SL002",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/repair/test_scoped_abstention.py::"
+            "test_positive_e2e_realistic_tool_session_repaired"
+        ),
+        "calls": ("execute",),
+        "strings": (RECIPE, "seq-renumber"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": "tests/adapters/test_codex_rollout.py::test_repair_auto_emits_vendor_writeback",
+        "calls": ("repair",),
+        "strings": (RECIPE, "codex-rollout"),
+        "absent": (FN,),
+        "raises": False,
+    },
+    {
+        "test": "tests/repair/test_writeback.py::test_api_repair_vendor_torn_writeback",
+        "calls": ("repair",),
+        "strings": ("claude-code-jsonl", "dropped_lines"),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": "tests/repair/test_writeback.py::test_api_repair_vendor_emit_canonical",
+        "calls": ("repair",),
+        "strings": ("canonical", "schema_version"),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": "tests/repair/test_writeback.py::test_api_verify_vendor_pair",
+        "calls": ("repair", "verify"),
+        "strings": ("verify",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/repair/test_snapshot_consistency.py::"
+            "test_write_back_keeps_line_the_current_bytes_no_longer_flag"
+        ),
+        "calls": ("execute",),
+        "strings": ("SL002",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+        "except": True,
+    },
+    {
+        "test": (
+            "tests/repair/test_scoped_abstention.py::"
+            "test_scenario_2_dangling_call_in_truncated_region"
+        ),
+        "calls": ("plan", "execute"),
+        "strings": (RECIPE, "RepairRefused", "side-effect-scope-unproven"),
+        "absent": (FN,),
+        "raises": True,
+    },
+    {
+        "test": (
+            "tests/fuzz/test_repair_invariants.py::"
+            "test_resealed_tampered_plan_is_refused_at_every_public_execution_boundary"
+        ),
+        "calls": ("apply_plan", "execute", "_resealed_torn_record_plan"),
+        "strings": ("RepairRefused",),
+        "absent": (FN,),
+        "raises": True,
+    },
+    {
+        "test": "tests/export/test_export.py::test_export_refuses_torn_final",
+        "calls": ("export_to_canonical",),
+        "strings": ("torn_final.jsonl",),
+        "absent": (FN, RECIPE, "repair"),
+        "raises": True,
+    },
+    {
+        "test": "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz",
+        "calls": (),
+        "strings": ("affected_region_torn_terminal_record_discard",),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+    {
+        "test": "tests/adapters/test_claude_code.py::test_torn_tail_SL002",
+        "calls": ("load_claude_code",),
+        "strings": ("SL002",),
+        "absent": (FN, RECIPE, "repair"),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/adapters/test_claude_code.py::test_regression_encoding_sl001_mid_and_sl002_tail"
+        ),
+        "calls": ("load_claude_code",),
+        "strings": ("SL002", "SL001"),
+        "absent": (FN, RECIPE, "repair"),
+        "raises": False,
+    },
+    {
+        "test": (
+            "tests/repair/test_scoped_abstention.py::"
+            "test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin"
+        ),
+        "calls": ("execute", "plan"),
+        "strings": (
+            "identical-duplicate-collapse",
+            "seq-renumber",
+            "side-effect-scope-unproven",
+        ),
+        "absent": (FN, RECIPE),
+        "raises": False,
+    },
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/recipes_sl002.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+_SEAMS = (
+    SEAM_REGION,
+    SEAM_DETERMINISM,
+    SEAM_CODEC,
+    SEAM_NORMALIZE,
+    SEAM_FLOAT,
+    SEAM_PYSTR,
+    SEAM_REGISTER,
+)
+CONTENT_KEYS = frozenset({"payload", "message", "text", "output", "command", "description"})
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_sl002.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_sl002.py")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_torn_terminal_record_discard.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def test_functions(text: str) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    found: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith("test_"):
+                found.append(node)
+    return found
+
+
+def function_named(text: str, name: str) -> ast.AST:
+    for node in test_functions(text):
+        if node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def string_constants(fn: ast.AST) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+        elif isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+    return found
+
+
+def has_pytest_raises(fn: ast.AST) -> bool:
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.With):
+            continue
+        for item in node.items:
+            call = item.context_expr
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute):
+                if call.func.attr == "raises":
+                    return True
+    return False
+
+
+def has_except(fn: ast.AST) -> bool:
+    return any(isinstance(node, ast.ExceptHandler) for node in ast.walk(fn))
+
+
+def content_strings(node: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in CONTENT_KEYS:
+                found.extend(collect_strings(value))
+            else:
+                found.extend(content_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(content_strings(item))
+    return found
+
+
+def collect_strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node else []
+    if isinstance(node, dict):
+        found: list[str] = []
+        for value in node.values():
+            found.extend(collect_strings(value))
+        return found
+    if isinstance(node, list):
+        found = []
+        for item in node:
+            found.extend(collect_strings(item))
+        return found
+    return []
+
+
+def const_strings(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value] if node.value else []
+    if isinstance(node, ast.JoinedStr):
+        found: list[str] = []
+        for value in node.values:
+            found.extend(const_strings(value))
+        return found
+    if isinstance(node, ast.Dict):
+        found = []
+        for value in node.values:
+            if value is not None:
+                found.extend(const_strings(value))
+        return found
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        found = []
+        for value in node.elts:
+            found.extend(const_strings(value))
+        return found
+    return []
+
+
+def payload_literals(text: str) -> list[str]:
+    found: list[str] = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.keyword) and node.arg == "payload":
+            found.extend(const_strings(node.value))
+    return found
+
+
+def reject_payload(events: list[dict[str, Any]]) -> None:
+    for item in events:
+        if "payload" in item:
+            raise SystemExit("refusing payload content in a stored vector")
+        event_id = item.get("id")
+        if not isinstance(event_id, str) or not event_id.startswith("evt-"):
+            raise SystemExit("stored id drifted")
+
+
+def ev(event_id: str, seq: int | None = None) -> dict[str, Any]:
+    row: dict[str, Any] = {"id": event_id, "kind": "message"}
+    if seq is not None:
+        row["seq"] = seq
+    return row
+
+
+def run_apply(mod: Any, events: list[Any], target: Any, params: Any) -> tuple[str, Any]:
+    step = SimpleNamespace(target_index=target, params=params)
+    try:
+        out = mod.apply_torn_terminal_record_discard(events, step)
+    except IndexError as exc:
+        return ("IndexError", str(exc))
+    except Exception as exc:
+        return (type(exc).__name__, str(exc))
+    if not isinstance(out, list):
+        raise SystemExit("pin success is not a list")
+    rows: list[dict[str, Any]] = []
+    for item in out:
+        if not isinstance(item, dict):
+            raise SystemExit("pin event is not a dict")
+        rows.append(dict(item))
+    return ("ok", rows)
+
+
+def step_doc(target: Any, params: Any) -> dict[str, Any]:
+    if params == "not_mapping":
+        encoded: dict[str, Any] = {"t": "not_mapping"}
+    elif isinstance(params, list):
+        encoded = {
+            "t": "map",
+            "entries": [[key, tagged(value)] for key, value in params],
+        }
+    else:
+        encoded = tagged(params)
+    if target == "other":
+        target_doc: dict[str, Any] = {"t": "other"}
+    else:
+        target_doc = tagged(target)
+    return {"target_index": target_doc, "params": encoded}
+
+
+def pin_params(params: Any) -> Any:
+    if params == "not_mapping":
+        return "not-a-mapping"
+    if isinstance(params, list):
+        folded: dict[str, Any] = {}
+        for key, value in params:
+            folded[key] = value
+        return folded
+    return params
+
+
+def pin_target(target: Any) -> Any:
+    if target == "other":
+        return "synthetic-scalar"
+    return target
+
+
+def ok_vector(
+    vector_id: str,
+    events: list[dict[str, Any]],
+    target: Any,
+    params: Any,
+    out: list[dict[str, Any]],
+) -> dict[str, Any]:
+    reject_payload(events)
+    reject_payload(out)
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_ok",
+            "fn": FN,
+            "entire_test": False,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": step_doc(target, params),
+        },
+        "expected": {
+            "mode": "ok",
+            "events_out": [tagged(event) for event in out],
+        },
+    }
+
+
+def index_vector(
+    vector_id: str,
+    events: list[dict[str, Any]],
+    target: Any,
+    params: Any,
+    message: str,
+) -> dict[str, Any]:
+    reject_payload(events)
+    if message != POP_MESSAGE:
+        raise SystemExit(f"{vector_id} is not the empty pop")
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_index_error",
+            "fn": FN,
+            "entire_test": False,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": step_doc(target, params),
+        },
+        "expected": {
+            "mode": "index_error",
+            "error_type": "IndexError",
+            "message": message,
+        },
+    }
+
+
+def recipe_vector(mod: Any) -> dict[str, Any]:
+    recipe = mod.RECIPE_TORN_TERMINAL_RECORD_DISCARD
+    codes = sys.modules["sesslint.codes"]
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    if recipe.apply is not mod.apply_torn_terminal_record_discard:
+        raise SystemExit("pin apply is not the recipe apply")
+    if recipe.affected_region is not mod.affected_region_torn_terminal_record_discard:
+        raise SystemExit("pin region callable drifted")
+    handles = [item for item in recipe.handles]
+    preconditions = [item for item in recipe.preconditions]
+    if handles != [codes.SL002] or codes.SL002 != "SL002":
+        raise SystemExit("pin handles drifted")
+    if preconditions != ["no_sl203", "torn_terminal_record"]:
+        raise SystemExit("pin preconditions drifted")
+    if recipe.min_policy != "conservative" or recipe.version != "1.0.0":
+        raise SystemExit("pin recipe policy drifted")
+    if recipe.lossy or recipe.salvage_only or recipe.excludes_execution_dependence:
+        raise SystemExit("pin recipe flags drifted")
+    return {
+        "id": "recipe_torn_terminal_record_discard",
+        "construct": {
+            "type": "recipe_constant",
+            "fn": "RECIPE_TORN_TERMINAL_RECORD_DISCARD",
+            "entire_test": False,
+        },
+        "expected": {
+            "mode": "recipe",
+            "name": recipe.name,
+            "handles": handles,
+            "preconditions": preconditions,
+            "lossy": require_bool("lossy", recipe.lossy),
+            "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+            "min_policy": recipe.min_policy,
+            "version": recipe.version,
+            "excludes_execution_dependence": require_bool(
+                "excludes_execution_dependence",
+                recipe.excludes_execution_dependence,
+            ),
+            "apply_present": require_bool("apply_present", recipe.apply is not None),
+            "affected_region_present": require_bool(
+                "affected_region_present",
+                recipe.affected_region is not None,
+            ),
+        },
+    }
+
+
+def require_ok(
+    mod: Any,
+    label: str,
+    events: list[dict[str, Any]],
+    target: Any,
+    params: Any,
+) -> list[dict[str, Any]]:
+    kind, value = run_apply(mod, events, pin_target(target), pin_params(params))
+    if kind != "ok":
+        raise SystemExit(f"{label} did not return Ok")
+    reject_payload(value)
+    return value
+
+
+def require_pop(
+    mod: Any,
+    label: str,
+    events: list[dict[str, Any]],
+    target: Any,
+    params: Any,
+) -> str:
+    kind, value = run_apply(mod, events, pin_target(target), pin_params(params))
+    if kind != "IndexError" or value != POP_MESSAGE:
+        raise SystemExit(f"{label} was not the empty pop")
+    return value
+
+
+def stored_vectors(mod: Any) -> list[dict[str, Any]]:
+    rows = [ev("evt-a", 0), ev("evt-b", 1)]
+    three = [ev("evt-a", 0), ev("evt-b", 1), ev("evt-c", 2)]
+    same = [ev("evt-same"), ev("evt-same")]
+    single = [ev("evt-only")]
+    cases: list[tuple[str, list[dict[str, Any]], Any, Any, str]] = [
+        ("discard_named_last", three, 2, {"cut_index": 2}, "discard"),
+        ("reader_minted_keeps", [ev("evt-a"), ev("evt-torn")], None, {"cut_index": 1}, "keep"),
+        ("shared_id_discards_last", same, 1, {"cut_index": 1}, "discard"),
+        ("shared_id_index_zero_keeps", same, 0, {"cut_index": 0}, "keep"),
+        ("bool_cut_keeps", rows, 1, {"cut_index": True}, "keep"),
+        ("bool_true_discards_index_one", rows, True, {"cut_index": 1}, "discard"),
+        ("bool_false_clears_singleton", single, False, {"cut_index": 0}, "clear"),
+        ("bool_true_keeps_singleton", single, True, {"cut_index": 0}, "keep"),
+        ("not_mapping_keeps", rows, 1, "not_mapping", "keep"),
+        ("other_target_keeps", rows, "other", {"cut_index": 1}, "keep"),
+        (
+            "ignores_region_fallback",
+            rows,
+            1,
+            {"first_unsafe_index": 1},
+            "keep",
+        ),
+        (
+            "duplicate_cut_last_wins",
+            rows,
+            1,
+            [("cut_index", 0), ("cut_index", 1)],
+            "discard",
+        ),
+        ("float_cut_keeps", rows, 1, {"cut_index": 1.0}, "keep"),
+        ("string_cut_keeps", rows, 1, {"cut_index": "1"}, "keep"),
+        ("list_cut_keeps", rows, 1, {"cut_index": [1]}, "keep"),
+        ("cut_past_end_keeps", rows, 9, {"cut_index": 9}, "keep"),
+        ("negative_cut_keeps", rows, -2, {"cut_index": -2}, "keep"),
+        ("target_mismatch_keeps", three, 1, {"cut_index": 2}, "keep"),
+        ("missing_cut_keeps", rows, 1, {}, "keep"),
+        ("null_cut_keeps", rows, 1, {"cut_index": None}, "keep"),
+        ("empty_no_cut_keeps", [], None, "not_mapping", "empty"),
+        ("empty_zero_is_not_pop", [], 0, {"cut_index": 0}, "empty"),
+        ("other_target_empty_is_not_pop", [], "other", {"cut_index": -1}, "empty"),
+    ]
+    vectors: list[dict[str, Any]] = []
+    for vector_id, events, target, params, expect in cases:
+        out = require_ok(mod, vector_id, events, target, params)
+        if expect == "keep" and out != events:
+            raise SystemExit(f"{vector_id} discarded")
+        if expect == "discard" and out != events[:-1]:
+            raise SystemExit(f"{vector_id} did not drop only the last event")
+        if expect == "clear" and out != []:
+            raise SystemExit(f"{vector_id} did not clear the singleton")
+        if expect == "empty" and out != []:
+            raise SystemExit(f"{vector_id} did not stay empty")
+        vectors.append(ok_vector(vector_id, events, target, params, out))
+    message = require_pop(mod, "empty_pop", [], -1, {"cut_index": -1})
+    vectors.append(index_vector("empty_pop", [], -1, {"cut_index": -1}, message))
+    return vectors
+
+
+def prove_unclaimed(mod: Any) -> None:
+    canon = sys.modules["sesslint.canonical"]
+    session = canon.SessionEvent(
+        id="evt-kept",
+        parent_id=None,
+        seq=0,
+        ts=TS,
+        actor="user",
+        kind="message",
+    )
+    kind, value = run_apply(mod, [session], 0, {"cut_index": 0})
+    if kind != "ok" or value != []:
+        raise SystemExit("pin SessionEvent discard did not succeed")
+    kept_kind, kept = run_apply(mod, [session, ev("evt-b")], None, {"cut_index": 1})
+    if kept_kind != "ok" or [item.get("id") for item in kept] != ["evt-kept", "evt-b"]:
+        raise SystemExit("pin SessionEvent keep did not succeed")
+    del kept
+    float_kind, floated = run_apply(mod, [ev("evt-a"), ev("evt-b")], 1.0, {"cut_index": 1})
+    if float_kind != "ok" or [item.get("id") for item in floated] != ["evt-a"]:
+        raise SystemExit("pin float target did not discard")
+    del floated
+    empty_kind, empty_message = run_apply(mod, [], -1.0, {"cut_index": -1})
+    if empty_kind != "IndexError" or empty_message != POP_MESSAGE:
+        raise SystemExit("pin float target on empty was not IndexError")
+    del empty_message
+    bare = SimpleNamespace(params={"cut_index": 1})
+    try:
+        mod.apply_torn_terminal_record_discard([ev("evt-a"), ev("evt-b")], bare)
+    except AttributeError:
+        pass
+    else:
+        raise SystemExit("pin missing target_index did not raise")
+    for alien in ("abc", 7):
+        alien_kind, _alien_message = run_apply(mod, [alien], 0, {"cut_index": 0})
+        if alien_kind not in {"ValueError", "TypeError"}:
+            raise SystemExit("pin dict fallback did not raise")
+        del _alien_message
+
+
+def prove_fixture(fixture_bytes: bytes, expectations: dict[str, Any]) -> list[str]:
+    if b"\r" in fixture_bytes or b"payload" in fixture_bytes:
+        raise SystemExit("fixture bytes drifted")
+    lines = fixture_bytes.splitlines()
+    if len(lines) != 3 or lines[-1].endswith(b"}"):
+        raise SystemExit("fixture shape drifted")
+    banned: list[str] = [lines[-1].decode("utf-8")]
+    for line in lines[:-1]:
+        item = json.loads(line)
+        if not isinstance(item, dict) or "payload" in item or "message" not in item:
+            raise SystemExit("fixture record drifted")
+        banned.extend(content_strings(item))
+    spec = expectations.get("torn_final.jsonl")
+    if not isinstance(spec, dict):
+        raise SystemExit("expectations lost torn_final")
+    if spec.get("code") != "SL002" or spec.get("repairable") is not True:
+        raise SystemExit("torn_final expectations drifted")
+    description = spec.get("description")
+    if isinstance(description, str) and description:
+        banned.append(description)
+    return banned
+
+
+def prove_shapes(blobs: dict[str, str]) -> None:
+    if list(NOTES) != [item["test"] for item in SHAPES]:
+        raise SystemExit("shape order drifted")
+    for shape in SHAPES:
+        test_id = shape["test"]
+        rel, name = test_id.split("::", 1)
+        fn = function_named(blobs[rel], name)
+        names = call_names(fn)
+        constants = string_constants(fn)
+        source = ast.get_source_segment(blobs[rel], fn) or ""
+        tokens = set(names) | constants
+        for call in shape["calls"]:
+            if call not in tokens and call not in source:
+                raise SystemExit(f"{name} lost {call}")
+        for needle in shape["strings"]:
+            if needle not in tokens and needle not in source:
+                raise SystemExit(f"{name} lost {needle}")
+        for needle in shape["absent"]:
+            if needle in tokens:
+                raise SystemExit(f"{name} gained {needle}")
+        if has_pytest_raises(fn) != shape["raises"]:
+            raise SystemExit(f"{name} raises drifted")
+        if shape.get("except") and not has_except(fn):
+            raise SystemExit(f"{name} lost its handler")
+        if FN in names:
+            raise SystemExit(f"{name} calls {FN} directly")
+
+
+def confirm_docs() -> None:
+    docs = git_show_bytes(f"{PYTHON_COMMIT}:{DOCS}").decode("utf-8")
+    for needle in (RECIPE, "SL002", "no_sl203", "torn_terminal_record", FIXTURE):
+        if needle not in docs:
+            raise SystemExit(f"pin recipe doc lost {needle}")
+
+
+def discover_coverage() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for test_id in NOTES:
+        rows.append(
+            {
+                "test": test_id,
+                "column": "column_0",
+                "status": "not_applicable",
+                "vector_id": None,
+                "note": NOTES[test_id],
+            }
+        )
+    return rows
+
+
+def leaks_content(text: str, item: str) -> bool:
+    if len(item) >= 8 and item in text:
+        return True
+    distinctive = any(ch.isspace() or not ch.isalnum() for ch in item)
+    if distinctive and len(item) >= 4 and item in text:
+        return True
+    return len(item) >= 4 and f'"{item}"' in text
+
+
+def dump(doc: Any, banned_content: list[str]) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text:
+        raise SystemExit("refusing the wrong pin in JSON")
+    if "0 diff" in text:
+        raise SystemExit("refusing a zero-diff claim in JSON")
+    for seam in _SEAMS:
+        if seam in text:
+            raise SystemExit("refusing a seam sentence in JSON")
+    if '"payload"' in text:
+        raise SystemExit("refusing a payload field in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit("refusing a path fragment in JSON")
+    allow = {
+        RECIPE,
+        FN,
+        "SL002",
+        "no_sl203",
+        "torn_terminal_record",
+        "seq-renumber",
+        "IndexError",
+        POP_MESSAGE,
+        MODULE,
+        SCHEMA,
+        PYTHON_COMMIT,
+        GENERATOR,
+        FIXTURE,
+    }
+    for item in banned_content:
+        if not item or item in allow:
+            continue
+        if leaks_content(text, item):
+            digest = hashlib.sha256(item.encode("utf-8")).hexdigest()
+            raise SystemExit(f"refusing content length {len(item)} sha {digest}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    confirm_docs()
+    files = sorted({item["test"].split("::", 1)[0] for item in SHAPES})
+    blobs = {rel: git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8") for rel in files}
+    prove_shapes(blobs)
+    fixture_bytes = git_show_bytes(f"{PYTHON_COMMIT}:{FIXTURE}")
+    expectations = json.loads(git_show_bytes(f"{PYTHON_COMMIT}:{EXPECTATIONS}"))
+    banned = prove_fixture(fixture_bytes, expectations)
+    for text in blobs.values():
+        banned.extend(payload_literals(text))
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_sl002.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    if py_sha != KNOWN_PY_SHA:
+        raise SystemExit("recipes_sl002.py sha drifted")
+    mod = load_mod()
+    prove_unclaimed(mod)
+    recipe = recipe_vector(mod)
+    vectors = [recipe, *stored_vectors(mod)]
+    if any(item["construct"]["entire_test"] for item in vectors):
+        raise SystemExit("entire_test must stay false")
+    if sum(item["expected"]["mode"] == "index_error" for item in vectors) != 1:
+        raise SystemExit("EmptyPop must be one vector")
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_sl002_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc, banned)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage()
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": "tests",
+        "covered_count": 0,
+        "not_applicable_count": len(rows),
+        "rows": rows,
+    }
+    if len(rows) != len(NOTES) or coverage["not_applicable_count"] != len(NOTES):
+        raise SystemExit("coverage counts drifted")
+    write_text(OUT / "coverage.json", dump(coverage, banned))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic torn-terminal-record-discard parity. Apply results "
+            "come from the pinned blob. Plan results, fixture message text, "
+            "and SessionEvent copies stay uncovered. No fixture diff is stored."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance, banned))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_sl002_py_sha256": py_sha,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest, banned))
+    print(f"{len(vectors)} {digest} covered=0 not_applicable={len(rows)} py={py_sha}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
