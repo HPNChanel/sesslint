@@ -1,0 +1,253 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.watch",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "watch_py_sha256": "97226bd8408dc1c47a355e9a87d98b10b10f10bfd5ea8e46419d2f5055e8703f",
+  "watch_rs_sha256": "4a062e8dd089979b7d52c622bbd330d7baa1ace83af65b45f2ae402bc8b9ffa2",
+  "known_parity_gaps": [
+    "GAP-cli-watch-discover-session-roots: Python run() may reach path checks, discover_session_roots, or sesslint.watch.watch after imports; Rust run() returns Display `sesslint.api.discover_session_roots is not available` immediately after `json` import (no path check, print, or exit 0)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "watch",
+        "help": "[read-only] Poll session directories and flag newly corrupted files.",
+        "description": "[read-only] Poll-based observer: debounced mtime+size snapshots, emits one line per verdict transition. Pure observer — never writes, never installs hooks. Ctrl+C exits cleanly.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": "*",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path(s) to session file(s) or directories to watch",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex",
+              "all"
+            ],
+            "metavar": null,
+            "help": "Watch a well-known agent session root instead of paths",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--interval"
+            ],
+            "dest": "interval",
+            "action": "store",
+            "nargs": null,
+            "type_name": "float",
+            "choices": null,
+            "metavar": "SEC",
+            "help": "Poll interval in seconds (default: 2.0, min: 0.05)",
+            "default_keyword": {
+              "present": {
+                "float": 2.0
+              }
+            },
+            "effective_default": {
+              "float": 2.0
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter for all inputs (default: auto)",
+            "default_keyword": {
+              "present": {
+                "text": "auto"
+              }
+            },
+            "effective_default": {
+              "text": "auto"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit sesslint.watch-event/v1 NDJSON transition events",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "run_defaults_empty",
+      "construct": {
+        "type": "run",
+        "args": {}
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-watch-discover-session-roots",
+        "seam": "sesslint.api.discover_session_roots is not available",
+        "imports_evaluated": [
+          "json",
+          "sesslint.api.discover_session_roots"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: watch requires at least one path or --agent.\n"
+        }
+      }
+    },
+    {
+      "id": "run_synthetic_path_only",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": [
+            "synthetic-session.jsonl"
+          ]
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-watch-discover-session-roots",
+        "seam": "sesslint.api.discover_session_roots is not available",
+        "imports_evaluated": [
+          "json",
+          "sesslint.api.discover_session_roots"
+        ],
+        "pin": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "id": "run_agent_codex",
+      "construct": {
+        "type": "run",
+        "args": {
+          "agent": "codex"
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-watch-discover-session-roots",
+        "seam": "sesslint.api.discover_session_roots is not available",
+        "imports_evaluated": [
+          "json",
+          "sesslint.api.discover_session_roots"
+        ],
+        "pin": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "id": "run_agent_with_conflicting_paths",
+      "construct": {
+        "type": "run",
+        "args": {
+          "agent": "all",
+          "path": [
+            "synthetic-session.jsonl"
+          ]
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-watch-discover-session-roots",
+        "seam": "sesslint.api.discover_session_roots is not available",
+        "imports_evaluated": [
+          "json",
+          "sesslint.api.discover_session_roots"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: --agent cannot be combined with explicit paths.\n"
+        }
+      }
+    },
+    {
+      "id": "run_full_args",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": [
+            "synthetic-session.jsonl"
+          ],
+          "agent": null,
+          "interval": 2.0,
+          "adapter": "canonical",
+          "json": true
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-watch-discover-session-roots",
+        "seam": "sesslint.api.discover_session_roots is not available",
+        "imports_evaluated": [
+          "json",
+          "sesslint.api.discover_session_roots"
+        ],
+        "pin": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    }
+  ]
+}
