@@ -1,7 +1,7 @@
 //! The ``sesslint check`` subcommand (absorbs the old ``scan`` command).
 //!
-//! Port of `src/sesslint/cli/check.py` lines 1–266
-//! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Port of `src/sesslint/cli/check.py` lines 1–266 and the pre-import checks
+//! in `_run` lines 269–583 @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
 //! [`configure`] records the pin's argparse declarations in order. It does
 //! not parse argv and it does not construct a process parser. Shared flags
@@ -11,24 +11,20 @@
 //!
 //! [`run`] implements the pin through the `--latest`, path-override, and
 //! missing-target branches. `parser.print_help` bytes are a gap: that branch
-//! returns 2 and writes nothing.
+//! returns 2 and writes nothing. The tail calls `_run`.
 //!
-//! The pin then calls `ctx.progress_callback`, `_load_baseline_arg`, and
-//! `build_scan_kwargs`, and the `_run` call is inside this slice. Those three
-//! public signatures cannot represent the pin arguments, so [`run`] stops
-//! before calling them. It does not enter `_run`, does not scan, and does not
-//! emit a report. [`RUN_UNAVAILABLE`] is the display that `_run` call would
-//! return. It is not returned here.
-//!
-//! `progress_callback` is not called, so `finish` is not called. Early returns
-//! before that call do not call `finish` either. [`TtyProgress::finish`] is
-//! the method the pin's `finally` would call. [`NdjsonProgress`] has no
-//! `finish`.
+//! `progress_callback`, `_load_baseline_arg`, and `build_scan_kwargs` stay
+//! outside `_run` and are not called, so `finish` is not called.
+//! [`CheckArgs::jobs`] is the `scan_kwargs["jobs"]` integer `_run` compares.
+//! `_run` keeps the pin's order and stops at the first import of each branch.
+//! Those stops do not return 0 or 1. [`RUN_UNAVAILABLE`] is not a stop
+//! display. `_emit_scan_rep` is not evaluated.
 
 use std::error::Error;
 use std::fmt;
+use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf, PrefixComponent};
 
 use crate::context::CliContext;
 use crate::options::{
@@ -38,7 +34,6 @@ use crate::options::{
     add_walk_filter_options, add_walk_options, validate_positive_int, ArgAction, ArgumentDecl,
     OptionParser, PositiveIntError,
 };
-use crate::progress::{NdjsonProgress, TtyProgress};
 
 /// Python: `NAME`.
 pub const NAME: &str = "check";
@@ -189,25 +184,78 @@ const USAGE_CODE: i32 = 2;
 /// Record that `parser.print_help` bytes are a gap.
 pub const HELP_BYTES_GAP: &str = "parser.print_help bytes are a gap";
 
-/// Display the `_run` call would return. [`run`] does not reach that call.
+/// Not a display of any `_run` stop.
 pub const RUN_UNAVAILABLE: &str = "sesslint.cli.check._run is not available";
 
-/// Why [`run`] does not call `progress_callback`, `load_baseline_arg`, and
-/// `build_scan_kwargs`.
-///
-/// `CliContext::progress_callback` takes `self` by value, and
-/// `build_scan_kwargs` also takes a `CliContext`. The pin uses both the
-/// callback and the same context. `load_baseline_arg` returns
-/// `Option<BTreeSet<String>>`, while `build_scan_kwargs` takes
-/// `Option<Vec<String>>`. `CommonArgs` has no explicit `None`, no float, and
-/// no list. Omitting `max_files` or `max_bytes` makes `build_scan_kwargs`
-/// store 10000 or 1073741824, which the pin does not do when those attributes
-/// are present and `None`.
-pub const SIGNATURE_GAP: &str = concat!(
-    "CliContext::progress_callback takes self by value and build_scan_kwargs also takes CliContext; ",
-    "load_baseline_arg returns Option<BTreeSet<String>> and build_scan_kwargs takes Option<Vec<String>>; ",
-    "CommonArgs cannot represent an explicit None, a float, or a list, and omitting max_files or max_bytes stores 10000 or 1073741824"
+/// Pin `ctx.error` when `--seal` is set and the subject is not one path.
+pub const SEAL_SCAN_ERROR: &str = concat!(
+    "Error: --seal applies to single-file checks only ",
+    "(one artifact per line; scans are not sealed).",
 );
+
+/// Pin `ctx.error` when `--seal` is set on one directory.
+pub const SEAL_DIRECTORY_ERROR: &str = concat!(
+    "Error: --seal applies to single-file checks only ",
+    "(one artifact per line; directory scans are not sealed).",
+);
+
+/// Pin `ctx.error` when `-` is combined with another path.
+pub const STDIN_COMBINED_ERROR: &str = "Error: '-' (stdin) cannot be combined with other paths.";
+
+/// Pin prefix for a missing path, including `": "`.
+pub const PATH_NOT_FOUND_PREFIX: &str = "Error: Path not found: ";
+
+/// Pin `ctx.info` when `scan_kwargs["jobs"]` is greater than 1.
+pub const JOBS_IGNORED_NOTE: &str = "Note: --jobs is ignored for single-file input.";
+
+/// Display when `sesslint.api.check_dir` cannot be imported.
+pub const CHECK_DIR_UNAVAILABLE: &str = "sesslint.api.check_dir is not available";
+
+/// Display when `sesslint.api.check_bytes` cannot be imported.
+pub const CHECK_BYTES_UNAVAILABLE: &str = "sesslint.api.check_bytes is not available";
+
+/// Display when the multi-path `minimize_path` import cannot be made.
+///
+/// The published `report::minimize_path` takes a home argument and returns
+/// [`Result`]. It is not this import. This stop does not call it.
+pub const MINIMIZE_PATH_UNAVAILABLE: &str = "sesslint.report.minimize_path is not available";
+
+/// Display when `sesslint.api.check_file` cannot be imported.
+pub const CHECK_FILE_UNAVAILABLE: &str = "sesslint.api.check_file is not available";
+
+/// Agent-root imports, in pin order.
+///
+/// Index 0 is the statement `_run` stops on. Later names are not called.
+pub const AGENT_ROOT_IMPORT: [&str; 3] = [
+    "from sesslint.api import check_dir, discover_session_roots",
+    "from sesslint.report import minimize_path",
+    "from sesslint.scan import FileResult, ScanReport, ScanTotals",
+];
+
+/// Stdin statements, in pin order.
+///
+/// Index 0 is the import `_run` stops on. `_read_stdin_bytes` is not run.
+pub const STDIN_IMPORT: [&str; 2] = ["from sesslint.api import check_bytes", "_read_stdin_bytes"];
+
+/// Multi-path imports, in pin order.
+///
+/// Index 0 is the import `_run` stops on. `scan_path` is not called.
+pub const MULTI_IMPORT: [&str; 2] = [
+    "from sesslint.report import minimize_path",
+    "from sesslint.scan import FileResult, ScanReport, ScanTotals, scan_path",
+];
+
+/// Directory import. `_run` stops on this statement.
+pub const DIRECTORY_IMPORT: &str = "from sesslint.api import check_dir";
+
+/// Statements after an existing file, in pin order.
+///
+/// The two getattr reads are applied. Index 2 is the import `_run` stops on.
+pub const AFTER_EXISTING_FILE: [&str; 3] = [
+    "getattr(args, \"adapter\", \"auto\")",
+    "getattr(args, \"profile\", \"neutral\")",
+    "from sesslint.api import check_file",
+];
 
 /// Argparse `nargs` after `add_argument`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -518,11 +566,37 @@ pub fn configure() -> CheckSubcommandSpec {
 /// `list(getattr(args, "path", None) or [])`: missing, `None`, and `[]` are
 /// an empty vector. No path is invented. `latest` is the truth value of
 /// `getattr(args, "latest", False)`. This does not parse argv.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// `seal` is `getattr(args, "seal", None)`. `jobs` is `scan_kwargs["jobs"]`,
+/// already an integer. `adapter` and `profile` are the getattr results read
+/// on the existing-file branch. [`None`] selects the pin default.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckArgs {
     pub agent: Option<String>,
     pub path: Vec<PathBuf>,
     pub latest: bool,
+    /// `getattr(args, "seal", None)`. Any [`Some`] value is set.
+    pub seal: Option<PathBuf>,
+    /// Resolved `scan_kwargs["jobs"]`. [`Default`] stores 1.
+    pub jobs: i64,
+    /// `getattr(args, "adapter", "auto")`. [`None`] selects `auto`.
+    pub adapter: Option<String>,
+    /// `getattr(args, "profile", "neutral")`. [`None`] selects `neutral`.
+    pub profile: Option<String>,
+}
+
+impl Default for CheckArgs {
+    fn default() -> Self {
+        Self {
+            agent: None,
+            path: Vec::new(),
+            latest: false,
+            seal: None,
+            jobs: 1,
+            adapter: None,
+            profile: None,
+        }
+    }
 }
 
 impl CheckArgs {
@@ -590,15 +664,48 @@ impl UsageExit {
     }
 }
 
+/// Which import `_run` reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoppedImport {
+    /// `from sesslint.api import check_dir, discover_session_roots`.
+    AgentRoots,
+    /// `from sesslint.api import check_bytes`.
+    CheckBytes,
+    /// `from sesslint.report import minimize_path`.
+    MinimizePath,
+    /// `from sesslint.api import check_dir`.
+    Directory,
+    /// `from sesslint.api import check_file`.
+    CheckFile,
+}
+
+impl fmt::Display for StoppedImport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::AgentRoots | Self::Directory => CHECK_DIR_UNAVAILABLE,
+            Self::CheckBytes => CHECK_BYTES_UNAVAILABLE,
+            Self::MinimizePath => MINIMIZE_PATH_UNAVAILABLE,
+            Self::CheckFile => CHECK_FILE_UNAVAILABLE,
+        })
+    }
+}
+
+impl Error for StoppedImport {}
+
 /// Stop from [`run`] that is not usage exit 2.
 #[derive(Debug)]
 pub enum RunFailure {
-    /// `ctx.error` or `ctx.warn` could not write.
+    /// `ctx.error`, `ctx.warn`, or `ctx.info` could not write, or a path
+    /// stat failed in a way the pin would raise.
     Io(io::Error),
     /// `sesslint.discovery.latest_session` is not linked.
     LatestSessionUnavailable,
-    /// The next pin calls cannot be represented by the public signatures.
-    SignatureGap,
+    /// One of the imports this slice stops on.
+    Unavailable(StoppedImport),
+    /// `_run` needed one path and the list was empty.
+    ///
+    /// [`run`] does not reach this. The missing-target prefix returns 2 first.
+    AbsentTarget,
 }
 
 impl fmt::Display for RunFailure {
@@ -606,7 +713,8 @@ impl fmt::Display for RunFailure {
         match self {
             Self::Io(error) => write!(formatter, "{error}"),
             Self::LatestSessionUnavailable => formatter.write_str(LATEST_SESSION_UNAVAILABLE),
-            Self::SignatureGap => formatter.write_str(SIGNATURE_GAP),
+            Self::Unavailable(import) => fmt::Display::fmt(import, formatter),
+            Self::AbsentTarget => formatter.write_str("check target path is absent"),
         }
     }
 }
@@ -615,7 +723,7 @@ impl Error for RunFailure {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::LatestSessionUnavailable | Self::SignatureGap => None,
+            Self::LatestSessionUnavailable | Self::Unavailable(_) | Self::AbsentTarget => None,
         }
     }
 }
@@ -626,7 +734,7 @@ impl From<io::Error> for RunFailure {
     }
 }
 
-/// Python `run(ctx, args, parser)` through the call that would enter `_run`.
+/// Python `run(ctx, args, parser)` through the import stops inside `_run`.
 ///
 /// `--latest` with an agent other than `claude` or `codex` writes
 /// [`LATEST_AGENT_ERROR`] and returns 2 before the discovery import.
@@ -640,9 +748,9 @@ impl From<io::Error> for RunFailure {
 /// and clears the agent. No agent and no paths records [`HELP_BYTES_GAP`] and
 /// returns 2 without writing help.
 ///
-/// The following pin calls are not made. [`SIGNATURE_GAP`] is the display.
-/// [`RUN_UNAVAILABLE`] is not returned. Nothing is scanned and no report is
-/// emitted. `finish` is not called.
+/// The tail calls `_run` with that cleared agent. [`RUN_UNAVAILABLE`] is not
+/// returned. Nothing is scanned and no report is emitted. `finish` is not
+/// called.
 pub fn run<W: Write>(
     ctx: &mut CliContext<W>,
     args: &CheckArgs,
@@ -670,17 +778,251 @@ pub fn run<W: Write>(
         let _unread_help_bytes = help.bytes;
         return Ok(UsageExit::help(help.gap));
     }
-    let _agent_after_override = agent;
-    // Names kept live so this stop stays attached to the uncalled pin tail.
-    let _tty_finish = TtyProgress::<Vec<u8>>::finish;
-    let _ndjson_has_no_finish = core::mem::size_of::<NdjsonProgress<Vec<u8>>>();
-    let _run_display_not_returned = RUN_UNAVAILABLE;
-    Err(RunFailure::SignatureGap)
+    _run(ctx, args, parser, agent, &args.path)
 }
 
 fn import_latest_session() -> RunFailure {
     let _import = IMPORT_LATEST_SESSION;
     RunFailure::LatestSessionUnavailable
+}
+
+/// Pin `_run` through the import that ends each branch.
+///
+/// Order matches the pin: seal on a subject that is not one path, then agent
+/// roots, then stdin, then multi-path existence, then one directory, then one
+/// missing path, then the jobs note and the adapter/profile reads. An import
+/// returns [`RunFailure::Unavailable`]. Exit 0 and exit 1 are not returned.
+/// `_emit_scan_rep` is not evaluated.
+fn _run<W: Write>(
+    ctx: &mut CliContext<W>,
+    args: &CheckArgs,
+    _parser: &CheckParser,
+    agent: Option<&str>,
+    target_paths: &[PathBuf],
+) -> Result<UsageExit, RunFailure> {
+    if args.seal.is_some() && (agent.is_some() || target_paths.len() != 1) {
+        return write_usage(ctx, SEAL_SCAN_ERROR);
+    }
+    if agent.is_some() {
+        return Err(stop_at(StoppedImport::AgentRoots));
+    }
+    if target_paths.iter().any(|path| path_text(path) == "-") {
+        if target_paths.len() > 1 {
+            return write_usage(ctx, STDIN_COMBINED_ERROR);
+        }
+        return Err(stop_at(StoppedImport::CheckBytes));
+    }
+    if target_paths.len() > 1 {
+        return multi_paths(ctx, target_paths);
+    }
+    let Some(target_path) = target_paths.first() else {
+        return Err(RunFailure::AbsentTarget);
+    };
+    one_path(ctx, args, target_path)
+}
+
+fn multi_paths<W: Write>(
+    ctx: &mut CliContext<W>,
+    target_paths: &[PathBuf],
+) -> Result<UsageExit, RunFailure> {
+    for path in target_paths {
+        if missing_and_not_symlink(path)? {
+            return write_usage(ctx, &path_not_found(path));
+        }
+    }
+    Err(stop_at(StoppedImport::MinimizePath))
+}
+
+fn one_path<W: Write>(
+    ctx: &mut CliContext<W>,
+    args: &CheckArgs,
+    target_path: &Path,
+) -> Result<UsageExit, RunFailure> {
+    if followed_is_dir(target_path)? {
+        if args.seal.is_some() {
+            return write_usage(ctx, SEAL_DIRECTORY_ERROR);
+        }
+        return Err(stop_at(StoppedImport::Directory));
+    }
+    if !followed_exists(target_path)? {
+        return write_usage(ctx, &path_not_found(target_path));
+    }
+    if args.jobs > 1 {
+        ctx.info(JOBS_IGNORED_NOTE)?;
+    }
+    let (format_opt, profile_opt) = read_adapter_and_profile(args);
+    Err(stop_after_format(format_opt, profile_opt))
+}
+
+fn write_usage<W: Write>(ctx: &mut CliContext<W>, message: &str) -> Result<UsageExit, RunFailure> {
+    ctx.error(message)?;
+    Ok(UsageExit::usage())
+}
+
+fn path_not_found(path: &Path) -> String {
+    let shown = path_text(path);
+    format!("{PATH_NOT_FOUND_PREFIX}{shown}")
+}
+
+/// `not exists() and not is_symlink()`.
+///
+/// `exists` follows symlinks. A broken symlink is not this condition.
+fn missing_and_not_symlink(path: &Path) -> io::Result<bool> {
+    if followed_exists(path)? {
+        return Ok(false);
+    }
+    Ok(!is_symlink(path))
+}
+
+fn followed_exists(path: &Path) -> io::Result<bool> {
+    match fs::metadata(metadata_path(path)) {
+        Ok(_) => Ok(true),
+        Err(error) if is_missing(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn followed_is_dir(path: &Path) -> io::Result<bool> {
+    match fs::metadata(metadata_path(path)) {
+        Ok(metadata) => Ok(metadata.is_dir()),
+        Err(error) if is_missing(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(metadata_path(path)).is_ok_and(|meta| meta.file_type().is_symlink())
+}
+
+fn is_missing(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
+}
+
+fn metadata_path(path: &Path) -> &Path {
+    if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    }
+}
+
+/// `getattr(args, "adapter", "auto")` and `getattr(args, "profile", "neutral")`.
+fn read_adapter_and_profile(args: &CheckArgs) -> (&str, &str) {
+    let format_opt = args.adapter.as_deref().unwrap_or("auto");
+    let profile_opt = args.profile.as_deref().unwrap_or("neutral");
+    (format_opt, profile_opt)
+}
+
+fn stop_after_format(format_opt: &str, profile_opt: &str) -> RunFailure {
+    let _read = (format_opt, profile_opt);
+    stop_at(StoppedImport::CheckFile)
+}
+
+fn stop_at(import: StoppedImport) -> RunFailure {
+    match import {
+        StoppedImport::AgentRoots => {
+            let _import = evaluated_agent_import();
+        }
+        StoppedImport::CheckBytes => {
+            let _import = evaluated_stdin_import();
+        }
+        StoppedImport::MinimizePath => {
+            let _import = evaluated_multi_import();
+        }
+        StoppedImport::Directory => {
+            let _import = evaluated_directory_import();
+        }
+        StoppedImport::CheckFile => {
+            let _import = evaluated_file_import();
+        }
+    }
+    RunFailure::Unavailable(import)
+}
+
+fn evaluated_agent_import() -> &'static str {
+    let [import, _minimize, _scan_types] = AGENT_ROOT_IMPORT;
+    import
+}
+
+fn evaluated_stdin_import() -> &'static str {
+    let [import, _read_stdin] = STDIN_IMPORT;
+    import
+}
+
+fn evaluated_multi_import() -> &'static str {
+    let [import, _later] = MULTI_IMPORT;
+    import
+}
+
+fn evaluated_directory_import() -> &'static str {
+    DIRECTORY_IMPORT
+}
+
+fn evaluated_file_import() -> &'static str {
+    let [_adapter, _profile, import] = AFTER_EXISTING_FILE;
+    import
+}
+
+/// `str(pathlib.Path(...))` for the current OS.
+///
+/// `.` components are dropped. `..` is kept. The empty path is `.`.
+fn path_text(path: &Path) -> String {
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix_component) => {
+                prefix = prefix_text(&prefix_component);
+            }
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => parts.push("..".to_owned()),
+            Component::Normal(text) => parts.push(text.to_string_lossy().into_owned()),
+        }
+    }
+    join_python_path(&prefix, rooted, &parts)
+}
+
+fn prefix_text(component: &PrefixComponent<'_>) -> String {
+    let text = component.as_os_str().to_string_lossy();
+    #[cfg(windows)]
+    {
+        text.replace('/', "\\")
+    }
+    #[cfg(not(windows))]
+    {
+        text.into_owned()
+    }
+}
+
+fn join_python_path(prefix: &str, rooted: bool, parts: &[String]) -> String {
+    let sep = std::path::MAIN_SEPARATOR;
+    if prefix.is_empty() && !rooted && parts.is_empty() {
+        return ".".to_owned();
+    }
+    let mut out = String::new();
+    if !prefix.is_empty() {
+        out.push_str(prefix);
+    }
+    if rooted && !out.ends_with(sep) {
+        out.push(sep);
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let drive_relative = index == 0 && !rooted && prefix.ends_with(':');
+        if !out.is_empty() && !out.ends_with(sep) && !drive_relative {
+            out.push(sep);
+        }
+        out.push_str(part);
+    }
+    if out.is_empty() {
+        ".".to_owned()
+    } else {
+        out
+    }
 }
 
 fn action_required(positional: bool, nargs: Nargs, default_keyword: DefaultKeyword) -> bool {
@@ -906,8 +1248,8 @@ mod tests {
         JSON_HELP, LATEST_AGENT_ERROR, LATEST_HELP, LATEST_PATHS_ERROR, LATEST_SESSION_UNAVAILABLE,
         MAX_BYTES_HELP, MAX_FILES_HELP, MAX_FINDINGS_HELP, METAVAR_DIR, METAVAR_N, NAME,
         NARGS_STAR, NEWEST_HELP, OUTPUT_FORMAT_CHOICES, PATH_HELP, PATH_OVERRIDE_WARNING,
-        POSITIVE_INT_TYPE, RUN_UNAVAILABLE, SIGNATURE_GAP, SINCE_HELP, SINCE_METAVAR,
-        SKIP_UNDETECTED_HELP, TOP_DEFAULT, TOP_HELP, TYPE_INT, TYPE_PATH, USAGE_CODE,
+        POSITIVE_INT_TYPE, RUN_UNAVAILABLE, SINCE_HELP, SINCE_METAVAR, SKIP_UNDETECTED_HELP,
+        TOP_DEFAULT, TOP_HELP, TYPE_INT, TYPE_PATH, USAGE_CODE,
     };
     use crate::context::CliContext;
     use crate::options::{
@@ -918,8 +1260,18 @@ mod tests {
         ArgDefault, ArgumentDecl, DefaultKeyword as SharedDefault, OptionParser,
     };
     use std::error::Error;
+    use std::fs;
     use std::io::{self, Write};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        _run, evaluated_agent_import, evaluated_directory_import, evaluated_file_import,
+        evaluated_multi_import, evaluated_stdin_import, path_not_found, path_text,
+        read_adapter_and_profile, StoppedImport, AFTER_EXISTING_FILE, AGENT_ROOT_IMPORT,
+        CHECK_BYTES_UNAVAILABLE, CHECK_DIR_UNAVAILABLE, CHECK_FILE_UNAVAILABLE, DIRECTORY_IMPORT,
+        JOBS_IGNORED_NOTE, MINIMIZE_PATH_UNAVAILABLE, MULTI_IMPORT, PATH_NOT_FOUND_PREFIX,
+        SEAL_DIRECTORY_ERROR, SEAL_SCAN_ERROR, STDIN_COMBINED_ERROR, STDIN_IMPORT,
+    };
 
     use super::{
         CheckArgs, CheckGroup, CheckParser, CheckSubcommandSpec, DeclaredDefault, DeclaredType,
@@ -1478,6 +1830,7 @@ mod tests {
                 agent: agent.clone(),
                 path: vec![PathBuf::from("synthetic.jsonl")],
                 latest: true,
+                ..CheckArgs::new()
             };
             let (result, buf) = exec(false, false, &args);
             match result {
@@ -1512,6 +1865,7 @@ mod tests {
                 agent: Some(agent.to_string()),
                 path: vec![PathBuf::from("synthetic.jsonl")],
                 latest: true,
+                ..CheckArgs::new()
             };
             let (result, buf) = exec(false, true, &args);
             match result {
@@ -1540,6 +1894,7 @@ mod tests {
                 agent: Some(agent.to_string()),
                 path: Vec::new(),
                 latest: true,
+                ..CheckArgs::new()
             };
             let (result, buf) = exec(false, true, &args);
             match result {
@@ -1550,7 +1905,8 @@ mod tests {
                         "sesslint.discovery.latest_session is not available"
                     );
                     assert_ne!(error.to_string(), RUN_UNAVAILABLE);
-                    assert_ne!(error.to_string(), SIGNATURE_GAP);
+                    assert_ne!(error.to_string(), CHECK_DIR_UNAVAILABLE);
+                    assert_ne!(error.to_string(), CHECK_FILE_UNAVAILABLE);
                     assert_ne!(error.to_string(), "0");
                     assert!(!error.to_string().contains("Error:"));
                     assert!(!error.to_string().contains("synthetic"));
@@ -1568,35 +1924,37 @@ mod tests {
         }
         match import_latest_session() {
             RunFailure::LatestSessionUnavailable => {}
-            RunFailure::Io(_) | RunFailure::SignatureGap => panic!("import result"),
+            RunFailure::Io(_) | RunFailure::Unavailable(_) | RunFailure::AbsentTarget => {
+                panic!("import result")
+            }
         }
     }
 
     #[test]
-    fn explicit_path_overrides_agent_then_stops_on_the_signature_gap() {
+    fn explicit_path_overrides_agent_then_reports_the_missing_file() {
+        let path = PathBuf::from("sesslint-check-missing/synthetic.jsonl");
         let args = CheckArgs {
             agent: Some("all".to_string()),
-            path: vec![PathBuf::from("synthetic.jsonl")],
+            path: vec![path.clone()],
             latest: false,
+            ..CheckArgs::new()
         };
         let (result, buf) = exec(false, false, &args);
-        match result {
-            Err(error) => assert_signature_gap(&error),
-            Ok(exit) => panic!("exit {}", exit.code()),
-        }
-        assert_eq!(buf, with_newline(PATH_OVERRIDE_WARNING));
-        assert_eq!(
-            buf,
-            b"Warning: explicit PATH overrides --agent; scanning PATH only.\n"
+        assert_usage(
+            result,
+            &buf,
+            &joined(PATH_OVERRIDE_WARNING, &path_not_found(&path)),
         );
-        assert!(!buf.contains(&b'\r'));
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(text.contains(PATH_OVERRIDE_WARNING));
+        assert!(text.contains("Error: Path not found: "));
+        assert!(text.contains("synthetic.jsonl"));
+        assert!(!text.contains(CHECK_DIR_UNAVAILABLE));
+        assert!(!text.contains(RUN_UNAVAILABLE));
+        assert!(!text.contains("discover_session_roots"));
 
         let (quiet, quiet_buf) = exec(true, true, &args);
-        match quiet {
-            Err(error) => assert_signature_gap(&error),
-            Ok(exit) => panic!("exit {}", exit.code()),
-        }
-        assert!(quiet_buf.is_empty());
+        assert_usage(quiet, &quiet_buf, &path_not_found(&path));
     }
 
     #[test]
@@ -1623,41 +1981,54 @@ mod tests {
     }
 
     #[test]
-    fn agent_without_paths_does_not_print_help() {
-        let args = CheckArgs {
-            agent: Some("claude".to_string()),
-            path: Vec::new(),
-            latest: false,
-        };
-        let (result, buf) = exec(false, true, &args);
-        match result {
-            Err(error) => assert_signature_gap(&error),
-            Ok(exit) => panic!("exit {}", exit.code()),
+    fn agent_without_paths_stops_on_check_dir_and_does_not_print_help() {
+        for agent in ["claude", "codex", "all"] {
+            let args = CheckArgs {
+                agent: Some(agent.to_string()),
+                path: Vec::new(),
+                latest: false,
+                ..CheckArgs::new()
+            };
+            let (result, buf) = exec(false, true, &args);
+            assert_stop(
+                result,
+                &buf,
+                CHECK_DIR_UNAVAILABLE,
+                StoppedImport::AgentRoots,
+            );
         }
-        assert!(buf.is_empty());
+        assert_eq!(
+            evaluated_agent_import(),
+            "from sesslint.api import check_dir, discover_session_roots"
+        );
+        assert_eq!(evaluated_agent_import(), AGENT_ROOT_IMPORT[0]);
+        assert_ne!(evaluated_agent_import(), AGENT_ROOT_IMPORT[1]);
+        assert_ne!(evaluated_agent_import(), AGENT_ROOT_IMPORT[2]);
+        assert_eq!(
+            CHECK_DIR_UNAVAILABLE,
+            "sesslint.api.check_dir is not available"
+        );
+        assert!(!CHECK_DIR_UNAVAILABLE.contains("discover_session_roots"));
+        assert_ne!(CHECK_DIR_UNAVAILABLE, RUN_UNAVAILABLE);
     }
 
     #[test]
-    fn paths_without_agent_stop_before_helpers() {
+    fn first_missing_path_returns_2_before_later_paths() {
+        let missing = PathBuf::from("sesslint-check-missing/synthetic.jsonl");
         let args = CheckArgs {
             agent: None,
-            path: vec![PathBuf::from("synthetic.jsonl"), PathBuf::from("")],
+            path: vec![missing.clone(), PathBuf::new()],
             latest: false,
+            ..CheckArgs::new()
         };
         let (result, buf) = exec(false, true, &args);
-        match result {
-            Err(error) => {
-                assert_signature_gap(&error);
-                assert_ne!(error.to_string(), RUN_UNAVAILABLE);
-                assert_ne!(
-                    error.to_string(),
-                    "sesslint.cli.check._run is not available"
-                );
-            }
-            Ok(exit) => panic!("exit {}", exit.code()),
-        }
-        assert!(buf.is_empty());
-        assert!(!buf.contains(&b'\r'));
+        assert_usage(result, &buf, &path_not_found(&missing));
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(text.contains("synthetic.jsonl"));
+        assert!(!text.contains("\n."));
+        assert!(!text.contains(RUN_UNAVAILABLE));
+        assert!(!text.contains(MINIMIZE_PATH_UNAVAILABLE));
+        assert!(!text.contains('\r'));
     }
 
     #[test]
@@ -1680,24 +2051,654 @@ mod tests {
         }
     }
 
-    fn assert_signature_gap(error: &RunFailure) {
-        assert!(matches!(error, RunFailure::SignatureGap));
-        assert_eq!(error.to_string(), SIGNATURE_GAP);
-        assert!(error
-            .to_string()
-            .contains("progress_callback takes self by value"));
-        assert!(error.to_string().contains("Option<BTreeSet<String>>"));
-        assert!(error.to_string().contains("Option<Vec<String>>"));
-        assert!(error.to_string().contains("explicit None"));
-        assert!(error.to_string().contains("10000"));
-        assert!(error.to_string().contains("1073741824"));
-        assert_ne!(error.to_string(), RUN_UNAVAILABLE);
-        assert_ne!(error.to_string(), LATEST_SESSION_UNAVAILABLE);
-        assert!(!error.to_string().contains("Error:"));
-        assert!(!error.to_string().contains('\n'));
-        assert!(!error.to_string().contains('\r'));
-        assert!(!error.to_string().contains('\u{2014}'));
-        let typed: &dyn Error = error;
-        assert!(typed.source().is_none());
+    #[test]
+    fn seal_on_a_scan_subject_returns_2_before_any_import() {
+        let missing = PathBuf::from("sesslint-check-missing/one.json");
+        let other = PathBuf::from("sesslint-check-missing/two.json");
+        let mut sealed_agent = CheckArgs::new();
+        sealed_agent.agent = Some("all".to_string());
+        sealed_agent.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, false, &sealed_agent);
+        assert_usage(result, &buf, SEAL_SCAN_ERROR);
+        assert_eq!(
+            SEAL_SCAN_ERROR,
+            "Error: --seal applies to single-file checks only (one artifact per line; scans are not sealed)."
+        );
+
+        let mut sealed_many = CheckArgs::new();
+        sealed_many.path.push(missing);
+        sealed_many.path.push(other);
+        sealed_many.path.push(PathBuf::from("-"));
+        sealed_many.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, false, &sealed_many);
+        assert_usage(result, &buf, SEAL_SCAN_ERROR);
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(!text.contains("stdin"));
+        assert!(!text.contains("Path not found"));
+        assert!(!text.contains(CHECK_DIR_UNAVAILABLE));
+
+        let mut quiet_many = sealed_many.clone();
+        quiet_many.agent = Some("codex".to_string());
+        let (result, buf) = exec(true, false, &quiet_many);
+        assert_usage(result, &buf, SEAL_SCAN_ERROR);
+    }
+
+    #[test]
+    fn stdin_combined_with_paths_returns_2_and_a_lone_dash_stops() {
+        let file = PathBuf::from("sesslint-check-missing/beside.json");
+        let mut combined = CheckArgs::new();
+        combined.path.push(PathBuf::from("-"));
+        combined.path.push(file);
+        let (result, buf) = exec(false, false, &combined);
+        assert_usage(result, &buf, STDIN_COMBINED_ERROR);
+        assert_eq!(
+            STDIN_COMBINED_ERROR,
+            "Error: '-' (stdin) cannot be combined with other paths."
+        );
+
+        let mut dotted = CheckArgs::new();
+        dotted.path.push(PathBuf::from("./-"));
+        dotted.path.push(PathBuf::from("other.json"));
+        let (result, buf) = exec(false, true, &dotted);
+        assert_usage(result, &buf, STDIN_COMBINED_ERROR);
+
+        let mut lone = CheckArgs::new();
+        lone.path.push(PathBuf::from("-"));
+        lone.jobs = 4;
+        lone.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, true, &lone);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_BYTES_UNAVAILABLE,
+            StoppedImport::CheckBytes,
+        );
+        assert_eq!(
+            CHECK_BYTES_UNAVAILABLE,
+            "sesslint.api.check_bytes is not available"
+        );
+        assert_eq!(evaluated_stdin_import(), STDIN_IMPORT[0]);
+        assert_eq!(
+            evaluated_stdin_import(),
+            "from sesslint.api import check_bytes"
+        );
+        assert_ne!(evaluated_stdin_import(), STDIN_IMPORT[1]);
+        assert_ne!(evaluated_stdin_import(), "_read_stdin_bytes");
+
+        let mut dotted_lone = CheckArgs::new();
+        dotted_lone.path.push(PathBuf::from("./-"));
+        let (result, buf) = exec(true, false, &dotted_lone);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_BYTES_UNAVAILABLE,
+            StoppedImport::CheckBytes,
+        );
+    }
+
+    #[test]
+    fn parent_dir_dash_is_not_stdin() {
+        let path = PathBuf::from("foo/../-");
+        let mut args = CheckArgs::new();
+        args.path.push(path.clone());
+        let (result, buf) = exec(false, false, &args);
+        assert_usage(result, &buf, &path_not_found(&path));
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(text.contains(".."));
+        assert!(!text.contains(CHECK_BYTES_UNAVAILABLE));
+        assert_ne!(path_text(&path), "-");
+    }
+
+    #[test]
+    fn multi_path_missing_file_returns_2_and_present_paths_stop_on_minimize() {
+        let tree = TempTree::new("multi");
+        let present = tree.path.join("present.json");
+        touch(&present);
+        let missing = tree.path.join("missing.json");
+        let mut args = CheckArgs::new();
+        args.path.push(present.clone());
+        args.path.push(missing.clone());
+        let (result, buf) = exec(false, false, &args);
+        assert_usage(result, &buf, &path_not_found(&missing));
+        assert!(path_not_found(&missing).starts_with(PATH_NOT_FOUND_PREFIX));
+        assert!(!path_not_found(&missing).contains("present.json"));
+
+        let directory = tree.path.join("dir");
+        fs::create_dir(&directory).unwrap_or_else(|err| panic!("dir: {err}"));
+        let mut both = CheckArgs::new();
+        both.path.push(present);
+        both.path.push(directory);
+        both.jobs = 8;
+        let (result, buf) = exec(false, true, &both);
+        assert_stop(
+            result,
+            &buf,
+            MINIMIZE_PATH_UNAVAILABLE,
+            StoppedImport::MinimizePath,
+        );
+        assert_eq!(
+            MINIMIZE_PATH_UNAVAILABLE,
+            "sesslint.report.minimize_path is not available"
+        );
+        assert_eq!(
+            evaluated_multi_import(),
+            "from sesslint.report import minimize_path"
+        );
+        assert_eq!(evaluated_multi_import(), MULTI_IMPORT[0]);
+        assert!(MULTI_IMPORT[1].contains("scan_path"));
+        assert!(!evaluated_multi_import().contains("scan_path"));
+        assert_ne!(MINIMIZE_PATH_UNAVAILABLE, RUN_UNAVAILABLE);
+    }
+
+    #[test]
+    fn multi_broken_symlink_is_not_path_not_found() {
+        let tree = TempTree::new("broken-multi");
+        let present = tree.path.join("present.json");
+        touch(&present);
+        let link = tree.path.join("broken-link.json");
+        symlink_file(&tree.path.join("absent-target.json"), &link)
+            .unwrap_or_else(|err| panic!("broken symlink: {err}"));
+        assert!(is_symlink_path(&link));
+        assert!(!exists_followed(&link));
+
+        let mut link_first = CheckArgs::new();
+        link_first.path.push(link.clone());
+        link_first.path.push(present.clone());
+        let (result, buf) = exec(false, false, &link_first);
+        assert_stop(
+            result,
+            &buf,
+            MINIMIZE_PATH_UNAVAILABLE,
+            StoppedImport::MinimizePath,
+        );
+
+        let mut only_links = CheckArgs::new();
+        let second = tree.path.join("broken-two.json");
+        symlink_file(&tree.path.join("other-absent.json"), &second)
+            .unwrap_or_else(|err| panic!("second symlink: {err}"));
+        only_links.path.push(link);
+        only_links.path.push(second);
+        let (result, buf) = exec(false, false, &only_links);
+        assert_stop(
+            result,
+            &buf,
+            MINIMIZE_PATH_UNAVAILABLE,
+            StoppedImport::MinimizePath,
+        );
+    }
+
+    #[test]
+    fn single_directory_seal_differs_from_the_scan_sentence() {
+        let tree = TempTree::new("dir-seal");
+        let mut sealed = CheckArgs::new();
+        sealed.path.push(tree.path.clone());
+        sealed.seal = Some(PathBuf::from("ledger"));
+        sealed.jobs = 3;
+        let (result, buf) = exec(false, false, &sealed);
+        assert_usage(result, &buf, SEAL_DIRECTORY_ERROR);
+        assert_eq!(
+            SEAL_DIRECTORY_ERROR,
+            "Error: --seal applies to single-file checks only (one artifact per line; directory scans are not sealed)."
+        );
+        assert_ne!(SEAL_DIRECTORY_ERROR, SEAL_SCAN_ERROR);
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(!text.contains(JOBS_IGNORED_NOTE));
+        assert!(!text.contains(CHECK_DIR_UNAVAILABLE));
+
+        let link = tree.path.join("link-dir");
+        symlink_dir(&tree.path, &link).unwrap_or_else(|err| panic!("symlink dir: {err}"));
+        let mut linked = CheckArgs::new();
+        linked.path.push(link);
+        let (result, buf) = exec(true, true, &linked);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_DIR_UNAVAILABLE,
+            StoppedImport::Directory,
+        );
+        assert_eq!(evaluated_directory_import(), DIRECTORY_IMPORT);
+        assert_eq!(
+            evaluated_directory_import(),
+            "from sesslint.api import check_dir"
+        );
+        assert_ne!(
+            evaluated_directory_import(),
+            "from sesslint.api import check_dir, discover_session_roots"
+        );
+    }
+
+    #[test]
+    fn empty_path_is_the_cwd_directory() {
+        let mut args = CheckArgs::new();
+        args.path.push(PathBuf::new());
+        let (result, buf) = exec(false, false, &args);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_DIR_UNAVAILABLE,
+            StoppedImport::Directory,
+        );
+        assert_eq!(path_text(Path::new("")), ".");
+
+        let mut sealed = CheckArgs::new();
+        sealed.path.push(PathBuf::new());
+        sealed.seal = Some(PathBuf::from("ledger"));
+        let (result, buf) = exec(false, false, &sealed);
+        assert_usage(result, &buf, SEAL_DIRECTORY_ERROR);
+    }
+
+    #[test]
+    fn missing_single_path_and_broken_symlink_return_2_before_import() {
+        let missing = PathBuf::from("sesslint-check-missing/no-such.json");
+        let mut args = CheckArgs::new();
+        args.path.push(missing.clone());
+        args.seal = Some(PathBuf::from("ledger"));
+        args.jobs = 4;
+        let (result, buf) = exec(false, false, &args);
+        assert_usage(result, &buf, &path_not_found(&missing));
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(!text.contains(JOBS_IGNORED_NOTE));
+        assert!(!text.contains(CHECK_FILE_UNAVAILABLE));
+        assert!(!text.contains("--seal"));
+
+        let dotted = PathBuf::from("./sesslint-check-missing/no-such.json");
+        let mut dotted_args = CheckArgs::new();
+        dotted_args.path.push(dotted.clone());
+        let (result, buf) = exec(false, false, &dotted_args);
+        assert_usage(result, &buf, &path_not_found(&dotted));
+        assert!(!path_not_found(&dotted).contains("./"));
+
+        let tree = TempTree::new("broken-one");
+        let link = tree.path.join("broken-link.json");
+        symlink_file(&tree.path.join("absent-target.json"), &link)
+            .unwrap_or_else(|err| panic!("broken symlink: {err}"));
+        let mut broken = CheckArgs::new();
+        broken.path.push(link.clone());
+        let (result, buf) = exec(false, false, &broken);
+        assert_usage(result, &buf, &path_not_found(&link));
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(text.contains("broken-link.json"));
+        assert!(!text.contains("absent-target.json"));
+    }
+
+    #[test]
+    fn child_of_a_file_is_path_not_found() {
+        let tree = TempTree::new("not-a-dir");
+        let file = tree.path.join("session.json");
+        touch(&file);
+        let child = file.join("inside.json");
+        let mut args = CheckArgs::new();
+        args.path.push(child.clone());
+        let (result, buf) = exec(false, false, &args);
+        assert_usage(result, &buf, &path_not_found(&child));
+    }
+
+    #[test]
+    fn existing_file_reads_adapter_and_profile_then_stops_on_check_file() {
+        let tree = TempTree::new("file-stop");
+        let file = tree.path.join("session.json");
+        touch(&file);
+        let link = tree.path.join("link-file.json");
+        symlink_file(&file, &link).unwrap_or_else(|err| panic!("symlink file: {err}"));
+
+        let mut plain = CheckArgs::new();
+        plain.path.push(file.clone());
+        plain.seal = Some(tree.path.join("ledger"));
+        plain.adapter = Some("claude".to_string());
+        plain.profile = Some("synthetic-profile".to_string());
+        let (result, buf) = exec(false, false, &plain);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_FILE_UNAVAILABLE,
+            StoppedImport::CheckFile,
+        );
+        assert_eq!(
+            CHECK_FILE_UNAVAILABLE,
+            "sesslint.api.check_file is not available"
+        );
+        assert_eq!(evaluated_file_import(), AFTER_EXISTING_FILE[2]);
+        assert_eq!(
+            evaluated_file_import(),
+            "from sesslint.api import check_file"
+        );
+        assert_eq!(
+            read_adapter_and_profile(&plain),
+            ("claude", "synthetic-profile")
+        );
+        assert_eq!(
+            read_adapter_and_profile(&CheckArgs::new()),
+            ("auto", "neutral")
+        );
+        let mut empty_adapter = CheckArgs::new();
+        empty_adapter.adapter = Some(String::new());
+        empty_adapter.profile = Some(String::new());
+        assert_eq!(read_adapter_and_profile(&empty_adapter), ("", ""));
+
+        let mut linked = CheckArgs::new();
+        linked.path.push(link);
+        linked.jobs = 1;
+        let (result, buf) = exec(false, true, &linked);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_FILE_UNAVAILABLE,
+            StoppedImport::CheckFile,
+        );
+
+        let mut noted = CheckArgs::new();
+        noted.path.push(file.clone());
+        noted.jobs = 2;
+        let (result, buf) = exec(false, false, &noted);
+        assert_stop_after(
+            result,
+            &buf,
+            CHECK_FILE_UNAVAILABLE,
+            StoppedImport::CheckFile,
+        );
+        assert_eq!(buf, with_newline(JOBS_IGNORED_NOTE));
+        assert_eq!(buf, b"Note: --jobs is ignored for single-file input.\n");
+        let text = String::from_utf8(buf).expect("utf-8 stderr");
+        assert!(!text.contains("claude"));
+        assert!(!text.contains("synthetic-profile"));
+        assert!(!text.contains('\r'));
+
+        let (quiet, quiet_buf) = exec(true, true, &noted);
+        assert_stop(
+            quiet,
+            &quiet_buf,
+            CHECK_FILE_UNAVAILABLE,
+            StoppedImport::CheckFile,
+        );
+
+        let mut zero = CheckArgs::new();
+        zero.path.push(file);
+        zero.jobs = 0;
+        let (result, buf) = exec(false, false, &zero);
+        assert_stop(
+            result,
+            &buf,
+            CHECK_FILE_UNAVAILABLE,
+            StoppedImport::CheckFile,
+        );
+    }
+
+    #[test]
+    fn overridden_existing_file_stops_on_check_file_not_check_dir() {
+        let tree = TempTree::new("override-file");
+        let file = tree.path.join("session.json");
+        touch(&file);
+        let mut args = CheckArgs::new();
+        args.agent = Some("all".to_string());
+        args.path.push(file);
+        let (result, buf) = exec(false, false, &args);
+        match result {
+            Err(error) => {
+                assert_eq!(error.to_string(), CHECK_FILE_UNAVAILABLE);
+                assert!(matches!(
+                    error,
+                    RunFailure::Unavailable(StoppedImport::CheckFile)
+                ));
+                assert_ne!(error.to_string(), CHECK_DIR_UNAVAILABLE);
+                assert_ne!(error.to_string(), RUN_UNAVAILABLE);
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+        assert_eq!(buf, with_newline(PATH_OVERRIDE_WARNING));
+    }
+
+    #[test]
+    fn jobs_note_write_failure_is_not_the_import_stop() {
+        let tree = TempTree::new("jobs-fail");
+        let file = tree.path.join("session.json");
+        touch(&file);
+        let mut args = CheckArgs::new();
+        args.path.push(file);
+        args.jobs = 2;
+        let mut ctx = CliContext::new(false, false, None, Vec::new(), FailWrite, false);
+        match run(&mut ctx, &args, &CheckParser) {
+            Err(error) => {
+                assert!(error.to_string().contains("synthetic-write-fail"));
+                assert_ne!(error.to_string(), CHECK_FILE_UNAVAILABLE);
+                assert!(matches!(error, RunFailure::Io(_)));
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+
+        let mut quiet = CliContext::new(true, false, None, Vec::new(), FailWrite, false);
+        match run(&mut quiet, &args, &CheckParser) {
+            Err(error) => {
+                assert_eq!(error.to_string(), CHECK_FILE_UNAVAILABLE);
+                assert!(matches!(
+                    error,
+                    RunFailure::Unavailable(StoppedImport::CheckFile)
+                ));
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+    }
+
+    #[test]
+    fn absent_target_list_fails_closed() {
+        let mut ctx = CliContext::new(false, false, None, Vec::new(), Vec::new(), false);
+        match _run(&mut ctx, &CheckArgs::new(), &CheckParser, None, &[]) {
+            Err(error) => {
+                assert!(matches!(error, RunFailure::AbsentTarget));
+                assert_eq!(error.to_string(), "check target path is absent");
+                assert_ne!(error.to_string(), "0");
+                assert_ne!(error.to_string(), "1");
+                assert_ne!(error.to_string(), RUN_UNAVAILABLE);
+                let typed: &dyn Error = &error;
+                assert!(typed.source().is_none());
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+    }
+
+    #[test]
+    fn path_text_matches_pathlib_samples() {
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(path_text(Path::new("")), ".");
+        assert_eq!(path_text(Path::new(".")), ".");
+        assert_eq!(path_text(Path::new("./dir")), "dir");
+        assert_eq!(path_text(Path::new("foo/")), "foo");
+        assert_eq!(path_text(Path::new("-")), "-");
+        assert_eq!(path_text(Path::new("./-")), "-");
+        assert_eq!(path_text(Path::new("-.")), "-.");
+        assert_eq!(
+            path_text(Path::new("foo/../bar")),
+            format!("foo{sep}..{sep}bar")
+        );
+        assert_eq!(path_text(Path::new("a//b")), format!("a{sep}b"));
+        assert_eq!(path_text(Path::new("a/./b")), format!("a{sep}b"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_text_matches_windows_pathlib() {
+        assert_eq!(path_text(Path::new("C:/nope/x")), r"C:\nope\x");
+        assert_eq!(path_text(Path::new(r"/abs/file")), r"\abs\file");
+        assert_eq!(path_text(Path::new("C:foo")), "C:foo");
+        assert_eq!(path_text(Path::new("C:foo/bar")), r"C:foo\bar");
+        assert_eq!(path_text(Path::new("C:/")), r"C:\");
+        assert_eq!(path_text(Path::new("C:")), "C:");
+        assert_eq!(path_text(Path::new("/")), r"\");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn path_text_matches_posix_pathlib() {
+        assert_eq!(path_text(Path::new("/")), "/");
+        assert_eq!(path_text(Path::new("/abs/file")), "/abs/file");
+    }
+
+    #[test]
+    fn run_tail_does_not_evaluate_scan_output() {
+        let source = include_str!("check.rs");
+        assert!(!source.contains('\r'));
+        let start = source.find("fn _run<W: Write>").expect("_run");
+        let rest = &source[start..];
+        let end = rest.find("\nfn action_required").expect("action_required");
+        let body = &rest[..end];
+        assert!(body.contains("SEAL_SCAN_ERROR"));
+        assert!(body.contains("StoppedImport::AgentRoots"));
+        assert!(body.contains("STDIN_COMBINED_ERROR"));
+        assert!(body.contains("StoppedImport::CheckBytes"));
+        assert!(body.contains("missing_and_not_symlink"));
+        assert!(body.contains("StoppedImport::MinimizePath"));
+        assert!(body.contains("SEAL_DIRECTORY_ERROR"));
+        assert!(body.contains("StoppedImport::Directory"));
+        assert!(body.contains("JOBS_IGNORED_NOTE"));
+        assert!(body.contains("read_adapter_and_profile"));
+        assert!(body.contains("stop_after_format"));
+        let jobs_at = body.find("JOBS_IGNORED_NOTE").expect("jobs");
+        let read_at = body.find("read_adapter_and_profile").expect("read");
+        let stop_at = body.find("stop_after_format").expect("stop");
+        assert!(jobs_at < read_at);
+        assert!(read_at < stop_at);
+        for forbidden in [
+            "aggregate_scan",
+            "sarif",
+            "html",
+            "scan_path(",
+            "discover_session_roots(",
+            "check_bytes(",
+            "check_file(",
+            "check_dir(",
+            "minimize_path(",
+            "_emit_scan_rep",
+            "read_dir",
+            "stdin(",
+            "tempfile",
+            "unwrap(",
+            "expect(",
+            "unsafe",
+        ] {
+            assert!(!body.contains(forbidden), "{forbidden}");
+        }
+        assert_ne!(CHECK_DIR_UNAVAILABLE, RUN_UNAVAILABLE);
+        assert_ne!(CHECK_BYTES_UNAVAILABLE, RUN_UNAVAILABLE);
+        assert_ne!(MINIMIZE_PATH_UNAVAILABLE, RUN_UNAVAILABLE);
+        assert_ne!(CHECK_FILE_UNAVAILABLE, RUN_UNAVAILABLE);
+    }
+
+    fn assert_usage(result: Result<UsageExit, RunFailure>, buf: &[u8], message: &str) {
+        match result {
+            Ok(exit) => {
+                assert_eq!(exit.code(), 2);
+                assert_ne!(exit.code(), 0);
+                assert_ne!(exit.code(), 1);
+                assert_eq!(exit.help_gap(), None);
+            }
+            Err(error) => panic!("{error}"),
+        }
+        assert_eq!(buf, with_newline(message).as_slice());
+        assert!(!buf.contains(&b'\r'));
+        assert!(!buf
+            .windows(RUN_UNAVAILABLE.len())
+            .any(|window| window == RUN_UNAVAILABLE.as_bytes()));
+    }
+
+    fn assert_stop(
+        result: Result<UsageExit, RunFailure>,
+        buf: &[u8],
+        display: &str,
+        import: StoppedImport,
+    ) {
+        match result {
+            Err(error) => {
+                assert_eq!(error.to_string(), display);
+                assert_ne!(error.to_string(), RUN_UNAVAILABLE);
+                assert_ne!(error.to_string(), "0");
+                assert_ne!(error.to_string(), "1");
+                assert!(!error.to_string().contains('\n'));
+                assert!(!error.to_string().contains('\r'));
+                assert!(matches!(error, RunFailure::Unavailable(got) if got == import));
+                let typed: &dyn Error = &error;
+                assert!(typed.source().is_none());
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+        assert!(buf.is_empty());
+    }
+
+    fn assert_stop_after(
+        result: Result<UsageExit, RunFailure>,
+        buf: &[u8],
+        display: &str,
+        import: StoppedImport,
+    ) {
+        match result {
+            Err(error) => {
+                assert_eq!(error.to_string(), display);
+                assert_ne!(error.to_string(), RUN_UNAVAILABLE);
+                assert!(matches!(error, RunFailure::Unavailable(got) if got == import));
+            }
+            Ok(exit) => panic!("exit {}", exit.code()),
+        }
+        assert!(!buf.is_empty());
+        assert!(!buf.contains(&b'\r'));
+    }
+
+    fn joined(first: &str, second: &str) -> String {
+        let mut text = String::new();
+        text.push_str(first);
+        text.push('\n');
+        text.push_str(second);
+        text
+    }
+
+    fn exists_followed(path: &Path) -> bool {
+        fs::metadata(path).is_ok()
+    }
+
+    fn is_symlink_path(path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+    }
+
+    struct TempTree {
+        path: PathBuf,
+    }
+
+    impl TempTree {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sesslint-cli-check-{label}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap_or_else(|err| panic!("temp dir: {err}"));
+            Self { path }
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn touch(path: &Path) {
+        fs::write(path, b"").unwrap_or_else(|err| panic!("touch: {err}"));
+    }
+
+    fn symlink_dir(original: &Path, link: &Path) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    fn symlink_file(original: &Path, link: &Path) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
     }
 }
