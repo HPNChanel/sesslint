@@ -1,0 +1,114 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "adapters_init_py_sha256": "78c34a4ebcadb7a743bf48ca1315625e6c56d6524f9b99b83d6f33b299a46c66",
+  "adapters_lib_rs_sha256": "59e542822a7fef006cbf2ee3ed1f08cb0991d2fd515e3174a411adae6bf6de3d",
+  "python_all": [
+    "CONFIDENCE_MIN",
+    "CanonicalEvent",
+    "DetectionResult",
+    "EventList",
+    "FORMAT_AUTO",
+    "FORMAT_CANONICAL",
+    "FORMAT_CLAUDE_CODE",
+    "FORMAT_CODEX_ROLLOUT",
+    "FORMAT_OPENAI_AGENTS",
+    "MARGIN_MIN",
+    "MAX_PROJECTED_CHECKPOINTS",
+    "MAX_PROJECTED_RUN_STATE_KEYS",
+    "SNIFF_BYTES",
+    "SUPPORTED_FORMATS",
+    "SYNTHETIC_ID_PREFIX",
+    "SourceMetadata",
+    "SyntheticIdCollisionGuard",
+    "VALID_FORMAT_OPTIONS",
+    "detect_canonical",
+    "detect_claude_code",
+    "detect_codex_rollout",
+    "detect_format",
+    "detect_openai_agents",
+    "dump_canonical",
+    "is_synthetic_id",
+    "load_canonical",
+    "load_canonical_session",
+    "load_claude_code",
+    "load_claude_code_session",
+    "load_codex_rollout",
+    "load_codex_rollout_session",
+    "load_openai_agents",
+    "load_openai_agents_session",
+    "project_run_state",
+    "resolve_format",
+    "safe_discriminator",
+    "supported_adapters",
+    "safe_type_value",
+    "synthetic_event_id",
+    "to_source_block"
+  ],
+  "known_parity_gaps": [
+    "GAP-adapters-dunder-all: Python adapters/__init__.py defines __all__ re-exports for detect, load, and vendor parsers. Rust adapters/src/lib.rs exposes supported_adapters only; barrel names are not re-exported.",
+    "GAP-adapters-detect-load-vendors: detect_format, load_*, and per-vendor entry points live in sibling modules with dedicated parity cards; this card pins supported_adapters metadata rows only."
+  ],
+  "vectors": [
+    {
+      "id": "supported_adapters",
+      "construct": {
+        "type": "supported_adapters"
+      },
+      "expected": {
+        "rows": [
+          {
+            "name": "canonical",
+            "default_profile": "neutral",
+            "description": "sesslint.session/v1 canonical JSONL (SessLint's own interchange format)",
+            "versions_supported": [
+              "1",
+              "1.0",
+              "1.0.0"
+            ]
+          },
+          {
+            "name": "claude-code-jsonl",
+            "default_profile": "claude-strict",
+            "description": "Claude Code JSONL (per-turn records incl. snapshots/hooks)",
+            "versions_supported": [
+              "0.1",
+              "0.1.0",
+              "1",
+              "1.0",
+              "1.0.0",
+              "claude-code-v1"
+            ]
+          },
+          {
+            "name": "codex-rollout",
+            "default_profile": "openai-strict",
+            "description": "Codex rollout/session_meta + response_item records",
+            "versions_supported": [
+              "1",
+              "1.0",
+              "1.0.0",
+              "codex-rollout-v1"
+            ]
+          },
+          {
+            "name": "openai-agents",
+            "default_profile": "openai-strict",
+            "description": "OpenAI Agents SDK session export (session + item arrays)",
+            "versions_supported": [
+              "0.1",
+              "0.1.0",
+              "0.2",
+              "0.2.0",
+              "1",
+              "1.0",
+              "1.0.0",
+              "openai-agents-v1"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

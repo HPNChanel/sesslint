@@ -1,0 +1,244 @@
+{
+  "rows": [
+    {
+      "test": "src/sesslint/adapters/__init__.py::__all__",
+      "status": "not_applicable",
+      "python_all_len": 40
+    },
+    {
+      "test": "tests/adapters/test_canonical_fast_path.py::test_common_matches_diagnostic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/adapters/test_canonical_fast_path.py::test_stream_depth_matches_full_record_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_formats_version.py::test_doctor_human_lists_adapters",
+      "status": "not_applicable",
+      "reason": "calls cli main(['doctor']) and asserts stdout; not supported_adapters()"
+    },
+    {
+      "test": "tests/cli/test_formats_version.py::test_doctor_json_adapter_metadata",
+      "status": "not_applicable",
+      "reason": "calls cli main(['doctor', '--json']); not supported_adapters()"
+    },
+    {
+      "test": "tests/cli/test_formats_version.py::test_version_human",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_formats_version.py::test_version_json",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_formats_version.py::test_doctor_adapters_subset_of_version",
+      "status": "not_applicable",
+      "reason": "calls cli main(['doctor', '--json']) and main(['version', '--json']); not supported_adapters()"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_module_exports",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_purity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_and_plan_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_verify_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_build_bundle_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_precheck_contract",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_api_numeric_range_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_file_threshold_override_reports_undetected_input_honestly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_dir_threshold_override_marks_undetected_files_unsupported",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_scan_path_resolves_effective_config_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_check_unified_forwards_thresholds_to_dir",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_threshold_validation_identical_across_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_performs_single_detection_with_profile_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_api_surface.py::test_repair_detection_call_count_exactly_once",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_outer_and_embedded_share_effective_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_resolve_format_call_kwargs_match_embedded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_healthy_pure_and_api_parity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_states_are_not_silently_healthy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_limit_and_unreadable_are_distinct",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_incomplete_coverage_never_checked",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_torn_preview_same_snapshot_and_explicit_comparison",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_only_one_decode_and_no_preview_reopen",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_source_changed_after_load_withholds_preview",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_graph_impact_and_private_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_unknown_side_effects_do_not_offer_execution",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_latest_excludes_auxiliary_and_subagents",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_copy_membership_no_writes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_live_registry_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_crosswired_registry_rows_do_not_match",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_hard_link_is_not_a_closed_copy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_query_work_is_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_incomplete_registry_copy_never_verified",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_registry_auxiliary_tables_bounded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_cli_usage_refused",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_triage.py::test_cli_json_parity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_unknown_input_has_no_synthetic_integrity_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_vendor_scope_excludes_memory_and_tool_results",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_newest_and_since_select_before_cumulative_caps",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_file_limit_skips_without_malformed_finding_and_can_be_raised",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_finding_samples_do_not_change_counts_or_cached_results",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_check_digest_binds_parsed_snapshot_during_write",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_bad_timestamp_tolerance_rejected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_timestamp_tolerance_configuration",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_scan.py::test_stdin_invalid_limit_is_usage_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_seal_watch.py::test_two_processes_append_one_continuous_chain",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_seal_watch.py::test_unterminated_valid_ledger_line_gets_separator",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_seal_watch.py::test_hostile_ledger_reports_divergence_without_crashing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_seal_watch.py::test_watch_over_capacity_does_not_starve_active_files",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_seal_watch.py::test_cli_seal_uses_snapshot_before_concurrent_append",
+      "status": "not_applicable"
+    }
+  ]
+}

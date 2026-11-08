@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters package parity: supported_adapters metadata rows (name, default_profile, description, sorted versions_supported) from the pinned adapters/__init__.py; no session payload text.",
+  "generator": "rust/parity/vectors/adapters/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-adapters-dunder-all: Python adapters/__init__.py defines __all__ re-exports for detect, load, and vendor parsers. Rust adapters/src/lib.rs exposes supported_adapters only; barrel names are not re-exported.",
+    "GAP-adapters-detect-load-vendors: detect_format, load_*, and per-vendor entry points live in sibling modules with dedicated parity cards; this card pins supported_adapters metadata rows only."
+  ]
+}
