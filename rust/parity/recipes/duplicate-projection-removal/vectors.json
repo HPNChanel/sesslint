@@ -1,0 +1,310 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "duplicate-projection-removal",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "known_parity_gaps": [
+    "GAP-duplicate-projection-removal-affected-region: affected_region_duplicate_projection_removal in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
+    "GAP-duplicate-projection-removal-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply, the child-pointer rewrite, and the idempotent first apply succeed in the pin. That success is not replayed. tests/repair/test_scoped_abstention.py::test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool plans and executes. The pin succeeds. That success is not replayed. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-duplicate-projection-removal-bool-target: a bool target_index uses Python equality against an int result index in the pin. The published function does not treat that bool as the index. The pin refuses the selected row. This set does not store the pin refusal and does not claim that message.",
+    "GAP-duplicate-projection-removal-fingerprint: tests/repair/test_recipes_conservative.py::test_duplicate_projection_removal_differing_fingerprints is one apply refusal in the pin. The events carry a payload. This set does not hash a fingerprint and does not store payload content. The published function returns a different error. This set does not claim that refusal."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_duplicate_projection_removal",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_DUPLICATE_PROJECTION_REMOVAL",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "duplicate-projection-removal",
+        "handles": [
+          "SL104"
+        ],
+        "preconditions": [
+          "no_sl203",
+          "duplicate_projection_identical"
+        ],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": true
+      }
+    },
+    {
+      "id": "removal_refusal_missing_correlation_id",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_duplicate_projection_removal",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "duplicate-projection-removal: missing correlation_id"
+      }
+    },
+    {
+      "id": "removal_refusal_zero_results",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_duplicate_projection_removal",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-note"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "duplicate-projection-removal: expected at least 2 results for correlation 'corr-synthetic', found 0"
+      }
+    },
+    {
+      "id": "removal_refusal_one_result",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_duplicate_projection_removal",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "hash-left"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "duplicate-projection-removal: expected at least 2 results for correlation 'corr-synthetic', found 1"
+      }
+    },
+    {
+      "id": "removal_refusal_fingerprints_differ",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_duplicate_projection_removal",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-kept"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "hash-left"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-drop"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "hash-right"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-synthetic"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "duplicate-projection-removal: projection fingerprints differ (refusing near-match collapse)"
+      }
+    }
+  ]
+}
