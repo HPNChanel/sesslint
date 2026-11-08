@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.hook configure declarations and run() gap fixtures from pinned src/sesslint/cli/hook.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.hook/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-hook-init-hooks-doc: Python run() with --init calls sesslint.hooks.init_hooks_doc and prints hook snippets with exit 0; Rust run() returns Display `sesslint.hooks.init_hooks_doc is not available` (no print, no exit 0).",
+    "GAP-cli-hook-run-hook: Python run() reads stdin and calls sesslint.hook_event.run_hook; Rust run() returns Display `sesslint.hook_event.run_hook is not available` before reading stdin."
+  ]
+}

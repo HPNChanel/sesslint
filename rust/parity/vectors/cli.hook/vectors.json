@@ -1,0 +1,314 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.hook",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "hook_py_sha256": "9eb2e36d2f8be47a1df7345fcfeb9d5af16353ea0f65fe76c094a60e6e4da449",
+  "hook_rs_sha256": "3e0c54d95452724c3c2078b82a8dcf1bbb5cb3dcf68ea53781a59c77e5cfb600",
+  "known_parity_gaps": [
+    "GAP-cli-hook-init-hooks-doc: Python run() with --init calls sesslint.hooks.init_hooks_doc and prints hook snippets with exit 0; Rust run() returns Display `sesslint.hooks.init_hooks_doc is not available` (no print, no exit 0).",
+    "GAP-cli-hook-run-hook: Python run() reads stdin and calls sesslint.hook_event.run_hook; Rust run() returns Display `sesslint.hook_event.run_hook is not available` before reading stdin."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "hook",
+        "help": "[read-only] Agent hook entrypoint: reads one hook payload from stdin and checks the transcript.",
+        "description": "[read-only] Reads one JSON hook payload from stdin (Claude Code contract: session_id, transcript_path, cwd, hook_event_name), resolves the transcript file, and runs the event-appropriate integrity check. Prints one content-free line and exits 0 (advisory) — or 1 when --fail-on gates on findings. Exit 2 is never emitted: hook checks never block the agent. --init prints ready-to-merge hook snippets (never writes config).",
+        "arguments": [
+          {
+            "option_strings": [
+              "--event"
+            ],
+            "dest": "event",
+            "action": "store",
+            "type_name": null,
+            "choices": null,
+            "metavar": "NAME",
+            "help": "Hook event name (e.g. SessionStart, PreCompact, PostCompact, SessionEnd). Unknown names run the generic integrity check.",
+            "default_keyword": "absent",
+            "effective_default": "none"
+          },
+          {
+            "option_strings": [
+              "--init"
+            ],
+            "dest": "init",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Print ready-to-merge agent hook snippets (never writes config)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false"
+          },
+          {
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex",
+              "all"
+            ],
+            "metavar": null,
+            "help": "Agent to generate snippets for with --init (default: all)",
+            "default_keyword": {
+              "present": {
+                "text": "all"
+              }
+            },
+            "effective_default": {
+              "text": "all"
+            }
+          },
+          {
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "text",
+              "json",
+              "claude-json"
+            ],
+            "metavar": null,
+            "help": "Output format (default: text; claude-json emits a content-free systemMessage envelope)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none"
+          },
+          {
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit JSON (shortcut for --format json)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false"
+          },
+          {
+            "option_strings": [
+              "--fail-on"
+            ],
+            "dest": "fail_on",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "never",
+              "error",
+              "warning"
+            ],
+            "metavar": null,
+            "help": "Minimum finding severity that exits 1 (default: never — hook checks are advisory; 'warning' fails on any finding)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none"
+          },
+          {
+            "option_strings": [
+              "--profile"
+            ],
+            "dest": "profile",
+            "action": "store",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Validation profile (default: neutral)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none"
+          },
+          {
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter (default: auto-detect)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none"
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": true,
+            "required": true,
+            "member_dests": [
+              "event",
+              "init"
+            ]
+          },
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "output_format",
+              "json"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "run_init_all_text",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": true,
+          "json": false,
+          "agent": "all"
+        },
+        "stdin_hex": ""
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-init-hooks-doc",
+        "computed_output_format": null,
+        "pin": {
+          "exit_code": 0,
+          "stdout": "# all: Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md. | codex: Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\n# SessionStart corruption warning (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionStart --format claude-json || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"resume|compact|fork\"\n      }\n    ]\n  }\n}\n\n# PreCompact integrity check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PreCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PreCompact || true\",\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"auto|manual\"\n      }\n    ]\n  }\n}\n\n# PostCompact boundary check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"PostCompact\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event PostCompact || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ]\n      }\n    ]\n  }\n}\n\n# SessionEnd secret check (non-blocking) - merge into ~/.claude/settings.json (hooks section)\n{\n  \"hooks\": {\n    \"SessionEnd\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"sesslint hook --event SessionEnd || true\",\n            \"timeout\": 5,\n            \"type\": \"command\"\n          }\n        ],\n        \"matcher\": \"clear|logout|prompt_input_exit|other\"\n      }\n    ]\n  }\n}\n"
+        }
+      }
+    },
+    {
+      "id": "run_init_json_claude_agent",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": true,
+          "json": true,
+          "agent": "claude",
+          "output_format": "claude-json"
+        },
+        "stdin_hex": ""
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-init-hooks-doc",
+        "computed_output_format": "json",
+        "pin": {
+          "exit_code": 0,
+          "stdout": "{\"agent\": \"claude\", \"files\": [{\"merge_block\": {\"hooks\": {\"SessionStart\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionStart --format claude-json || true\", \"type\": \"command\"}], \"matcher\": \"resume|compact|fork\"}]}}, \"recipe\": \"SessionStart corruption warning (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PreCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PreCompact || true\", \"type\": \"command\"}], \"matcher\": \"auto|manual\"}]}}, \"recipe\": \"PreCompact integrity check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"PostCompact\": [{\"hooks\": [{\"command\": \"sesslint hook --event PostCompact || true\", \"timeout\": 5, \"type\": \"command\"}]}]}}, \"recipe\": \"PostCompact boundary check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}, {\"merge_block\": {\"hooks\": {\"SessionEnd\": [{\"hooks\": [{\"command\": \"sesslint hook --event SessionEnd || true\", \"timeout\": 5, \"type\": \"command\"}], \"matcher\": \"clear|logout|prompt_input_exit|other\"}]}}, \"recipe\": \"SessionEnd secret check (non-blocking)\", \"target_path_hint\": \"~/.claude/settings.json (hooks section)\"}], \"note\": \"Merge each block into ~/.claude/settings.json (user) or .claude/settings.json (project). Every command reads the hook payload from stdin (transcript_path, session_id) - no paths to substitute. '|| true' keeps each recipe advisory; 'sesslint hook' never exits 2, so nothing can block the agent. To gate on findings, pass '--fail-on warning' (exits 1; drop '|| true' to surface it). Requires a SessLint release carrying 'sesslint hook' - check 'sesslint version'. See docs/INTEGRATIONS.md.\", \"schema\": \"sesslint.init-hooks/v1\"}\n"
+        }
+      }
+    },
+    {
+      "id": "run_init_codex",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": true,
+          "json": false,
+          "agent": "codex"
+        },
+        "stdin_hex": ""
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-init-hooks-doc",
+        "computed_output_format": null,
+        "pin": {
+          "exit_code": 0,
+          "stdout": "# codex: Codex documents lifecycle hooks (~/.codex/hooks.json or [hooks] in config.toml) whose stdin payload carries transcript_path - the same contract `sesslint hook` reads. Snippets are not emitted yet: matcher values, the 1s SessionEnd timeout, and the /hooks trust-review flow need recipe-level verification first. Interim coverage for Codex session roots: `sesslint check --agent codex`.\n"
+        }
+      }
+    },
+    {
+      "id": "run_defaults_minimal_stdin",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": false,
+          "json": false,
+          "event": "SessionStart"
+        },
+        "stdin_hex": "7b7d"
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-run-hook",
+        "computed_output_format": null,
+        "pin": {
+          "exit_code": 0,
+          "stdout": "sesslint hook[SessionStart]: skipped (no-transcript-path)\n"
+        }
+      }
+    },
+    {
+      "id": "run_json_flag_wins",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": false,
+          "json": true,
+          "event": "SessionStart",
+          "output_format": "claude-json"
+        },
+        "stdin_hex": "7b7d"
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-run-hook",
+        "computed_output_format": "json",
+        "pin": {
+          "exit_code": 0,
+          "stdout": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"no-transcript-path\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}\n"
+        }
+      }
+    },
+    {
+      "id": "run_output_format_text",
+      "construct": {
+        "type": "run",
+        "args": {
+          "init": false,
+          "json": false,
+          "event": "SessionStart",
+          "output_format": "text"
+        },
+        "stdin_hex": "7b7d"
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-cli-hook-run-hook",
+        "computed_output_format": "text",
+        "pin": {
+          "exit_code": 0,
+          "stdout": "sesslint hook[SessionStart]: skipped (no-transcript-path)\n"
+        }
+      }
+    }
+  ]
+}
