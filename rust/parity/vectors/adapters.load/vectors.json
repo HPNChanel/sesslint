@@ -1,0 +1,89 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.load",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "load_py_sha256": "7347f2916d1d76169b872825f25d4a4dceff7eccc30a9957ba39f13f7ae87e43",
+  "load_rs_sha256": "93405357d8b4d823c78ba01731b474e3a4ff2b37ed12f77bec2dddb7349cd2d2",
+  "known_parity_gaps": [
+    "GAP-load-claude-canonical-no-events: load_claude_code and load_canonical success paths do not return EventList rows in Rust; load_events_for_format for those format ids stops at the loader seam before events.",
+    "GAP-load-valueerror-repr: Unsupported and not-vendor ValueError messages use Python repr, including None and quoted strings; Rust matches Display text but vectors do not exhaust every format arm.",
+    "GAP-load-reader-limits: Python passes ReaderLimits into all loaders; Rust LoadLimits forwards only fields each vendor loader accepts (see load.rs).",
+    "GAP-load-codex-secret-tracker: load_codex_rollout accepts an optional SecretScanTracker; load.py passes None. Rust always passes None.",
+    "GAP-load-payload-content-hash: load_events_for_format on codex-rollout stops at sesslint._canonical_codec.payload_content_hash before returning events; Python test_codex_dispatch load_events row is not_applicable.",
+    "GAP-load-scan-cli-bundle: tests/test_codex_dispatch.py rows that call scan_path, cli.main, export_to_canonical, api.build_bundle, or api.verify are outside this adapters.load card."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "FORMAT_PROFILE_KEYS",
+          "is_vendor_format",
+          "load_events_for_format",
+          "load_vendor_events",
+          "profile_key_for_format",
+          "reload_vendor_bytes"
+        ]
+      }
+    },
+    {
+      "id": "format_profile_keys",
+      "construct": {
+        "type": "format_profile_keys"
+      },
+      "expected": {
+        "entries": [
+          [
+            "claude-code-jsonl",
+            "claude"
+          ],
+          [
+            "openai-agents",
+            "openai"
+          ],
+          [
+            "codex-rollout",
+            "codex"
+          ],
+          [
+            "canonical",
+            "canonical"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "profile_key_codex_rollout",
+      "construct": {
+        "type": "profile_key_for_format",
+        "format": "codex-rollout"
+      },
+      "expected": {
+        "result": "codex"
+      }
+    },
+    {
+      "id": "profile_key_unknown_fmt",
+      "construct": {
+        "type": "profile_key_for_format",
+        "format": "unknown-fmt"
+      },
+      "expected": {
+        "result": "unknown-fmt"
+      }
+    },
+    {
+      "id": "profile_key_none",
+      "construct": {
+        "type": "profile_key_for_format",
+        "format": null
+      },
+      "expected": {
+        "result": null
+      }
+    }
+  ]
+}

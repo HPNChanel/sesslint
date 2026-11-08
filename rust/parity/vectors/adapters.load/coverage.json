@@ -1,0 +1,59 @@
+{
+  "rows": [
+    {
+      "test": "tests/test_codex_dispatch.py::test_profile_key_map_covers_all_formats",
+      "status": "covered",
+      "vector_ids": [
+        "format_profile_keys",
+        "profile_key_codex_rollout",
+        "profile_key_unknown_fmt",
+        "profile_key_none"
+      ]
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_load_events_for_format_preserves_source_metadata",
+      "status": "not_applicable",
+      "reason": "calls load_events_for_format; Rust stops at payload_content_hash"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_classifies_healthy_codex_rollout",
+      "status": "not_applicable",
+      "reason": "calls scan_path"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_detects_codex_corruption_findings",
+      "status": "not_applicable",
+      "reason": "calls scan_path"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_codex_unsupported_version_bucket",
+      "status": "not_applicable",
+      "reason": "calls scan_path"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_scan_codex_profile_gate",
+      "status": "not_applicable",
+      "reason": "calls scan_path"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_cli_scan_agent_codex_real_rollout",
+      "status": "not_applicable",
+      "reason": "calls cli main"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_export_codex_rollout",
+      "status": "not_applicable",
+      "reason": "calls export_to_canonical"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_bundle_codex_rollout_skeleton",
+      "status": "not_applicable",
+      "reason": "calls api.build_bundle"
+    },
+    {
+      "test": "tests/test_codex_dispatch.py::test_verify_codex_repair_roundtrip",
+      "status": "not_applicable",
+      "reason": "calls api.verify"
+    }
+  ]
+}
