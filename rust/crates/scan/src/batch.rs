@@ -1,6 +1,6 @@
 //! Batch repair report rows for one audited pass.
 //!
-//! Port of `src/sesslint/batch.py` lines 1-213
+//! Port of `src/sesslint/batch.py` lines 1-213 and 216-406
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //!
 //! `sesslint.progress`, `sesslint.repair.RepairPlan`, and
@@ -22,8 +22,18 @@
 //!   the pin `FileNotFoundError` sentence. After a successful UTF-8 read,
 //!   display is [`JSON_LOADS_UNAVAILABLE`]. `home` is accepted and unused.
 //!   `Path.home` is not called and resolved paths are not invented.
-//! * [`BatchRepairReport::render_human`] appends ` - {reason}` when `reason`
-//!   is `Some`, including an empty string.
+//! * [`BatchRepairReport::render_human`] omits an empty reason, matching
+//!   `if r.reason`.
+//! * [`repair_many`] stops at `from sesslint import api`. Display is
+//!   [`API_UNAVAILABLE`]. Paths are not sorted or statted. [`_compute_plan`]
+//!   is not called. Directories are not created. A [`BatchRepairReport`] is
+//!   not returned.
+//! * [`get_batch_schema_path`] calls [`model::resources::schema_path`] with
+//!   `sesslint.batch-repair.v1.json` and the repository schema path. It
+//!   returns that path. `sys._MEIPASS` and `sys.prefix` are not invented.
+//! * [`load_batch_schema`] reads that file as UTF-8. A missing file uses the
+//!   pin `FileNotFoundError` sentence. After a successful read, display is
+//!   [`JSON_LOADS_UNAVAILABLE`]. The schema is not parsed.
 
 use std::convert::Infallible;
 use std::error::Error;
@@ -44,6 +54,12 @@ pub const JSON_LOADS_UNAVAILABLE: &str = "json.loads is not available";
 /// `sesslint.adapters.detect.FORMAT_CANONICAL` is not linked from this crate.
 pub const FORMAT_CANONICAL_UNAVAILABLE: &str =
     "sesslint.adapters.detect.FORMAT_CANONICAL is not available";
+
+/// `sesslint.api` is not linked from this crate.
+pub const API_UNAVAILABLE: &str = "sesslint.api is not available";
+
+/// Python schema file joined under the repository `schemas` directory.
+const BATCH_REPAIR_SCHEMA_FILE: &str = "sesslint.batch-repair.v1.json";
 
 const REPAIRED_MARK: &str = ".repaired";
 const DEFAULT_SUFFIX: &str = ".jsonl";
@@ -254,6 +270,18 @@ impl fmt::Display for FormatCanonicalUnavailable {
 
 impl Error for FormatCanonicalUnavailable {}
 
+/// `sesslint.api` is not available in this crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApiUnavailable;
+
+impl fmt::Display for ApiUnavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(API_UNAVAILABLE)
+    }
+}
+
+impl Error for ApiUnavailable {}
+
 /// [`resolve_scan_report_files`] stopped. No path list is returned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveScanReportError {
@@ -359,6 +387,95 @@ pub fn resolve_scan_report_files(
     let text = read_report_text(report_path.as_ref())?;
     let _unused = (text, home);
     Err(ResolveScanReportError::Loads)
+}
+
+/// Python: `repair_many`.
+///
+/// Stops at `from sesslint import api`. Display is [`API_UNAVAILABLE`].
+/// `sesslint.report.minimize_path` is not imported. Paths are not sorted or
+/// statted. [`_compute_plan`] is not called. Directories are not created.
+/// A [`BatchRepairReport`] is not returned. Success is [`Infallible`].
+///
+/// `progress_cb` and `cancel_token` are not parameters. `sesslint.progress`
+/// is not linked, and both are used only after the `api` import.
+///
+/// Rust has no defaults. Pass `"conservative"`, `None`, `"neutral"`, `false`,
+/// `"auto"`, and `false` for `policy`, `format`, `profile`,
+/// `acknowledge_side_effects`, `emit`, and `dry_run`.
+///
+/// # Errors
+///
+/// Always [`ApiUnavailable`]. This function does not panic.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "pin signature; every argument is unused before sesslint.api"
+)]
+pub fn repair_many(
+    files: &[impl AsRef<Path>],
+    output_dir: &Path,
+    manifest_dir: Option<&Path>,
+    common_root: Option<&Path>,
+    policy: &str,
+    format: Option<&str>,
+    profile: &str,
+    acknowledge_side_effects: bool,
+    emit: &str,
+    dry_run: bool,
+) -> Result<Infallible, ApiUnavailable> {
+    let _unused = (
+        files,
+        output_dir,
+        manifest_dir,
+        common_root,
+        policy,
+        format,
+        profile,
+        acknowledge_side_effects,
+        emit,
+        dry_run,
+    );
+    Err(ApiUnavailable)
+}
+
+/// Python: `get_batch_schema_path`.
+///
+/// Calls [`model::resources::schema_path`] with
+/// [`BATCH_REPAIR_SCHEMA_FILE`] and the repository file
+/// `schemas/sesslint.batch-repair.v1.json` derived from this crate's location.
+/// The process current directory is not read. `sys._MEIPASS` and `sys.prefix`
+/// are not invented.
+#[must_use]
+pub fn get_batch_schema_path() -> PathBuf {
+    let development_path = batch_schema_development_path();
+    model::resources::schema_path(BATCH_REPAIR_SCHEMA_FILE, &development_path)
+}
+
+/// Python: `load_batch_schema`.
+///
+/// Reads the path from [`get_batch_schema_path`] as UTF-8. A missing file
+/// returns the pin `FileNotFoundError` sentence. A successful read stops with
+/// [`JSON_LOADS_UNAVAILABLE`]. The schema is not parsed and a dictionary is
+/// not returned.
+///
+/// # Errors
+///
+/// Returns [`ResolveScanReportError`]. This function does not panic.
+pub fn load_batch_schema() -> Result<Infallible, ResolveScanReportError> {
+    let text = read_report_text(&get_batch_schema_path())?;
+    let _unused = text;
+    Err(ResolveScanReportError::Loads)
+}
+
+fn batch_schema_development_path() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    match manifest
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    {
+        Some(root) => root.join("schemas").join(BATCH_REPAIR_SCHEMA_FILE),
+        None => manifest.join("schemas").join(BATCH_REPAIR_SCHEMA_FILE),
+    }
 }
 
 fn count_outcome(rows: &[BatchRow], outcome: &str) -> usize {
@@ -951,10 +1068,11 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        _compute_plan, _output_for, _plan_detail, python_repr, resolve_scan_report_files,
-        utf8_message, BatchRepairReport, BatchRow, BatchValue, FormatCanonicalUnavailable,
-        ResolveScanReportError, BATCH_REPORT_VERSION, FORMAT_CANONICAL_UNAVAILABLE,
-        JSON_DUMPS_UNAVAILABLE, JSON_LOADS_UNAVAILABLE,
+        _compute_plan, _output_for, _plan_detail, get_batch_schema_path, load_batch_schema,
+        python_repr, repair_many, resolve_scan_report_files, utf8_message, ApiUnavailable,
+        BatchRepairReport, BatchRow, BatchValue, FormatCanonicalUnavailable,
+        ResolveScanReportError, API_UNAVAILABLE, BATCH_REPORT_VERSION,
+        FORMAT_CANONICAL_UNAVAILABLE, JSON_DUMPS_UNAVAILABLE, JSON_LOADS_UNAVAILABLE,
     };
 
     fn keys(dict: &super::BatchDict) -> Vec<&str> {
@@ -1331,5 +1449,103 @@ mod tests {
             "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
         );
         assert!(matches!(err, ResolveScanReportError::Read(_)));
+    }
+
+    fn assert_absent(path: &Path) {
+        assert!(!path.exists(), "created {}", path.display());
+    }
+
+    #[test]
+    fn repair_many_stops_at_api_and_creates_nothing() {
+        let source = Path::new("synthetic-batch-02-src.jsonl");
+        let other = Path::new("synthetic-batch-02-other.jsonl");
+        let output = Path::new("synthetic-batch-02-out");
+        let nested = output.join("nested");
+        let manifest = Path::new("synthetic-batch-02-manifest");
+        let root = Path::new("synthetic-batch-02-root");
+        for path in [source, other, output, manifest, root] {
+            assert_absent(path);
+        }
+        assert_absent(&nested);
+
+        let files = [source, other];
+        let err = repair_many(
+            &files,
+            output,
+            Some(manifest),
+            Some(root),
+            "conservative",
+            None,
+            "neutral",
+            false,
+            "auto",
+            false,
+        )
+        .expect_err("api");
+        assert_eq!(err, ApiUnavailable);
+        assert_eq!(err.to_string(), API_UNAVAILABLE);
+        assert_eq!(err.to_string(), "sesslint.api is not available");
+        assert!(!err.to_string().contains("synthetic"));
+        assert!(!err.to_string().contains('\r'));
+        let as_error: &dyn Error = &err;
+        assert!(as_error.source().is_none());
+
+        let none: &[&Path] = &[];
+        let dry = repair_many(
+            none,
+            output,
+            None,
+            None,
+            "",
+            Some(""),
+            "",
+            true,
+            "vendor",
+            true,
+        )
+        .expect_err("api");
+        assert_eq!(dry.to_string(), "sesslint.api is not available");
+        for path in [source, other, output, manifest, root] {
+            assert_absent(path);
+        }
+        assert_absent(&nested);
+    }
+
+    #[test]
+    fn get_batch_schema_path_is_the_repository_schema() {
+        let path = get_batch_schema_path();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let expected = manifest
+            .parent()
+            .expect("crates")
+            .parent()
+            .expect("rust")
+            .parent()
+            .expect("repo")
+            .join("schemas")
+            .join("sesslint.batch-repair.v1.json");
+        assert_eq!(path, expected);
+        assert!(path.is_absolute());
+        assert!(path.is_file());
+        assert!(!path.to_string_lossy().contains('\r'));
+    }
+
+    #[test]
+    fn load_batch_schema_reads_then_stops_before_json_loads() {
+        let err = load_batch_schema().expect_err("loads");
+        assert_eq!(err.to_string(), JSON_LOADS_UNAVAILABLE);
+        assert_eq!(err.to_string(), "json.loads is not available");
+        assert!(!err.to_string().contains("$schema"));
+        assert!(!err.to_string().contains("sesslint.batch-repair"));
+        assert!(std::error::Error::source(&err).is_none());
+
+        let missing = Path::new("synthetic-batch-02-missing-schema.json");
+        assert_absent(missing);
+        let err = super::read_report_text(missing).expect_err("missing");
+        assert_eq!(
+            err.to_string(),
+            "[Errno 2] No such file or directory: 'synthetic-batch-02-missing-schema.json'"
+        );
+        assert_absent(missing);
     }
 }
