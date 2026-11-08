@@ -1,0 +1,605 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "terminal-suffix-discard",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "known_parity_gaps": [
+    "GAP-terminal-suffix-discard-affected-region: RECIPE_TERMINAL_SUFFIX_DISCARD in the pin leaves affected_region unset. The pin has no affected_region_terminal_suffix_discard. This set records that absence and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz parametrizes other region functions. This recipe is not one of those calls. One function inside the sweep is not the whole test.",
+    "GAP-terminal-suffix-discard-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply succeeds in the pin. That success is not replayed. tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture compares canonical_json_bytes. tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_sl005_entry_index calls planner.plan and then apply. The apply on the asserted cut succeeds in the pin. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/repair/test_recipes_conservative.py::test_no_synthetic_success_multiset_proof hashes tool results with canonical_json_bytes. One fixture inside a sweep is not the whole test. tests/repair/test_executor.py::test_tampered_plan and tests/repair/test_executor.py::test_cli_dry_run_with_tampered_plan_refuses name the recipe inside execute. One recipe name inside that test is not the whole test. tests/repair/test_release_matrix.py::test_public_repair_matrix runs a scenario sweep. One scenario inside that sweep is not the whole test. Those results are not replayed. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-terminal-suffix-discard-payload: tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture carries payload on the input and on the expected events. tests/repair/test_recipes_conservative.py::test_suffix_discard_refusal_checkpoint_in_suffix carries payload on the checkpoint event. This set does not store payload content. A payload-free result is not that test. The checkpoint refusal also occurs with the payload present, so a stripped vector is not a substitute for the whole test.",
+    "GAP-terminal-suffix-discard-kind: a float, list, or mapping kind in the discarded suffix is rendered with str in the pin and is not a checkpoint, so the pin copies the prefix. The published function returns a different error. This set does not claim that pin result. The pin succeeds. A rust seam while the pin succeeds is not coverage. That success is not replayed. No output bytes are stored."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_terminal_suffix_discard",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_TERMINAL_SUFFIX_DISCARD",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "terminal-suffix-discard",
+        "handles": [
+          "SL005"
+        ],
+        "preconditions": [
+          "no_prior_safe_tool_after_cut"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": false
+      }
+    },
+    {
+      "id": "suffix_refusal_missing_cut",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: missing or invalid cut index"
+      }
+    },
+    {
+      "id": "suffix_refusal_negative_cut",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index -1 would empty session (refused)"
+      }
+    },
+    {
+      "id": "suffix_refusal_cut_equals_length",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 2
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index 2 >= session length 2"
+      }
+    },
+    {
+      "id": "suffix_refusal_empty_events_past_end",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index 1 >= session length 0"
+      }
+    },
+    {
+      "id": "suffix_refusal_param_cut_past_end",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "cut_index",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index 9 >= session length 2"
+      }
+    },
+    {
+      "id": "suffix_refusal_checkpoint",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-next"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-mark"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: checkpoint at index 2 cannot be discarded"
+      }
+    },
+    {
+      "id": "suffix_discard_refusal_empty_session",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": true,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "actor",
+                {
+                  "t": "str",
+                  "v": "user"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "actor",
+                {
+                  "t": "str",
+                  "v": "assistant"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "e0"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index 0 would empty session (refused)"
+      }
+    },
+    {
+      "id": "suffix_discard_refusal_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_terminal_suffix_discard",
+        "entire_test": true,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "actor",
+                {
+                  "t": "str",
+                  "v": "user"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 5
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "terminal-suffix-discard: cut at index 5 >= session length 1"
+      }
+    }
+  ]
+}
