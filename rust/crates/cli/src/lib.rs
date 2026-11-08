@@ -18,7 +18,7 @@ pub mod api {}
 pub mod common;
 pub mod render;
 pub mod scan_args;
-pub mod check {}
+pub mod check;
 pub mod triage {}
 pub mod bundle {}
 pub mod completion;
