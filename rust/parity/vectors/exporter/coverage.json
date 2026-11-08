@@ -1,0 +1,52 @@
+{
+  "module": "sesslint.exporter",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 0,
+  "not_applicable_count": 11,
+  "rows": [
+    {
+      "test": "tests/export/test_export.py::test_export_canonical_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_deterministic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_claude_and_openai",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_then_repair_accepts",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_summary_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_refuses_self_and_existing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_cli_json_and_refusal",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_refuses_malformed_syntax_errors",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_refuses_empty_session",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_refuses_torn_final",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/export/test_export.py::test_export_cli_refuses_corrupted_input",
+      "status": "not_applicable"
+    }
+  ]
+}

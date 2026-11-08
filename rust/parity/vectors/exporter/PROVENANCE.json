@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.exporter parity: module exports, ExportRefused, ExportSummary.to_dict key order, source path preflight, and the is_live_store_path seam.",
+  "generator": "rust/parity/vectors/exporter/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-evidence-exporter-live-store: export_to_canonical on a regular file calls sesslint.repair.executor.is_live_store_path in Python; Rust returns sesslint.repair.executor.is_live_store_path is not available before the output path is statted, compared, or written."
+  ]
+}

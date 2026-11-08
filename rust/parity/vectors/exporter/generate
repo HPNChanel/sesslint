@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""Generate sesslint.exporter parity vectors from the pinned module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+EXPORTER_PY_SHA256 = (
+    "d5386b1c85b9ff596e5a6e014d1acaff8e6ad74c9c956d04e9aa0a9e7a4d8ea5"
+)
+EXPORTER_RS_SHA256 = (
+    "fdc599ed26bfaeed99c784b5a8547e81c5fbd1d044ad63766b92cb208fe1f40c"
+)
+MODULE = "sesslint.exporter"
+COVERAGE_TEST_FILE = "tests/export/test_export.py"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-evidence-exporter-live-store: export_to_canonical on a regular file calls "
+    "sesslint.repair.executor.is_live_store_path in Python; Rust returns "
+    "sesslint.repair.executor.is_live_store_path is not available before the output "
+    "path is statted, compared, or written.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/exporter.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != EXPORTER_PY_SHA256:
+        raise SystemExit(
+            f"exporter.py pin sha256 mismatch: expected {EXPORTER_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "exporter.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != EXPORTER_RS_SHA256:
+        raise SystemExit(
+            f"exporter.rs sha256 mismatch: expected {EXPORTER_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (b"sesslint-wt-", b"FOR_WORK"):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def exec_module_from_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_stubs() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    errors_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/errors.py")
+    errors = exec_module_from_blob(errors_blob, "sesslint.errors")
+    pkg.errors = errors
+
+    canonical = types.ModuleType("sesslint.canonical")
+
+    class SessionEvent:  # noqa: D101
+        pass
+
+    canonical.SessionEvent = SessionEvent
+    sys.modules["sesslint.canonical"] = canonical
+    pkg.canonical = canonical
+
+    finding = types.ModuleType("sesslint.finding")
+
+    class Finding:  # noqa: D101
+        pass
+
+    finding.Finding = Finding
+    sys.modules["sesslint.finding"] = finding
+    pkg.finding = finding
+
+    codes = types.ModuleType("sesslint.codes")
+
+    class Severity:  # noqa: D101
+        FATAL = types.SimpleNamespace(value="fatal")
+        ERROR = types.SimpleNamespace(value="error")
+
+    class SL302:  # noqa: D101
+        pass
+
+    codes.Severity = Severity
+    codes.SL302 = SL302
+    sys.modules["sesslint.codes"] = codes
+    pkg.codes = codes
+
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    canonical_adapters = types.ModuleType("sesslint.adapters.canonical")
+    canonical_adapters.dump_canonical = lambda *_a, **_k: b""
+    canonical_adapters.load_canonical = lambda *_a, **_k: ([], [])
+    sys.modules["sesslint.adapters.canonical"] = canonical_adapters
+    adapters.canonical = canonical_adapters
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+    detect.FORMAT_CANONICAL = "canonical"
+    detect.resolve_format = lambda *_a, **_k: (None, None, [])
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters.detect = detect
+
+    load_mod = types.ModuleType("sesslint.adapters.load")
+    load_mod.is_vendor_format = lambda _fmt: False
+    load_mod.load_vendor_events = lambda *_a, **_k: ([], [])
+    load_mod.read_source_snapshot = lambda _src: None
+    load_mod.snapshot_input = lambda src, _snap: src
+    sys.modules["sesslint.adapters.load"] = load_mod
+    adapters.load = load_mod
+
+    atomic = types.ModuleType("sesslint.atomic")
+    atomic.atomic_write_bytes = lambda *_a, **_k: ""
+    sys.modules["sesslint.atomic"] = atomic
+    pkg.atomic = atomic
+
+    io_mod = types.ModuleType("sesslint.io")
+    io_mod.sha256_file_bytes = lambda *_a, **_k: ""
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+    report = types.ModuleType("sesslint.report")
+    report.minimize_path = lambda path, **_k: str(path)
+    sys.modules["sesslint.report"] = report
+    pkg.report = report
+
+    repair = types.ModuleType("sesslint.repair")
+    repair.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.repair"] = repair
+    pkg.repair = repair
+
+    executor = types.ModuleType("sesslint.repair.executor")
+    executor.is_live_store_path = lambda _path: False
+    sys.modules["sesslint.repair.executor"] = executor
+    repair.executor = executor
+
+
+def load_exporter_module() -> Any:
+    verify_pin_hashes()
+    install_stubs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/exporter.py")
+    exporter = exec_module_from_blob(blob, "sesslint.exporter")
+    sys.modules["sesslint"].exporter = exporter
+    return exporter
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    source = fixtures / "synthetic_source.jsonl"
+    if not source.exists():
+        source.write_text("synthetic-rx-p42-export\n", encoding="utf-8", newline="\n")
+    directory = fixtures / "synthetic_dir"
+    directory.mkdir(exist_ok=True)
+    child = directory / "child.jsonl"
+    if not child.exists():
+        child.write_text("synthetic-child\n", encoding="utf-8", newline="\n")
+    link = fixtures / "broken_link.jsonl"
+    if link.exists() or link.is_symlink():
+        link.unlink(missing_ok=True)
+    try:
+        link.symlink_to("absent_target.jsonl", target_is_directory=False)
+    except OSError as err:
+        raise SystemExit(f"broken symlink fixture: {err}") from err
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.resolve().relative_to(base.resolve()).as_posix()
+
+
+def export_to_canonical_pin(
+    exporter: Any,
+    out_dir: Path,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        source_text = construct["source_path"]
+        src = Path(source_text) if source_text else Path(".")
+        out = Path(construct["output_path"])
+        fmt = construct.get("format")
+        try:
+            if fmt is None:
+                exporter.export_to_canonical(src, out)
+            else:
+                exporter.export_to_canonical(src, out, format=fmt)
+        except FileNotFoundError as err:
+            return {
+                "raises": "FileNotFoundError",
+                "message": str(err).replace("\\", "/"),
+            }
+        raise SystemExit(
+            f"expected FileNotFoundError for {construct.get('id', 'export')}, export succeeded"
+        )
+    finally:
+        os.chdir(prev)
+
+
+def export_regular_file_gap(
+    out_dir: Path,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        src = Path(construct["source_path"])
+        if not src.is_file():
+            raise SystemExit(f"{construct}: source is not a regular file")
+        return {
+            "pin": {"source_is_file": True},
+            "rust_assertion": {"mode": "live_store_path_unavailable"},
+        }
+    finally:
+        os.chdir(prev)
+
+
+def build_expected(exporter: Any, out_dir: Path, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_constants":
+        return {"python_all": list(exporter.__all__)}
+    if kind == "export_refused":
+        default = exporter.ExportRefused("refused synthetic export")
+        custom = exporter.ExportRefused("other", code="CUSTOM")
+        return {
+            "default_code": default.code,
+            "message_only": str(default),
+            "custom_code": custom.code,
+            "custom_message": str(custom),
+        }
+    if kind == "export_summary_to_dict":
+        summary = exporter.ExportSummary(
+            input_path="in.jsonl",
+            input_format="canonical",
+            output_path="out.jsonl",
+            input_sha256="aa",
+            output_sha256="bb",
+            event_count=3,
+            dropped_unknown_fields=1,
+            findings_by_severity={
+                "warning": 2,
+                "fatal": 1,
+                "info": 0,
+            },
+        )
+        return {"dict": summary.to_dict()}
+    if kind == "export_to_canonical":
+        return export_to_canonical_pin(exporter, out_dir, construct)
+    if kind == "export_to_canonical_gap":
+        return export_regular_file_gap(out_dir, construct)
+    raise SystemExit(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {"id": "module_constants", "construct": {"type": "module_constants"}},
+        {"id": "export_refused", "construct": {"type": "export_refused"}},
+        {"id": "export_summary_to_dict", "construct": {"type": "export_summary_to_dict"}},
+        {
+            "id": "export_missing_source_path",
+            "construct": {
+                "type": "export_to_canonical",
+                "source_path": "fixtures/synthetic_absent.jsonl",
+                "output_path": "fixtures/synthetic_out.jsonl",
+                "format": "canonical",
+            },
+        },
+        {
+            "id": "export_directory_source",
+            "construct": {
+                "type": "export_to_canonical",
+                "source_path": "fixtures/synthetic_dir",
+                "output_path": "fixtures/synthetic_out.jsonl",
+            },
+        },
+        {
+            "id": "export_broken_symlink",
+            "construct": {
+                "type": "export_to_canonical",
+                "source_path": "fixtures/broken_link.jsonl",
+                "output_path": "fixtures/synthetic_out.jsonl",
+                "format": "auto",
+            },
+        },
+        {
+            "id": "export_empty_source_path",
+            "construct": {
+                "type": "export_to_canonical",
+                "source_path": "",
+                "output_path": "fixtures/synthetic_out.jsonl",
+            },
+        },
+        {
+            "id": "export_regular_file_gap",
+            "construct": {
+                "type": "export_to_canonical_gap",
+                "source_path": "fixtures/synthetic_source.jsonl",
+                "output_path": "fixtures/synthetic_out.jsonl",
+            },
+        },
+        {
+            "id": "export_regular_file_symlink_gap",
+            "construct": {
+                "type": "export_to_canonical_gap",
+                "source_path": "fixtures/via_link.jsonl",
+                "output_path": "fixtures/synthetic_out.jsonl",
+                "format": "canonical",
+            },
+        },
+    ]
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    names: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            names.append(line.split("(")[0].replace("def ", ""))
+    return names
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for name in list_tests_in_file(COVERAGE_TEST_FILE):
+        qual = f"{COVERAGE_TEST_FILE}::{name}"
+        needed = COVERED_BY_VECTORS.get(qual)
+        row: dict[str, object] = {"test": qual}
+        if needed is not None and all(item in vector_ids for item in needed):
+            status = "covered"
+            covered += 1
+            row["vector_ids"] = list(needed)
+        else:
+            status = "not_applicable"
+            not_applicable += 1
+        row["status"] = status
+        rows.append(row)
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def ensure_symlink_fixture(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    source = fixtures / "synthetic_source.jsonl"
+    link = fixtures / "via_link.jsonl"
+    if link.exists() or link.is_symlink():
+        link.unlink(missing_ok=True)
+    link.symlink_to("synthetic_source.jsonl", target_is_directory=False)
+
+
+def main() -> int:
+    exporter = load_exporter_module()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    ensure_symlink_fixture(out_dir)
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(exporter, out_dir, construct)
+        vectors.append({"id": row["id"], "construct": construct, "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "exporter_py_sha256": EXPORTER_PY_SHA256,
+        "exporter_rs_sha256": EXPORTER_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.exporter parity: module exports, ExportRefused, "
+            "ExportSummary.to_dict key order, source path preflight, and the "
+            "is_live_store_path seam."
+        ),
+        "generator": "rust/parity/vectors/exporter/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vectors.json sha256={digest}")
+    print(f"vector_count={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
