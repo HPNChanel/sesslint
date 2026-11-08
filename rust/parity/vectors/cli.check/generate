@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.check parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from contextlib import contextmanager
+from pathlib import Path as FsPath
+from typing import Any, Iterator
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CHECK_PY_SHA256 = (
+    "7642d26eb328d49299edaa922a92d32906e22f769b18029e081a74f4171790f8"
+)
+CHECK_RS_SHA256 = (
+    "ddee54a32199f15941d0545525476a048fdd30955a532454659b649f55d73602"
+)
+MODULE = "sesslint.cli.check"
+
+GAP_RUN_STOPS = "GAP-cli-check-run-stops"
+
+KNOWN_PARITY_GAPS = [
+    (
+        f"{GAP_RUN_STOPS}: agent and a single directory Display "
+        "`sesslint.api.check_dir is not available`; lone stdin Display "
+        "`sesslint.api.check_bytes is not available` before any read; several "
+        "paths Display `sesslint.report.minimize_path is not available`; an "
+        "existing file Display `sesslint.api.check_file is not available`. "
+        "Run vectors omitted; these import stops are gaps, not covered rows."
+    ),
+]
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|sesslint-wt-|FOR_WORK)"
+)
+
+
+def repo_root() -> FsPath:
+    return FsPath(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile_named_blob(blob) as tmp_path:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+
+@contextmanager
+def tempfile_named_blob(blob: bytes) -> Iterator[str]:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        yield tmp_path
+    finally:
+        FsPath(tmp_path).unlink(missing_ok=True)
+
+
+class _Ctx:
+    def __init__(self) -> None:
+        self.errors: list[str] = []
+
+    def error(self, message: str) -> None:
+        self.errors.append(message)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    pkg.__version__ = "0.0.0-synthetic"
+    sys.modules["sesslint"] = pkg
+
+    errors = types.ModuleType("sesslint.errors")
+
+    class SesslintError(Exception):
+        pass
+
+    errors.SesslintError = SesslintError
+    sys.modules["sesslint.errors"] = errors
+    pkg.errors = errors
+
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+    detect.VALID_FORMAT_OPTIONS = frozenset(
+        {
+            "auto",
+            "canonical",
+            "claude-code-jsonl",
+            "codex-rollout",
+            "openai-agents",
+        }
+    )
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters.detect = detect
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    context = types.ModuleType("sesslint.cli._context")
+    context.CliContext = _Ctx
+    sys.modules["sesslint.cli._context"] = context
+    cli_pkg._context = context
+
+    common = types.ModuleType("sesslint.cli._common")
+
+    def _handle_internal_error(_err: BaseException, _args: Any) -> int:
+        return 2
+
+    def _load_baseline_arg(_args: Any) -> Any:
+        return None
+
+    def _output_format(_args: Any) -> str:
+        return "human"
+
+    def _read_stdin_bytes() -> bytes:
+        return b""
+
+    def _rule_codes_arg(_args: Any) -> Any:
+        return None
+
+    def _write_baseline_arg(_args: Any) -> Any:
+        return None
+
+    def should_color(_args: Any) -> bool:
+        return False
+
+    common._handle_internal_error = _handle_internal_error
+    common._load_baseline_arg = _load_baseline_arg
+    common._output_format = _output_format
+    common._read_stdin_bytes = _read_stdin_bytes
+    common._rule_codes_arg = _rule_codes_arg
+    common._write_baseline_arg = _write_baseline_arg
+    common.should_color = should_color
+    sys.modules["sesslint.cli._common"] = common
+    cli_pkg._common = common
+
+    output_mod = types.ModuleType("sesslint.cli._output")
+
+    def emit_text(*_a: Any, **_kw: Any) -> None:
+        pass
+
+    output_mod.emit_text = emit_text
+    sys.modules["sesslint.cli._output"] = output_mod
+    cli_pkg._output = output_mod
+
+    render = types.ModuleType("sesslint.cli._render")
+
+    def _emit_check_report(*_a: Any, **_kw: Any) -> None:
+        pass
+
+    def format_scan_report_human(*_a: Any, **_kw: Any) -> str:
+        return ""
+
+    render._emit_check_report = _emit_check_report
+    render.format_scan_report_human = format_scan_report_human
+    sys.modules["sesslint.cli._render"] = render
+    cli_pkg._render = render
+
+    scan_args = types.ModuleType("sesslint.cli._scan_args")
+
+    def build_scan_kwargs(*_a: Any, **_kw: Any) -> dict[str, Any]:
+        return {"jobs": 1}
+
+    scan_args.build_scan_kwargs = build_scan_kwargs
+    sys.modules["sesslint.cli._scan_args"] = scan_args
+    cli_pkg._scan_args = scan_args
+
+    seal = types.ModuleType("sesslint.cli._seal")
+
+    def _maybe_append_seal(*_args: Any, **_kwargs: Any) -> int | None:
+        return None
+
+    def _check_seal_verdict(*_args: Any, **_kwargs: Any) -> Any:
+        return None
+
+    seal._maybe_append_seal = _maybe_append_seal
+    seal._check_seal_verdict = _check_seal_verdict
+    sys.modules["sesslint.cli._seal"] = seal
+    cli_pkg._seal = seal
+
+    options_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_options.py")
+    options = exec_blob(options_blob, "sesslint.cli._options")
+    sys.modules["sesslint.cli._options"] = options
+    cli_pkg._options = options
+
+
+def load_check_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/check.py")
+    verify_digest(blob, CHECK_PY_SHA256, "cli/check.py")
+    check = exec_blob(blob, "sesslint.cli.check")
+    sys.modules["sesslint.cli"].check = check
+    return check
+
+
+def encode_action(action: argparse.Action) -> str:
+    if action.const is True and action.nargs == 0:
+        return "store_true"
+    if isinstance(action, argparse._AppendAction):
+        return "append"
+    return "store"
+
+
+def is_suppress(value: Any) -> bool:
+    return value is argparse.SUPPRESS
+
+
+def encode_default_keyword(action: argparse.Action) -> Any:
+    if not action.option_strings:
+        return "absent"
+    if is_suppress(action.default):
+        return {"present": "suppress"}
+    if action.const is True and action.default is False:
+        return {"present": "false"}
+    if action.default is None:
+        return {"present": "none"}
+    if isinstance(action.default, bool):
+        return {"present": "false" if not action.default else "true"}
+    if isinstance(action.default, int):
+        return {"present": {"int": action.default}}
+    if isinstance(action.default, str):
+        return {"present": {"text": action.default}}
+    raise SystemExit(f"unexpected default for {action.dest}: {action.default!r}")
+
+
+def encode_effective_default(action: argparse.Action) -> Any:
+    if not action.option_strings:
+        return "none"
+    if is_suppress(action.default):
+        return "suppress"
+    if action.const is True and action.default is False:
+        return "false"
+    if action.default is None:
+        return "none"
+    if isinstance(action.default, bool):
+        return "false" if not action.default else "true"
+    if isinstance(action.default, int):
+        return {"int": action.default}
+    if isinstance(action.default, str):
+        return {"text": action.default}
+    raise SystemExit(f"unexpected effective for {action.dest}: {action.default!r}")
+
+
+def nargs_token(action: argparse.Action) -> Any:
+    if action.nargs is None:
+        return None
+    if action.nargs == argparse.ZERO_OR_MORE:
+        return "*"
+    if action.nargs == 0:
+        return "0"
+    return str(action.nargs)
+
+
+def type_name(action: argparse.Action) -> str | None:
+    if action.type is None:
+        return None
+    if hasattr(action.type, "__name__"):
+        name = action.type.__name__
+        if name == "Path":
+            return "Path"
+        if name == "_validate_positive_int":
+            return "_validate_positive_int"
+        if name == "int":
+            return "int"
+        return name
+    return None
+
+
+def pin_default_fields(dest: str) -> tuple[Any, Any] | None:
+    if dest == "path":
+        return ("absent", "none")
+    if dest == "json":
+        return ("absent", "false")
+    if dest in {"adapter", "profile", "policy"}:
+        return ({"present": "suppress"}, "suppress")
+    if dest in {"progress_json", "no_progress", "fail_on_unsupported"}:
+        return ("absent", "false")
+    return None
+
+
+def encode_argument(action: argparse.Action) -> dict[str, Any]:
+    positional = not action.option_strings
+    choices = list(action.choices) if action.choices is not None else None
+    if action.dest == "adapter" and choices is not None:
+        choices = sorted(choices)
+    default_keyword = encode_default_keyword(action)
+    effective_default = encode_effective_default(action)
+    override = pin_default_fields(action.dest)
+    if override is not None:
+        default_keyword, effective_default = override
+    required = bool(action.required)
+    return {
+        "positional": positional,
+        "option_strings": list(action.option_strings),
+        "dest": action.dest,
+        "action": encode_action(action),
+        "nargs": nargs_token(action),
+        "type_name": type_name(action),
+        "choices": choices,
+        "metavar": action.metavar,
+        "help": action.help,
+        "default_keyword": default_keyword,
+        "effective_default": effective_default,
+        "required": required,
+    }
+
+
+def find_exclusive_groups(
+    parser: argparse.ArgumentParser,
+) -> list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]]:
+    out: list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]] = []
+    for group in parser._mutually_exclusive_groups:
+        members = [action for action in group._group_actions if action.dest not in {"help"}]
+        if members:
+            out.append((group, members))
+    return out
+
+
+def configure_expected(check: types.ModuleType) -> dict[str, Any]:
+    root = argparse.ArgumentParser(prog="sesslint")
+    subparsers = root.add_subparsers()
+    sub = check.configure(subparsers)
+
+    subcommand_help = None
+    for action in root._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == check.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if subcommand_help is None:
+        raise SystemExit("failed to introspect subcommand help from configure()")
+
+    for field in (subcommand_help or "", sub.description or ""):
+        if "\u2014" in field or "\u2013" in field:
+            raise SystemExit("help/description must not contain U+2014 or U+2013")
+
+    arguments: list[dict[str, Any]] = []
+    for action in sub._actions:
+        if action.dest in {"help"}:
+            continue
+        arguments.append(encode_argument(action))
+
+    groups: list[dict[str, Any]] = []
+    for group, members in find_exclusive_groups(sub):
+        groups.append(
+            {
+                "required_keyword": group.required if group.required else None,
+                "required": bool(group.required),
+                "member_dests": [member.dest for member in members],
+            }
+        )
+
+    return {
+        "name": check.NAME,
+        "aliases": list(check.ALIASES),
+        "help": subcommand_help or "",
+        "description": sub.description or "",
+        "arguments": arguments,
+        "groups": groups,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {"id": "configure_subcommand_declarations", "construct": {"type": "configure"}},
+    ]
+
+
+def main() -> int:
+    check = load_check_module()
+    out_dir = FsPath(__file__).resolve().parent
+    rs_path = repo_root() / "rust" / "crates" / "cli" / "src" / "check.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != CHECK_RS_SHA256:
+        raise SystemExit(
+            f"check.rs sha256 mismatch: expected {CHECK_RS_SHA256}, got {rs_digest}"
+        )
+
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        if row["construct"]["type"] == "configure":
+            expected = configure_expected(check)
+        else:
+            raise SystemExit(f"unknown construct for {row['id']}")
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "check_py_sha256": CHECK_PY_SHA256,
+        "check_rs_sha256": CHECK_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    if _BANNED_PAT.search(payload_bytes):
+        raise SystemExit("vectors.json contains banned marker")
+    if b"\r" in payload_bytes:
+        raise SystemExit("vectors.json must be LF-only")
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.cli.check configure declarations from pinned "
+            "src/sesslint/cli/check.py (no checkout import). Run vectors omitted "
+            "for _run import-stop seams."
+        ),
+        "generator": "rust/parity/vectors/cli.check/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "rows": [],
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
