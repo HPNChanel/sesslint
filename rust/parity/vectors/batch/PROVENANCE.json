@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.batch parity: BatchRow.to_dict key order, render_human empty-reason omission, _output_for suffix names, and import-stop seams.",
+  "generator": "rust/parity/vectors/batch/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-scan-batch-import-stops: repair_many stops with Display `sesslint.api is not available`; _plan_detail stops with Display `sesslint.adapters.detect.FORMAT_CANONICAL is not available`; resolve_scan_report_files after a successful read stops with Display `json.loads is not available`; load_batch_schema after a successful read stops with Display `json.loads is not available`."
+  ]
+}

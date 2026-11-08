@@ -1,0 +1,267 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.batch",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "batch_py_sha256": "07e323ecd79668cfb7eefc94436314d9c37912f625b83b23a5544fd4e14378f8",
+  "batch_rs_sha256": "8b2d8e430e124ca565979a0fbb9ee392373a102083499df1e4eefc6595423c16",
+  "known_parity_gaps": [
+    "GAP-scan-batch-import-stops: repair_many stops with Display `sesslint.api is not available`; _plan_detail stops with Display `sesslint.adapters.detect.FORMAT_CANONICAL is not available`; resolve_scan_report_files after a successful read stops with Display `json.loads is not available`; load_batch_schema after a successful read stops with Display `json.loads is not available`."
+  ],
+  "vectors": [
+    {
+      "id": "batch_row_to_dict_bare",
+      "construct": {
+        "type": "batch_row_to_dict",
+        "path": "synthetic/a.jsonl",
+        "outcome": "eligible"
+      },
+      "expected": {
+        "keys": [
+          "outcome",
+          "path"
+        ],
+        "dict": {
+          "outcome": "eligible",
+          "path": "synthetic/a.jsonl"
+        }
+      }
+    },
+    {
+      "id": "batch_row_to_dict_empty_reason",
+      "construct": {
+        "type": "batch_row_to_dict",
+        "path": "synthetic/b.jsonl",
+        "outcome": "repaired",
+        "reason": ""
+      },
+      "expected": {
+        "keys": [
+          "outcome",
+          "path",
+          "reason"
+        ],
+        "dict": {
+          "outcome": "repaired",
+          "path": "synthetic/b.jsonl",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "id": "batch_row_to_dict_codes_sorted",
+      "construct": {
+        "type": "batch_row_to_dict",
+        "path": "synthetic/c.jsonl",
+        "outcome": "skipped",
+        "codes": [
+          "SL002",
+          "SL001",
+          "SL001"
+        ],
+        "reason": "blocked"
+      },
+      "expected": {
+        "keys": [
+          "outcome",
+          "path",
+          "codes",
+          "reason"
+        ],
+        "dict": {
+          "outcome": "skipped",
+          "path": "synthetic/c.jsonl",
+          "codes": [
+            "SL001",
+            "SL001",
+            "SL002"
+          ],
+          "reason": "blocked"
+        }
+      }
+    },
+    {
+      "id": "batch_row_to_dict_optional_fields",
+      "construct": {
+        "type": "batch_row_to_dict",
+        "path": "synthetic/d.jsonl",
+        "outcome": "repaired",
+        "output": "synthetic/d.repaired.jsonl",
+        "manifest": "synthetic/d.manifest.json"
+      },
+      "expected": {
+        "keys": [
+          "outcome",
+          "path",
+          "output",
+          "manifest"
+        ],
+        "dict": {
+          "outcome": "repaired",
+          "path": "synthetic/d.jsonl",
+          "output": "synthetic/d.repaired.jsonl",
+          "manifest": "synthetic/d.manifest.json"
+        }
+      }
+    },
+    {
+      "id": "render_human_empty_reason",
+      "construct": {
+        "type": "render_human",
+        "rows": [
+          {
+            "path": "synthetic/a.jsonl",
+            "outcome": "skipped",
+            "reason": "",
+            "codes": [
+              ""
+            ]
+          },
+          {
+            "path": "synthetic/b.jsonl",
+            "outcome": "eligible"
+          }
+        ]
+      },
+      "expected": {
+        "text": "Batch repair: 0 repaired, 0 refused, 1 skipped (1 attempted)\n  skipped: synthetic/a.jsonl []\n  eligible: synthetic/b.jsonl"
+      }
+    },
+    {
+      "id": "render_human_with_reason",
+      "construct": {
+        "type": "render_human",
+        "rows": [
+          {
+            "path": "synthetic/a.jsonl",
+            "outcome": "skipped",
+            "codes": [
+              "SL203",
+              "SL001"
+            ],
+            "reason": "blocked"
+          },
+          {
+            "path": "synthetic/b.jsonl",
+            "outcome": "repaired"
+          }
+        ]
+      },
+      "expected": {
+        "text": "Batch repair: 1 repaired, 0 refused, 1 skipped (1 attempted)\n  skipped: synthetic/a.jsonl [SL001, SL203] - blocked\n  repaired: synthetic/b.jsonl"
+      }
+    },
+    {
+      "id": "output_for_default_suffix",
+      "construct": {
+        "type": "output_for",
+        "src": "session.jsonl"
+      },
+      "expected": {
+        "path_posix": "session.repaired.jsonl"
+      }
+    },
+    {
+      "id": "output_for_no_suffix",
+      "construct": {
+        "type": "output_for",
+        "src": "session"
+      },
+      "expected": {
+        "path_posix": "session.repaired.jsonl"
+      }
+    },
+    {
+      "id": "output_for_dotted_suffix",
+      "construct": {
+        "type": "output_for",
+        "src": "foo.bar.jsonl"
+      },
+      "expected": {
+        "path_posix": "foo.bar.repaired.jsonl"
+      }
+    },
+    {
+      "id": "output_for_double_extension",
+      "construct": {
+        "type": "output_for",
+        "src": "a.tar.gz"
+      },
+      "expected": {
+        "path_posix": "a.tar.repaired.gz"
+      }
+    },
+    {
+      "id": "output_for_relative_mirror",
+      "construct": {
+        "type": "output_for",
+        "src": "fixtures/mirror/synthetic/nested/session.jsonl",
+        "root": "fixtures/mirror/synthetic"
+      },
+      "expected": {
+        "path_posix": "nested/session.repaired.jsonl"
+      }
+    },
+    {
+      "id": "repair_many_gap",
+      "construct": {
+        "type": "repair_many_gap"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "api_unavailable"
+        }
+      }
+    },
+    {
+      "id": "plan_detail_gap",
+      "construct": {
+        "type": "plan_detail_gap"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "format_canonical_unavailable"
+        }
+      }
+    },
+    {
+      "id": "resolve_scan_report_files_gap",
+      "construct": {
+        "type": "resolve_scan_report_files_gap"
+      },
+      "expected": {
+        "pin": {
+          "resolved": [
+            "synthetic/home.jsonl"
+          ],
+          "unresolvable": [
+            "synthetic/rel.jsonl",
+            "synthetic/min.dot"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "json_loads_unavailable"
+        }
+      }
+    },
+    {
+      "id": "load_batch_schema_gap",
+      "construct": {
+        "type": "load_batch_schema_gap"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "json_loads_unavailable"
+        }
+      }
+    },
+    {
+      "id": "get_batch_schema_path",
+      "construct": {
+        "type": "get_batch_schema_path"
+      },
+      "expected": {
+        "path_suffix": "schemas/sesslint.batch-repair.v1.json"
+      }
+    }
+  ]
+}
