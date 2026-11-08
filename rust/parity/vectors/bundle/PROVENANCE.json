@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.bundle parity: constants, sanitize_remediation, bounded record counting, kind probe gaps, build and schema seams.",
+  "generator": "rust/parity/vectors/bundle/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-bundle-build: build_bundle runs validate_detection_thresholds then path, hash, check_file, and render_json in Python; Rust returns sesslint.adapters.detect.validate_detection_thresholds is not available and builds no Bundle.",
+    "GAP-bundle-schema-path: get_bundle_schema_path and load_bundle_schema import sesslint._resources.schema_path in Python; Rust returns sesslint._resources.schema_path is not available.",
+    "GAP-bundle-version-info: _build_created_by calls sesslint._version.get_version_info in Python; Rust returns sesslint._version.get_version_info is not available.",
+    "GAP-bundle-short-hash: _sanitize_evidence imports sesslint.report.short_hash in Python; Rust returns sesslint.report.short_hash is not available.",
+    "GAP-bundle-safe-discriminator: _extract_kinds_fallback calls safe_discriminator on string kinds in Python; Rust returns sesslint.adapters.safe_value.safe_discriminator is not available.",
+    "GAP-bundle-integration: CLI, api.build_bundle, and schema validation tests do not map to isolated bundle.rs helpers byte-for-byte here."
+  ]
+}
