@@ -1,0 +1,158 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.stats",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "stats_py_sha256": "930d881285c520142babb28913ef23cff5d273f6f8c11c25c1a4785f48b77e7b",
+  "stats_rs_sha256": "7ec388c8927d11805bff768c0de6b5a35591a7418779b4dfe338ed7c87f87375",
+  "known_parity_gaps": [
+    "GAP-cli-stats-discover-session-roots: Python run() starts with `from sesslint.api import discover_session_roots` before every usage check; Rust run() returns Display `sesslint.api.discover_session_roots is not available` before stats_paths, before the agent/path checks, before emit_text, and it does not return 0 or 2."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "stats",
+        "help": "[read-only] Aggregate content-free statistics over session files.",
+        "description": "[read-only] Aggregate statistics over session files or directories: event counts by kind/actor, tool-call volume per hashed tool name, compactions, checkpoints, size percentiles.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": "*",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path(s) to session file(s) or directories (scanned recursively)",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex",
+              "all"
+            ],
+            "metavar": null,
+            "help": "Aggregate over a well-known agent session root instead of paths",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter for all inputs (default: auto)",
+            "default_keyword": {
+              "present": {
+                "text": "auto"
+              }
+            },
+            "effective_default": {
+              "text": "auto"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "human",
+              "json"
+            ],
+            "metavar": null,
+            "help": "Output format (default: human)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit sesslint.stats/v1 JSON (shortcut for --format json)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "output_format",
+              "json"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
