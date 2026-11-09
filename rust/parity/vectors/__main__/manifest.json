@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.__main__",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "__main___py_sha256": "8417c205b4ef33540fa9ab017c1647889b62fc26056a276e82c99b9658ee19a0",
+  "main__rs_sha256": "373706ccb88b2cee397e6d1c41117b335519356f44938d63b66b6639eee55b71",
+  "cli_lib_rs_sha256": "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66",
+  "vector_count": 7,
+  "vectors_sha256": "1f44c49500f209c6709225d3573346dd30524ed7e6ff183bfecbab70229f5e22",
+  "generator": "rust/parity/vectors/__main__/generate",
+  "known_parity_gaps": [
+    "GAP-__main__-sys-frozen: Python calls multiprocessing.freeze_support() when sys.frozen is true before sesslint.cli.main(); Rust has no PyInstaller frozen flag and no successful frozen path.",
+    "GAP-__main__-unparsed-command: Python __main__ calls sesslint.cli.main() which parses argv through argparse (usage text, exit 2 for partial commands such as check). Rust main__::main stops at sesslint.cli.check.configure is not available with empty stdio; the Python stderr is recorded in vectors, not the Rust error."
+  ]
+}

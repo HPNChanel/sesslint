@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Generate sesslint.__main__ parity vectors from the pinned tree (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import importlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+MAIN_PY_PATH = "src/sesslint/__main__.py"
+MAIN_PY_SHA256 = "8417c205b4ef33540fa9ab017c1647889b62fc26056a276e82c99b9658ee19a0"
+MAIN_RS_SHA256 = "373706ccb88b2cee397e6d1c41117b335519356f44938d63b66b6639eee55b71"
+CLI_LIB_RS_SHA256 = (
+    "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66"
+)
+MODULE = "sesslint.__main__"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-__main__-sys-frozen: Python calls multiprocessing.freeze_support() when "
+    "sys.frozen is true before sesslint.cli.main(); Rust has no PyInstaller frozen "
+    "flag and no successful frozen path.",
+    "GAP-__main__-unparsed-command: Python __main__ calls sesslint.cli.main() which "
+    "parses argv through argparse (usage text, exit 2 for partial commands such as "
+    "check). Rust main__::main stops at sesslint.cli.check.configure is not available "
+    "with empty stdio; the Python stderr is recorded in vectors, not the Rust error.",
+)
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|FOR_WORK|[A-Za-z]:\\)"
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def verify_lib_rs() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "cli" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != CLI_LIB_RS_SHA256:
+        raise SystemExit(
+            f"lib.rs sha256 mismatch: expected {CLI_LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def verify_main_rs() -> None:
+    main_rs = repo_root() / "rust" / "crates" / "cli" / "src" / "main__.rs"
+    digest = hashlib.sha256(main_rs.read_bytes()).hexdigest()
+    if digest != MAIN_RS_SHA256:
+        raise SystemExit(
+            f"main__.rs sha256 mismatch: expected {MAIN_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_cli() -> Any:
+    verify_lib_rs()
+    verify_main_rs()
+    main_blob = git_show_bytes(f"{PYTHON_COMMIT}:{MAIN_PY_PATH}")
+    verify_digest(main_blob, MAIN_PY_SHA256, "__main__.py")
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=repo_root(),
+    )
+    temp_dir = tempfile.mkdtemp(prefix="sesslint-main-par-")
+    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        zf.extractall(temp_dir)
+    root = Path(temp_dir) / "src"
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    return importlib.import_module("sesslint.cli")
+
+
+def capture_main(cli: Any, argv: list[str]) -> dict[str, Any]:
+    import sys as pysys
+
+    out = io.StringIO()
+    err = io.StringIO()
+    prev_out, prev_err = pysys.stdout, pysys.stderr
+    pysys.stdout, pysys.stderr = out, err
+    code: int
+    try:
+        code = cli.main(argv)
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            code = exc.code
+        elif exc.code is None:
+            code = 0
+        else:
+            code = 1
+    finally:
+        pysys.stdout, pysys.stderr = prev_out, prev_err
+    return {
+        "exit_code": code,
+        "stdout": out.getvalue(),
+        "stderr": err.getvalue(),
+    }
+
+
+def vector_specs(cli: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = [
+        {
+            "id": "frozen_sys_frozen_gap",
+            "construct": {"type": "frozen_gap"},
+            "expected": {
+                "gap_id": "GAP-__main__-sys-frozen",
+            },
+        },
+    ]
+
+    removed_rows = [
+        ("non_frozen_removed_formats", ["formats"]),
+        ("non_frozen_removed_formats_json", ["--json", "formats"]),
+        ("non_frozen_removed_baseline", ["baseline"]),
+        ("non_frozen_removed_validate_session", ["validate-session"]),
+        ("non_frozen_removed_init_hooks", ["init-hooks"]),
+    ]
+    for vector_id, argv in removed_rows:
+        captured = capture_main(cli, argv)
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "non_frozen_main", "argv": argv},
+                "expected": {
+                    "exit_code": captured["exit_code"],
+                    "stdout_hex": captured["stdout"].encode("utf-8").hex(),
+                    "stderr_hex": captured["stderr"].encode("utf-8").hex(),
+                },
+            }
+        )
+
+    check_captured = capture_main(cli, ["check"])
+    specs.append(
+        {
+            "id": "non_frozen_unparsed_check",
+            "construct": {"type": "non_frozen_main", "argv": ["check"]},
+            "expected": {
+                "exit_code": check_captured["exit_code"],
+                "stdout_hex": check_captured["stdout"].encode("utf-8").hex(),
+                "stderr_hex": check_captured["stderr"].encode("utf-8").hex(),
+                "gap_id": "GAP-__main__-unparsed-command",
+                "rust_mode": "unsupported",
+                "rust_message": "sesslint.cli.check.configure is not available",
+            },
+        }
+    )
+    return specs
+
+
+def assert_payload_clean(payload: bytes) -> None:
+    if _BANNED_PAT.search(payload):
+        raise SystemExit("committed output contains banned marker")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must be LF-only")
+
+
+def write_coverage(out_dir: Path) -> None:
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "pytest_absent_reason": (
+            "No pytest imports sesslint.__main__; smoke tests invoke python -m sesslint only."
+        ),
+        "rows": [],
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def main() -> int:
+    cli = load_pinned_cli()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(cli)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "__main___py_sha256": MAIN_PY_SHA256,
+        "main__rs_sha256": MAIN_RS_SHA256,
+        "cli_lib_rs_sha256": CLI_LIB_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_clean(payload_bytes)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "__main___py_sha256": MAIN_PY_SHA256,
+        "main__rs_sha256": MAIN_RS_SHA256,
+        "cli_lib_rs_sha256": CLI_LIB_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/__main__/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.__main__ non-frozen entry parity: python -m sesslint "
+            "delegates to sesslint.cli.main(); removed-command stderr/stdout only."
+        ),
+        "generator": "rust/parity/vectors/__main__/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    write_coverage(out_dir)
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={digest}")
+    print(f"covered=0 not_applicable=0")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
