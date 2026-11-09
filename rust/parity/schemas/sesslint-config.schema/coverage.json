@@ -1,0 +1,259 @@
+{
+  "covered_count": 0,
+  "not_applicable_count": 42,
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_schema_is_valid_draft07",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_schema_property_set_mirrors_allowed_keys",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_schema_enums_mirror_runtime_tables",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_empty_config_validates",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_each_key_valid_value",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_empty_list_is_valid",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_full_config_all_keys",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_negative_float_is_valid_parity",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_each_key_invalid_values",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_unknown_keys_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config_schema.py::test_schema_never_stricter_than_runtime",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_load_pyproject_section",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_load_standalone_toml",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_pyproject_without_section_ignored",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_discovery_walks_upward",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_nearest_file_wins",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_unknown_key_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_bad_type_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_bad_enum_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_malformed_toml_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_malformed_pyproject_with_sesslint_marker_fails_closed",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_malformed_pyproject_without_sesslint_marker_falls_back",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_undecodable_pyproject_with_sesslint_marker_fails_closed",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_undecodable_pyproject_without_sesslint_marker_falls_back",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_doctor_malformed_pyproject_with_marker_exits_2",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_explicit_missing_path_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_explicit_pyproject_without_section_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_honors_config_ignore",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_explicit_flag_overrides_config",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_explicit_config_path",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_select_and_ignore_together_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_select_and_ignore_config_exits_nonzero",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_config_only_select_still_applies",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_config_only_ignore_still_applies",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_config_neither_select_nor_ignore_unchanged",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_bad_config_exits_2",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_scan_honors_config_select",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_config_fail_on_warning",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_fail_on_flag_overrides_config",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_adapter_key_accepted",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_format_key_renamed_to_adapter",
+      "vector_id": null
+    },
+    {
+      "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+      "status": "not_applicable",
+      "test": "tests/test_config.py::test_cli_honors_config_adapter",
+      "vector_id": null
+    }
+  ]
+}

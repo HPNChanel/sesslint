@@ -5,3 +5,6 @@
 mod error;
 
 pub use error::SupportError;
+
+#[path = "schema/sesslint-config.schema.rs"]
+pub mod config_schema;

@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""RX-SCH config input corpus from pinned blobs; no live sesslint import.
+
+Run using the repository dev Python (jsonschema is a dev dependency).
+JSON Schema numbers are mathematical values. Decimal avoids the binary64
+rounding introduced by Python's default json.loads; an integer type override
+recognizes integral Decimals. This is NOT a config.py JSON producer oracle:
+the pinned config module loads TOML and has no JSON producer.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import subprocess
+from decimal import Decimal
+from pathlib import Path
+
+from jsonschema import Draft7Validator, validators
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+SOURCES = (
+    "schemas/sesslint-config.schema.json",
+    "src/sesslint/config.py",
+    "tests/test_config_schema.py",
+    "tests/test_config.py",
+)
+
+
+def blob(path: str) -> bytes:
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def exact_integer(_checker, instance) -> bool:
+    if isinstance(instance, bool):
+        return False
+    return isinstance(instance, int) or (
+        isinstance(instance, Decimal)
+        and instance.is_finite()
+        and instance == instance.to_integral_value()
+    )
+
+
+def exact_number(_checker, instance) -> bool:
+    return not isinstance(instance, bool) and (
+        isinstance(instance, int)
+        or (isinstance(instance, Decimal) and instance.is_finite())
+    )
+
+
+def encode(value) -> bytes:
+    return (json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True) + "\n").encode()
+
+
+def main() -> None:
+    source = {path: blob(path) for path in SOURCES}
+    schema = json.loads(source[SOURCES[0]])
+    Draft7Validator.check_schema(schema)
+    checker = Draft7Validator.TYPE_CHECKER.redefine("integer", exact_integer).redefine(
+        "number", exact_number
+    )
+    oracle = validators.extend(Draft7Validator, type_checker=checker)(schema)
+    rows = []
+
+    def add(label: str, value=None, *, raw: str | None = None) -> None:
+        text = raw if raw is not None else json.dumps(value, ensure_ascii=True, allow_nan=False)
+        instance = json.loads(text, parse_float=Decimal)
+        rows.append({"id": label, "input": text, "valid": oracle.is_valid(instance)})
+
+    add("empty", {})
+    full = {}
+    for key, spec in schema["properties"].items():
+        kind = spec["type"]
+        valid = (
+            spec["enum"][0] if "enum" in spec
+            else True if kind == "boolean"
+            else ["synthetic"] if kind == "array"
+            else 4 if kind == "integer"
+            else 0.5
+        )
+        full[key] = valid
+        add(f"{key}-valid", {key: valid})
+        for index, value in enumerate([None, "", " ", "bogus", 0, -1, 1, 4.0, 4.5, True, False, [], {}, [1], [""], [" "], ["x"], ["\u001c"], ["\u200b"], ["\u0085"], ["😀"]]):
+            add(f"{key}-matrix-{index:02}", {key: value})
+        for index, value in enumerate(spec.get("enum", [])):
+            add(f"{key}-enum-{index}", {key: value})
+            add(f"{key}-enum-space-{index}", {key: " " + value + " "})
+        if kind in ("integer", "number"):
+            for index, token in enumerate(["4e0", "40e-1", "4.00", "0e9999999", "-0.0", "1e400", "1e-400", "1.0000000000000001", "1" + "0" * 100, "-1" + "0" * 100]):
+                add(f"{key}-decimal-{index}", raw="{" + json.dumps(key) + ":" + token + "}")
+    for omitted in ("select", "ignore"):
+        add("full-without-" + omitted, {k: v for k, v in full.items() if k != omitted})
+    add("full-mutually-exclusive", full)
+    for i, left in enumerate([[], ["SL101"], None]):
+        for j, right in enumerate([[], ["SL102"], None]):
+            add(f"exclusive-{i}-{j}", {"select": left, "ignore": right})
+    for i, value in enumerate([None, [], 1, True, "config", {"unknown": True}, {"format": "auto"}, {"PROFILE": "neutral"}]):
+        add(f"root-{i}", value)
+    assert len({row["id"] for row in rows}) == len(rows)
+
+    coverage_rows = []
+    for path in SOURCES[2:]:
+        tree = ast.parse(source[path].decode("utf-8"))
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+                coverage_rows.append({
+                    "test": path + "::" + node.name,
+                    "status": "not_applicable",
+                    "vector_id": None,
+                    "note": "Corpus validates schema instances with an independent Decimal draft-07 oracle; it does not run this entire pinned Python test or its TOML/runtime/CLI assertions. No whole-test coverage claimed.",
+                })
+    vector_bytes = encode({"schema": "sesslint.parity-schema-vectors/v1", "vectors": rows})
+    outputs = {
+        "schema.json": source[SOURCES[0]],
+        "vectors.json": vector_bytes,
+        "coverage.json": encode({"python_commit": PIN, "covered_count": 0, "not_applicable_count": len(coverage_rows), "rows": coverage_rows}),
+        "PROVENANCE.json": encode({"contains_real_data": False, "source": "Generated synthetic config objects and boundary values; no session data."}),
+        "manifest.json": encode({
+            "python_commit": PIN,
+            "schema_file": SOURCES[0],
+            "source_sha256": {path: digest(data) for path, data in source.items()},
+            "generator": "rust/parity/schemas/sesslint-config.schema/generate",
+            "oracle": "Draft7Validator with exact Decimal number/integer type checks",
+            "scope": "Advisory config input schema; no config JSON producer exists in pin.",
+            "byte_exact_scope": "Embedded schema blob only; not CLI or producer output bytes.",
+            "vector_count": len(rows),
+            "valid_count": sum(row["valid"] for row in rows),
+            "invalid_count": sum(not row["valid"] for row in rows),
+            "vectors_sha256": digest(vector_bytes),
+        }),
+    }
+    for name, data in outputs.items():
+        (OUT / name).write_bytes(data)
+    print(f"config schema: {len(rows)} vectors; {len(coverage_rows)} source tests not claimed; {digest(vector_bytes)}")
+
+
+if __name__ == "__main__":
+    main()
