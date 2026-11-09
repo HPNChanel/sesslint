@@ -1,0 +1,138 @@
+{
+  "module": "sesslint.hook-result/v1",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 6,
+  "not_applicable_count": 22,
+  "rows": [
+    {
+      "test": "tests/cli/test_hook.py::test_claude_json_cli_envelope",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_malformed_json_skips",
+      "vector_ids": [
+        "run_malformed_json"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_non_object_payload_skips",
+      "vector_ids": [
+        "run_non_object"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_missing_transcript_path_skips",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_wrong_typed_transcript_path_skips",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_nonexistent_transcript_skips",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_directory_transcript_skips",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_oversized_payload_skips",
+      "vector_ids": [
+        "run_oversized_spaces"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestPayloadHandling::test_empty_stdin_skips",
+      "vector_ids": [
+        "run_empty_stdin"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_sessionstart_clean_ok",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_sessionstart_over_budget_skips_without_reading_transcript",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_sessionend_runs_sl009_only",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_sessionend_clean_transcript_ok",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_unknown_event_runs_generic_check",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_fail_on_warning_exits_1_on_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_fail_on_error_ignores_warnings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_fail_on_never_is_default",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestEventMap::test_fail_on_skipped_still_0",
+      "vector_ids": [
+        "run_garbage_fail_on_warning"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestOutputShape::test_json_shape_and_schema",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestOutputShape::test_skipped_json_shape",
+      "vector_ids": [
+        "run_empty_object"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestOutputShape::test_no_secret_values_in_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestOutputShape::test_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestCliSurface::test_cli_sessionend_findings_line",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestCliSurface::test_cli_fail_on_warning_exits_1",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestCliSurface::test_cli_json_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestCliSurface::test_cli_garbage_stdin_skips_exit_0",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestCliSurface::test_cli_never_exits_2",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_hook.py::TestSchemaFile::test_result_validates_against_schema",
+      "status": "not_applicable"
+    }
+  ]
+}

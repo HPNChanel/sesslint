@@ -10,3 +10,6 @@ pub mod hook_event;
 pub mod hooks;
 pub mod mcp_server {}
 pub mod watch;
+
+#[path = "schema/sesslint.hook-result.v1.rs"]
+pub mod hook_result_schema;

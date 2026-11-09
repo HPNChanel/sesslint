@@ -1,0 +1,808 @@
+#!/usr/bin/env python3
+"""Generate sesslint.hook-result/v1 parity vectors from the pinned emitter.
+
+Expected JSON comes from ``HookResult.to_json`` / ``run_hook`` on pin
+``e91d50b2ecea57ef4dd900e3b0b87b14946e847e``. ``sesslint.*`` imports are
+refused. Commit ``02694d5`` is refused. Finding counts are not taken from
+fixtures.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.abc
+import json
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+MODULE = "sesslint.hook-result/v1"
+PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+FORBIDDEN_COMMIT = "02694d5"
+HOOK_PY_SHA256 = "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9"
+TEST_FILE = "tests/cli/test_hook.py"
+U64_MAX = (1 << 64) - 1
+
+_BANNED_MARKERS = ("FOR_WORK", "sesslint-wt-")
+_BANNED_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-hook-result-import: a non-empty session_id imports "
+        "sesslint.report, and a transcript check imports sesslint.api. "
+        "Those imports are refused, so those tests are not executed and "
+        "finding counts are not invented."
+    ),
+    (
+        "GAP-hook-result-cli: subprocess hook tests are not the schema "
+        "validator."
+    ),
+]
+
+COVERED = {
+    f"{TEST_FILE}::TestPayloadHandling::test_malformed_json_skips": (
+        "run_malformed_json",
+    ),
+    f"{TEST_FILE}::TestPayloadHandling::test_non_object_payload_skips": (
+        "run_non_object",
+    ),
+    f"{TEST_FILE}::TestPayloadHandling::test_oversized_payload_skips": (
+        "run_oversized_spaces",
+    ),
+    f"{TEST_FILE}::TestPayloadHandling::test_empty_stdin_skips": (
+        "run_empty_stdin",
+    ),
+    f"{TEST_FILE}::TestEventMap::test_fail_on_skipped_still_0": (
+        "run_garbage_fail_on_warning",
+    ),
+    f"{TEST_FILE}::TestOutputShape::test_skipped_json_shape": (
+        "run_empty_object",
+    ),
+}
+
+ALLOWED_PATHS = {
+    "schemas/sesslint.hook-result.v1.json",
+    "src/sesslint/hook_event.py",
+    TEST_FILE,
+}
+
+
+class _Duplicate(Exception):
+    pass
+
+
+class _Malformed(Exception):
+    pass
+
+
+class _Surrogate(Exception):
+    pass
+
+
+class _RefuseSesslint(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object,
+        target: object = None,
+    ) -> None:
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise ImportError("refusing sesslint import " + fullname)
+        return None
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(spec: str) -> bytes:
+    if FORBIDDEN_COMMIT in spec or not spec.startswith(PIN + ":"):
+        raise SystemExit("refusing git show outside the pin")
+    path = spec.split(":", 1)[1]
+    if path not in ALLOWED_PATHS:
+        raise SystemExit("refusing git show outside the pin files")
+    return subprocess.check_output(
+        [
+            "git",
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
+            "show",
+            spec,
+        ],
+        cwd=repo_root(),
+    )
+
+
+def assert_clean(label: str, text: str) -> None:
+    for marker in _BANNED_MARKERS:
+        if marker in text:
+            raise SystemExit(f"{label} contains banned marker")
+    if _BANNED_SBP.search(text):
+        raise SystemExit(f"{label} contains banned token")
+    if "\r" in text:
+        raise SystemExit(f"{label} contains CR")
+
+
+def dump(value: object) -> str:
+    text = json.dumps(value, indent=2, ensure_ascii=True) + "\n"
+    assert_clean("json", text)
+    return text
+
+
+def _has_surrogate(text: str) -> bool:
+    return any(0xD800 <= ord(ch) <= 0xDFFF for ch in text)
+
+
+def _tree_has_surrogate(value: object) -> bool:
+    if isinstance(value, str):
+        return _has_surrogate(value)
+    if isinstance(value, dict):
+        return any(
+            _has_surrogate(key) or _tree_has_surrogate(item) for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_tree_has_surrogate(item) for item in value)
+    return False
+
+
+def loads_strict(text: str) -> object:
+    def hook(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        seen: set[str] = set()
+        out: dict[str, object] = {}
+        for key, value in pairs:
+            if key in seen or _has_surrogate(key):
+                if key in seen:
+                    raise _Duplicate
+                raise _Surrogate
+            seen.add(key)
+            out[key] = value
+        return out
+
+    try:
+        value = json.loads(text, object_pairs_hook=hook)
+    except json.JSONDecodeError as exc:
+        raise _Malformed from exc
+    if _tree_has_surrogate(value):
+        raise _Surrogate
+    return value
+
+
+def classify_object(value: dict[str, Any], schema: dict[str, Any]) -> str:
+    props: dict[str, Any] = schema["properties"]
+    required: list[str] = schema["required"]
+    for key in required:
+        if key not in value:
+            return "missing_required"
+    allowed = set(props)
+    for key in value:
+        if key not in allowed:
+            return "additional_property"
+    if value["schema"] != props["schema"]["const"]:
+        return "schema_const"
+    if not isinstance(value["event"], str):
+        return "event_type"
+    if value["verdict"] not in props["verdict"]["enum"]:
+        return "verdict"
+    if not isinstance(value["reason"], str):
+        return "reason_type"
+    findings = value["findings_by_code"]
+    if not isinstance(findings, dict):
+        return "findings_type"
+    minimum = props["findings_by_code"]["additionalProperties"]["minimum"]
+    if props["findings_by_code"]["additionalProperties"]["type"] != "integer":
+        raise SystemExit("pin findings value type is not integer")
+    for code in sorted(findings):
+        count = findings[code]
+        if type(count) is not int or count < minimum or count > U64_MAX:
+            return "finding_value"
+    if "top_code" in value and not isinstance(value["top_code"], str):
+        return "top_code_type"
+    if "session_id" in value and not isinstance(value["session_id"], str):
+        return "session_id_type"
+    return "ok"
+
+
+def classify(text: str, schema: dict[str, Any]) -> str:
+    try:
+        value = loads_strict(text)
+    except _Duplicate:
+        return "duplicate_key"
+    except (_Malformed, _Surrogate):
+        return "malformed"
+    if schema["type"] != "object":
+        raise SystemExit("pin schema root type is not object")
+    if not isinstance(value, dict):
+        return "not_object"
+    return classify_object(value, schema)
+
+
+def load_emitter(blob: bytes) -> types.ModuleType:
+    sys.meta_path.insert(0, _RefuseSesslint())
+    module = types.ModuleType("_pinned_hook_event")
+    module.__file__ = "<pin>/src/sesslint/hook_event.py"
+    sys.modules[module.__name__] = module
+    exec(compile(blob, module.__file__, "exec"), module.__dict__)
+    return module
+
+
+def list_test_nodes(source: str) -> list[str]:
+    class_name: str | None = None
+    nodes: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("class "):
+            class_name = line[len("class ") :].split(":", 1)[0].split("(", 1)[0].strip()
+            continue
+        if line.startswith("def test_"):
+            class_name = None
+            nodes.append(line[len("def ") :].split("(", 1)[0].strip())
+            continue
+        if line.startswith("    def test_"):
+            if class_name is None:
+                raise SystemExit("test method outside a class")
+            name = line.strip()[len("def ") :].split("(", 1)[0].strip()
+            nodes.append(f"{class_name}::{name}")
+    return nodes
+
+
+def require_skip(result: Any, event: str, reason: str) -> None:
+    if (
+        result.event != event
+        or result.verdict != "skipped"
+        or result.reason != reason
+        or result.exit_code != 0
+        or result.top_code is not None
+        or result.session_id is not None
+        or dict(result.findings_by_code) != {}
+    ):
+        raise SystemExit("pin run_hook did not match the pinned test")
+
+
+def run_vector(
+    vector_id: str,
+    event: str,
+    data: bytes,
+    fail_on: str | None,
+    reason: str,
+    emitter: Any,
+    schema: dict[str, Any],
+    *,
+    spaces: int | None = None,
+) -> dict[str, Any]:
+    result = emitter.run_hook(event, data, fail_on=fail_on)
+    require_skip(result, event, reason)
+    document = result.to_json()
+    if classify(document, schema) != "ok":
+        raise SystemExit(f"{vector_id} emitter JSON is not schema-valid")
+    construct: dict[str, Any] = {
+        "type": "run_hook",
+        "event": event,
+        "stdin_hex": None if spaces is not None else data.hex(),
+        "stdin_spaces": spaces,
+        "profile": None,
+        "format": None,
+        "fail_on": fail_on,
+    }
+    return {
+        "id": vector_id,
+        "construct": construct,
+        "expected": emitter_expected(result),
+    }
+
+
+def emitter_expected(result: Any) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "outcome": "ok",
+        "to_json": result.to_json(),
+        "event": result.event,
+        "verdict": result.verdict,
+        "reason": result.reason,
+        "exit_code": result.exit_code,
+        "findings_by_code": dict(sorted(result.findings_by_code.items())),
+    }
+    if result.top_code is not None:
+        expected["top_code"] = result.top_code
+    if result.session_id is not None:
+        expected["session_id"] = result.session_id
+    return expected
+
+
+def to_json_vector(
+    vector_id: str,
+    emitter: Any,
+    schema: dict[str, Any],
+    *,
+    event: str,
+    verdict: str,
+    reason: str,
+    findings: dict[str, int],
+    top_code: str | None,
+    session_id: str | None,
+    exit_code: int,
+) -> dict[str, Any]:
+    result = emitter.HookResult(
+        event=event,
+        verdict=verdict,
+        reason=reason,
+        findings_by_code=dict(findings),
+        top_code=top_code,
+        session_id=session_id,
+        exit_code=exit_code,
+    )
+    document = result.to_json()
+    if classify(document, schema) != "ok":
+        raise SystemExit(f"{vector_id} emitter JSON is not schema-valid")
+    if top_code is None and "top_code" in result.to_dict():
+        raise SystemExit(f"{vector_id} kept an omitted top_code")
+    if session_id is None and "session_id" in result.to_dict():
+        raise SystemExit(f"{vector_id} kept an omitted session_id")
+    construct: dict[str, Any] = {
+        "type": "to_json",
+        "event": event,
+        "verdict": verdict,
+        "reason": reason,
+        "findings_by_code": dict(sorted(findings.items())),
+        "exit_code": exit_code,
+    }
+    if top_code is not None:
+        construct["top_code"] = top_code
+    if session_id is not None:
+        construct["session_id"] = session_id
+    return {"id": vector_id, "construct": construct, "expected": emitter_expected(result)}
+
+
+def error_vector(vector_id: str, document: str, schema: dict[str, Any]) -> dict[str, Any]:
+    code = classify(document, schema)
+    if code == "ok":
+        raise SystemExit(f"{vector_id} was accepted")
+    return {
+        "id": vector_id,
+        "construct": {"type": "validate", "document": document},
+        "expected": {"outcome": "error", "error": code},
+    }
+
+
+def replace_count(document: str, code: str, token: str) -> str:
+    needle = f'"{code}": 1'
+    if document.count(needle) != 1:
+        raise SystemExit("finding count token was not unique")
+    return document.replace(needle, f'"{code}": {token}', 1)
+
+
+def build_vectors(emitter: Any, schema: dict[str, Any], py_text: str) -> list[dict[str, Any]]:
+    marker = '("SL301", "SL302")'
+    if marker not in py_text:
+        raise SystemExit("pin emitter does not name SL301 and SL302")
+    code_a = "SL301"
+    code_b = "SL302"
+    props = schema["properties"]
+    if schema["additionalProperties"] is not False:
+        raise SystemExit("pin schema does not reject additional properties")
+    if props["findings_by_code"]["additionalProperties"]["minimum"] != 1:
+        raise SystemExit("pin findings minimum is not 1")
+    if tuple(props["verdict"]["enum"]) != ("ok", "findings", "skipped"):
+        raise SystemExit("pin verdict enum changed")
+
+    try:
+        emitter.run_hook("SessionStart", b'{"session_id":"x"}')
+    except ImportError as exc:
+        if "sesslint" not in str(exc):
+            raise SystemExit("import refusal did not name sesslint") from exc
+    else:
+        raise SystemExit("sesslint import was not refused")
+
+    vectors: list[dict[str, Any]] = []
+    vectors.append(
+        {
+            "id": "schema_document",
+            "construct": {"type": "schema_document"},
+            "expected": {
+                "outcome": "ok",
+                "id": schema["$id"],
+                "dialect": schema["$schema"],
+                "const": props["schema"]["const"],
+                "additional_properties": False,
+                "required": list(schema["required"]),
+                "verdict_enum": list(props["verdict"]["enum"]),
+                "findings_minimum": props["findings_by_code"]["additionalProperties"]["minimum"],
+                "properties": list(props),
+            },
+        }
+    )
+
+    max_payload = emitter.MAX_HOOK_PAYLOAD_BYTES
+    spaces = max_payload + 1
+    vectors.append(
+        run_vector(
+            "run_malformed_json",
+            "SessionStart",
+            b"this is not json",
+            None,
+            "malformed-payload",
+            emitter,
+            schema,
+        )
+    )
+    vectors.append(
+        run_vector(
+            "run_non_object",
+            "SessionStart",
+            b'["array", "is", "wrong"]',
+            None,
+            "malformed-payload",
+            emitter,
+            schema,
+        )
+    )
+    vectors.append(
+        run_vector(
+            "run_oversized_spaces",
+            "SessionStart",
+            b" " * spaces,
+            None,
+            "payload-too-large",
+            emitter,
+            schema,
+            spaces=spaces,
+        )
+    )
+    vectors.append(
+        run_vector(
+            "run_empty_stdin",
+            "SessionStart",
+            b"",
+            None,
+            "malformed-payload",
+            emitter,
+            schema,
+        )
+    )
+    vectors.append(
+        run_vector(
+            "run_garbage_fail_on_warning",
+            "SessionStart",
+            b"garbage",
+            "warning",
+            "malformed-payload",
+            emitter,
+            schema,
+        )
+    )
+    vectors.append(
+        run_vector(
+            "run_empty_object",
+            "SessionStart",
+            b"{}",
+            None,
+            "no-transcript-path",
+            emitter,
+            schema,
+        )
+    )
+
+    vectors.append(
+        to_json_vector(
+            "to_json_ok_clean",
+            emitter,
+            schema,
+            event="SessionStart",
+            verdict="ok",
+            reason="clean",
+            findings={},
+            top_code=None,
+            session_id=None,
+            exit_code=0,
+        )
+    )
+    vectors.append(
+        to_json_vector(
+            "to_json_findings_sl301",
+            emitter,
+            schema,
+            event="SessionStart",
+            verdict="findings",
+            reason="detection-failed",
+            findings={code_a: 1},
+            top_code=code_a,
+            session_id=None,
+            exit_code=1,
+        )
+    )
+    vectors.append(
+        to_json_vector(
+            "to_json_findings_sl302_session",
+            emitter,
+            schema,
+            event="SessionEnd",
+            verdict="findings",
+            reason="detection-failed",
+            findings={code_b: 2},
+            top_code=code_b,
+            session_id="abcd1234",
+            exit_code=0,
+        )
+    )
+    vectors.append(
+        to_json_vector(
+            "to_json_skipped_empty_session_id",
+            emitter,
+            schema,
+            event="SessionEnd",
+            verdict="skipped",
+            reason="format-undetected",
+            findings={},
+            top_code=None,
+            session_id="",
+            exit_code=0,
+        )
+    )
+    vectors.append(
+        to_json_vector(
+            "to_json_skipped_session_present",
+            emitter,
+            schema,
+            event="SessionEnd",
+            verdict="skipped",
+            reason="budget-exceeded",
+            findings={},
+            top_code=None,
+            session_id="kept",
+            exit_code=0,
+        )
+    )
+
+    clean = emitter.HookResult(
+        event="SessionStart",
+        verdict="ok",
+        reason="clean",
+        findings_by_code={},
+        top_code=None,
+        session_id=None,
+        exit_code=0,
+    )
+    clean_json = clean.to_json()
+    body = clean.to_dict()
+    ordered = ["verdict", "schema", "reason", "findings_by_code", "event"]
+    reordered = (
+        "{ "
+        + " , ".join(
+            json.dumps(key) + " : " + json.dumps(body[key], ensure_ascii=True) for key in ordered
+        )
+        + " }"
+    )
+    if reordered == clean_json or classify(reordered, schema) != "ok":
+        raise SystemExit("reordered document was not a distinct valid encoding")
+    vectors.append(
+        {
+            "id": "validate_reordered_ok",
+            "construct": {"type": "validate", "document": reordered},
+            "expected": emitter_expected(clean),
+        }
+    )
+
+    sl301 = next(item for item in vectors if item["id"] == "to_json_findings_sl301")
+    sl301_json = sl301["expected"]["to_json"]
+    base = json.loads(clean_json)
+    findings_base = json.loads(sl301_json)
+
+    def mutated(document: dict[str, Any]) -> str:
+        return json.dumps(document, sort_keys=True)
+
+    extra = dict(base)
+    extra["exit_code"] = 0
+    vectors.append(error_vector("reject_additional_exit_code", mutated(extra), schema))
+
+    bad_verdict = dict(base)
+    bad_verdict["verdict"] = "block"
+    vectors.append(error_vector("reject_verdict", mutated(bad_verdict), schema))
+
+    vectors.append(
+        error_vector("reject_count_zero", replace_count(sl301_json, code_a, "0"), schema)
+    )
+    vectors.append(
+        error_vector("reject_count_negative", replace_count(sl301_json, code_a, "-1"), schema)
+    )
+    vectors.append(
+        error_vector("reject_count_bool", replace_count(sl301_json, code_a, "true"), schema)
+    )
+    vectors.append(
+        error_vector("reject_count_float", replace_count(sl301_json, code_a, "1.0"), schema)
+    )
+    vectors.append(
+        error_vector("reject_count_string", replace_count(sl301_json, code_a, '"1"'), schema)
+    )
+    vectors.append(
+        error_vector("reject_count_exponent", replace_count(sl301_json, code_a, "1e2"), schema)
+    )
+    vectors.append(
+        error_vector(
+            "reject_count_overflow",
+            replace_count(sl301_json, code_a, str(U64_MAX + 1)),
+            schema,
+        )
+    )
+    vectors.append(
+        error_vector("reject_count_object", replace_count(sl301_json, code_a, "{}"), schema)
+    )
+
+    missing = dict(base)
+    del missing["verdict"]
+    vectors.append(error_vector("reject_missing_verdict", mutated(missing), schema))
+
+    bad_schema = dict(base)
+    bad_schema["schema"] = "sesslint.hook-result/v2"
+    vectors.append(error_vector("reject_schema_const", mutated(bad_schema), schema))
+
+    bad_findings = dict(findings_base)
+    bad_findings["findings_by_code"] = []
+    vectors.append(error_vector("reject_findings_array", mutated(bad_findings), schema))
+
+    bad_top = dict(findings_base)
+    bad_top["top_code"] = 1
+    vectors.append(error_vector("reject_top_code_type", mutated(bad_top), schema))
+
+    bad_session = dict(base)
+    bad_session["session_id"] = 1
+    vectors.append(error_vector("reject_session_id_type", mutated(bad_session), schema))
+
+    bad_event = dict(base)
+    bad_event["event"] = None
+    vectors.append(error_vector("reject_event_type", mutated(bad_event), schema))
+
+    vectors.append(error_vector("reject_empty_object", "{}", schema))
+    vectors.append(error_vector("reject_root_array", "[]", schema))
+    vectors.append(error_vector("reject_root_string", '"ok"', schema))
+    vectors.append(error_vector("reject_root_null", "null", schema))
+    vectors.append(error_vector("reject_root_bool", "true", schema))
+    vectors.append(error_vector("reject_malformed", "{", schema))
+    vectors.append(error_vector("reject_trailing", clean_json + " 0", schema))
+    vectors.append(error_vector("reject_blank", "   ", schema))
+    vectors.append(
+        error_vector(
+            "reject_duplicate_key",
+            (
+                '{"schema":"sesslint.hook-result/v1","schema":"sesslint.hook-result/v1",'
+                '"event":"SessionStart","verdict":"ok","reason":"clean",'
+                '"findings_by_code":{}}'
+            ),
+            schema,
+        )
+    )
+    vectors.append(
+        error_vector(
+            "reject_duplicate_finding",
+            (
+                '{"event":"SessionStart","findings_by_code":{"'
+                + code_a
+                + '":1,"'
+                + code_a
+                + '":1},"reason":"clean","schema":"sesslint.hook-result/v1","verdict":"ok"}'
+            ),
+            schema,
+        )
+    )
+    vectors.append(
+        error_vector(
+            "reject_lone_surrogate",
+            (
+                '{"event":"\\ud800","findings_by_code":{},"reason":"clean",'
+                '"schema":"sesslint.hook-result/v1","verdict":"ok"}'
+            ),
+            schema,
+        )
+    )
+    return vectors
+
+
+def write_coverage(out_dir: Path, source: str, vector_ids: set[str]) -> tuple[int, int]:
+    nodes = list_test_nodes(source)
+    discovered = [f"{TEST_FILE}::{node}" for node in nodes]
+    if len(set(discovered)) != len(discovered):
+        raise SystemExit("duplicate pinned test")
+    missing = [key for key in COVERED if key not in discovered]
+    if missing:
+        raise SystemExit("covered test is not in the pin")
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for test_name in discovered:
+        needed = COVERED.get(test_name)
+        row: dict[str, object] = {"test": test_name}
+        if needed is not None:
+            if any(item not in vector_ids for item in needed):
+                raise SystemExit("covered vector is missing")
+            row["vector_ids"] = list(needed)
+            row["status"] = "covered"
+            covered += 1
+        else:
+            row["status"] = "not_applicable"
+            not_applicable += 1
+        rows.append(row)
+    payload = dump(
+        {
+            "module": MODULE,
+            "python_commit": PIN,
+            "covered_count": covered,
+            "not_applicable_count": not_applicable,
+            "rows": rows,
+        }
+    )
+    (out_dir / "coverage.json").write_text(payload, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def main() -> int:
+    if FORBIDDEN_COMMIT in PIN:
+        raise SystemExit("refusing 02694d5")
+    py_blob = git_show(f"{PIN}:src/sesslint/hook_event.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    if py_sha != HOOK_PY_SHA256:
+        raise SystemExit(f"hook_event.py pin sha256 mismatch: {py_sha}")
+    schema_blob = git_show(f"{PIN}:schemas/sesslint.hook-result.v1.json")
+    schema_sha = hashlib.sha256(schema_blob).hexdigest()
+    schema = json.loads(schema_blob.decode("utf-8"))
+    test_blob = git_show(f"{PIN}:{TEST_FILE}")
+    emitter = load_emitter(py_blob)
+    vectors = build_vectors(emitter, schema, py_blob.decode("utf-8"))
+    ids = [item["id"] for item in vectors]
+    if len(set(ids)) != len(ids):
+        raise SystemExit("duplicate vector id")
+    out_dir = Path(__file__).resolve().parent
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PIN,
+        "schema_sha256": schema_sha,
+        "hook_event_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(document)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = dump(
+        {
+            "contains_real_data": False,
+            "description": (
+                "Synthetic sesslint.hook-result/v1 documents from the pinned "
+                "emitter. Optional top_code and session_id are omitted when "
+                "the emitter omits them. No transcript bytes are stored."
+            ),
+            "generator": "rust/parity/schemas/sesslint.hook-result.v1/generate",
+            "origin": "synthetic",
+            "python_commit": PIN,
+            "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        }
+    )
+    (out_dir / "PROVENANCE.json").write_text(provenance, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(
+        out_dir, test_blob.decode("utf-8"), set(ids)
+    )
+    manifest = dump(
+        {
+            "schema": SCHEMA,
+            "module": MODULE,
+            "python_commit": PIN,
+            "schema_sha256": schema_sha,
+            "hook_event_py_sha256": py_sha,
+            "vector_count": len(vectors),
+            "vectors_sha256": digest,
+            "generator": "rust/parity/schemas/sesslint.hook-result.v1/generate",
+        }
+    )
+    (out_dir / "manifest.json").write_text(manifest, encoding="utf-8", newline="\n")
+    print(f"vectors={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    print(f"schema_sha256={schema_sha}")
+    print(f"vectors_sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,605 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.hook-result/v1",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema_sha256": "d3af6bd9822a3dedc061fa3ada38fbb8757caf48bb177c575d0ee056ab336e43",
+  "hook_event_py_sha256": "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9",
+  "known_parity_gaps": [
+    "GAP-hook-result-import: a non-empty session_id imports sesslint.report, and a transcript check imports sesslint.api. Those imports are refused, so those tests are not executed and finding counts are not invented.",
+    "GAP-hook-result-cli: subprocess hook tests are not the schema validator."
+  ],
+  "vectors": [
+    {
+      "id": "schema_document",
+      "construct": {
+        "type": "schema_document"
+      },
+      "expected": {
+        "outcome": "ok",
+        "id": "https://sesslint.dev/schemas/sesslint.hook-result/v1",
+        "dialect": "https://json-schema.org/draft/2020-12/schema",
+        "const": "sesslint.hook-result/v1",
+        "additional_properties": false,
+        "required": [
+          "event",
+          "findings_by_code",
+          "reason",
+          "schema",
+          "verdict"
+        ],
+        "verdict_enum": [
+          "ok",
+          "findings",
+          "skipped"
+        ],
+        "findings_minimum": 1,
+        "properties": [
+          "schema",
+          "event",
+          "verdict",
+          "reason",
+          "findings_by_code",
+          "top_code",
+          "session_id"
+        ]
+      }
+    },
+    {
+      "id": "run_malformed_json",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": "74686973206973206e6f74206a736f6e",
+        "stdin_spaces": null,
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "run_non_object",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": "5b226172726179222c20226973222c202277726f6e67225d",
+        "stdin_spaces": null,
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "run_oversized_spaces",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": null,
+        "stdin_spaces": 1048577,
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"payload-too-large\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "payload-too-large",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "run_empty_stdin",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": "",
+        "stdin_spaces": null,
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "run_garbage_fail_on_warning",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": "67617262616765",
+        "stdin_spaces": null,
+        "profile": null,
+        "format": null,
+        "fail_on": "warning"
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"malformed-payload\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "malformed-payload",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "run_empty_object",
+      "construct": {
+        "type": "run_hook",
+        "event": "SessionStart",
+        "stdin_hex": "7b7d",
+        "stdin_spaces": null,
+        "profile": null,
+        "format": null,
+        "fail_on": null
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"no-transcript-path\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"skipped\"}",
+        "event": "SessionStart",
+        "verdict": "skipped",
+        "reason": "no-transcript-path",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "to_json_ok_clean",
+      "construct": {
+        "type": "to_json",
+        "event": "SessionStart",
+        "verdict": "ok",
+        "reason": "clean",
+        "findings_by_code": {},
+        "exit_code": 0
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"}",
+        "event": "SessionStart",
+        "verdict": "ok",
+        "reason": "clean",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "to_json_findings_sl301",
+      "construct": {
+        "type": "to_json",
+        "event": "SessionStart",
+        "verdict": "findings",
+        "reason": "detection-failed",
+        "findings_by_code": {
+          "SL301": 1
+        },
+        "exit_code": 1,
+        "top_code": "SL301"
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 1}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}",
+        "event": "SessionStart",
+        "verdict": "findings",
+        "reason": "detection-failed",
+        "exit_code": 1,
+        "findings_by_code": {
+          "SL301": 1
+        },
+        "top_code": "SL301"
+      }
+    },
+    {
+      "id": "to_json_findings_sl302_session",
+      "construct": {
+        "type": "to_json",
+        "event": "SessionEnd",
+        "verdict": "findings",
+        "reason": "detection-failed",
+        "findings_by_code": {
+          "SL302": 2
+        },
+        "exit_code": 0,
+        "top_code": "SL302",
+        "session_id": "abcd1234"
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {\"SL302\": 2}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"abcd1234\", \"top_code\": \"SL302\", \"verdict\": \"findings\"}",
+        "event": "SessionEnd",
+        "verdict": "findings",
+        "reason": "detection-failed",
+        "exit_code": 0,
+        "findings_by_code": {
+          "SL302": 2
+        },
+        "top_code": "SL302",
+        "session_id": "abcd1234"
+      }
+    },
+    {
+      "id": "to_json_skipped_empty_session_id",
+      "construct": {
+        "type": "to_json",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "format-undetected",
+        "findings_by_code": {},
+        "exit_code": 0,
+        "session_id": ""
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"format-undetected\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"\", \"verdict\": \"skipped\"}",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "format-undetected",
+        "exit_code": 0,
+        "findings_by_code": {},
+        "session_id": ""
+      }
+    },
+    {
+      "id": "to_json_skipped_session_present",
+      "construct": {
+        "type": "to_json",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "budget-exceeded",
+        "findings_by_code": {},
+        "exit_code": 0,
+        "session_id": "kept"
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionEnd\", \"findings_by_code\": {}, \"reason\": \"budget-exceeded\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": \"kept\", \"verdict\": \"skipped\"}",
+        "event": "SessionEnd",
+        "verdict": "skipped",
+        "reason": "budget-exceeded",
+        "exit_code": 0,
+        "findings_by_code": {},
+        "session_id": "kept"
+      }
+    },
+    {
+      "id": "validate_reordered_ok",
+      "construct": {
+        "type": "validate",
+        "document": "{ \"verdict\" : \"ok\" , \"schema\" : \"sesslint.hook-result/v1\" , \"reason\" : \"clean\" , \"findings_by_code\" : {} , \"event\" : \"SessionStart\" }"
+      },
+      "expected": {
+        "outcome": "ok",
+        "to_json": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"}",
+        "event": "SessionStart",
+        "verdict": "ok",
+        "reason": "clean",
+        "exit_code": 0,
+        "findings_by_code": {}
+      }
+    },
+    {
+      "id": "reject_additional_exit_code",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"exit_code\": 0, \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "additional_property"
+      }
+    },
+    {
+      "id": "reject_verdict",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"block\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "verdict"
+      }
+    },
+    {
+      "id": "reject_count_zero",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 0}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_negative",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": -1}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_bool",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": true}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_float",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 1.0}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_string",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": \"1\"}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_exponent",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 1e2}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_overflow",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 18446744073709551616}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_count_object",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": {}}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "finding_value"
+      }
+    },
+    {
+      "id": "reject_missing_verdict",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "missing_required"
+      }
+    },
+    {
+      "id": "reject_schema_const",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v2\", \"verdict\": \"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "schema_const"
+      }
+    },
+    {
+      "id": "reject_findings_array",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": [], \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": \"SL301\", \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "findings_type"
+      }
+    },
+    {
+      "id": "reject_top_code_type",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {\"SL301\": 1}, \"reason\": \"detection-failed\", \"schema\": \"sesslint.hook-result/v1\", \"top_code\": 1, \"verdict\": \"findings\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "top_code_type"
+      }
+    },
+    {
+      "id": "reject_session_id_type",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"session_id\": 1, \"verdict\": \"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "session_id_type"
+      }
+    },
+    {
+      "id": "reject_event_type",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": null, \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "event_type"
+      }
+    },
+    {
+      "id": "reject_empty_object",
+      "construct": {
+        "type": "validate",
+        "document": "{}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "missing_required"
+      }
+    },
+    {
+      "id": "reject_root_array",
+      "construct": {
+        "type": "validate",
+        "document": "[]"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "not_object"
+      }
+    },
+    {
+      "id": "reject_root_string",
+      "construct": {
+        "type": "validate",
+        "document": "\"ok\""
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "not_object"
+      }
+    },
+    {
+      "id": "reject_root_null",
+      "construct": {
+        "type": "validate",
+        "document": "null"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "not_object"
+      }
+    },
+    {
+      "id": "reject_root_bool",
+      "construct": {
+        "type": "validate",
+        "document": "true"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "not_object"
+      }
+    },
+    {
+      "id": "reject_malformed",
+      "construct": {
+        "type": "validate",
+        "document": "{"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "malformed"
+      }
+    },
+    {
+      "id": "reject_trailing",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\": \"SessionStart\", \"findings_by_code\": {}, \"reason\": \"clean\", \"schema\": \"sesslint.hook-result/v1\", \"verdict\": \"ok\"} 0"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "malformed"
+      }
+    },
+    {
+      "id": "reject_blank",
+      "construct": {
+        "type": "validate",
+        "document": "   "
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "malformed"
+      }
+    },
+    {
+      "id": "reject_duplicate_key",
+      "construct": {
+        "type": "validate",
+        "document": "{\"schema\":\"sesslint.hook-result/v1\",\"schema\":\"sesslint.hook-result/v1\",\"event\":\"SessionStart\",\"verdict\":\"ok\",\"reason\":\"clean\",\"findings_by_code\":{}}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "duplicate_key"
+      }
+    },
+    {
+      "id": "reject_duplicate_finding",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\":\"SessionStart\",\"findings_by_code\":{\"SL301\":1,\"SL301\":1},\"reason\":\"clean\",\"schema\":\"sesslint.hook-result/v1\",\"verdict\":\"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "duplicate_key"
+      }
+    },
+    {
+      "id": "reject_lone_surrogate",
+      "construct": {
+        "type": "validate",
+        "document": "{\"event\":\"\\ud800\",\"findings_by_code\":{},\"reason\":\"clean\",\"schema\":\"sesslint.hook-result/v1\",\"verdict\":\"ok\"}"
+      },
+      "expected": {
+        "outcome": "error",
+        "error": "malformed"
+      }
+    }
+  ]
+}
