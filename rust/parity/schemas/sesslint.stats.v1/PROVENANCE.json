@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.stats.v1 schema parity. Constraints and expected rejections come from the pinned schema. Documents are constructed objects, not SessionStats.to_dict output. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.stats.v1/generate",
+  "known_parity_gaps": [
+    "stats.py imports sesslint._version, sesslint.adapters.detect, and sesslint.canonical at module scope. Those imports are refused, so SessionStats.to_dict is not executed.",
+    "tests/cli/test_stats.py::test_stats_json_schema writes a corpus, calls main, and checks schema_version, required keys, the files sum, and path redaction. validate is one document, not that sweep.",
+    "The files total equation and MAX_TOOL_ROWS are producer behavior. The pinned schema does not state them.",
+    "Duplicate JSON object keys are a syntax refusal. Python json.loads keeps the last key, so that case is not a vector.",
+    "enum, items, and $ref are absent from the pinned schema. No vector claims those keywords.",
+    "uniqueItems, minLength, maxLength, minItems, maxItems, and pattern are absent from the pinned schema. A schema that stated them fails closed as unsupported.",
+    "i128::MIN is inside the signed 128-bit range, but the checker does not prove that token. It is not a vector."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

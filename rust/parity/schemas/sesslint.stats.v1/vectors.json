@@ -1,0 +1,7937 @@
+{
+  "facts": {
+    "additional_properties": false,
+    "count_minimum": 0,
+    "events_per_file_required": [
+      "max",
+      "p50",
+      "p95",
+      "total"
+    ],
+    "events_required": [
+      "by_actor",
+      "by_kind",
+      "total"
+    ],
+    "file_bytes_required": [
+      "max",
+      "p50",
+      "p95",
+      "total"
+    ],
+    "files_required": [
+      "processed",
+      "total",
+      "undetected",
+      "unreadable"
+    ],
+    "id": "https://sesslint.dev/schemas/sesslint.stats/v1",
+    "map_value_minimum": 0,
+    "map_value_type": "integer",
+    "max_tool_rows": 100,
+    "pin_schema_version": "sesslint.stats/v1",
+    "property_names": [
+      "schema_version",
+      "tool_version",
+      "root_path",
+      "files",
+      "by_adapter",
+      "events",
+      "tool_calls",
+      "compaction_boundaries",
+      "checkpoints",
+      "file_bytes",
+      "events_per_file"
+    ],
+    "required": [
+      "by_adapter",
+      "checkpoints",
+      "compaction_boundaries",
+      "events",
+      "events_per_file",
+      "file_bytes",
+      "files",
+      "root_path",
+      "schema_version",
+      "tool_calls",
+      "tool_version"
+    ],
+    "root_type": "object",
+    "schema_version_const": "sesslint.stats/v1",
+    "tool_calls_required": [
+      "by_tool_hash",
+      "total"
+    ]
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "synthetic_minimal",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "tool_version_empty",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": ""
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "root_path_empty",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "counters_positive",
+      "instance": {
+        "by_adapter": {
+          "adapter-a": 2
+        },
+        "checkpoints": 3,
+        "compaction_boundaries": 4,
+        "events": {
+          "by_actor": {
+            "actor-a": 5
+          },
+          "by_kind": {
+            "kind-a": 6
+          },
+          "total": 7
+        },
+        "events_per_file": {
+          "max": 8,
+          "p50": 9,
+          "p95": 10,
+          "total": 11
+        },
+        "file_bytes": {
+          "max": 12,
+          "p50": 13,
+          "p95": 14,
+          "total": 15
+        },
+        "files": {
+          "processed": 1,
+          "total": 1,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus/child",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "hash-a": 16
+          },
+          "total": 16
+        },
+        "tool_version": "1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "files_total_not_sum",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 2,
+          "total": 0,
+          "undetected": 3,
+          "unreadable": 4
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "by_adapter_slash_key",
+      "instance": {
+        "by_adapter": {
+          "a/b": 1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "by_adapter_tilde_key",
+      "instance": {
+        "by_adapter": {
+          "a~b": 1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "by_adapter_empty_key",
+      "instance": {
+        "by_adapter": {
+          "": 1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "by_adapter_tilde_slash_key",
+      "instance": {
+        "by_adapter": {
+          "a~/b": 1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "tool_hashes_over_producer_cap",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "h000": 1,
+            "h001": 1,
+            "h002": 1,
+            "h003": 1,
+            "h004": 1,
+            "h005": 1,
+            "h006": 1,
+            "h007": 1,
+            "h008": 1,
+            "h009": 1,
+            "h010": 1,
+            "h011": 1,
+            "h012": 1,
+            "h013": 1,
+            "h014": 1,
+            "h015": 1,
+            "h016": 1,
+            "h017": 1,
+            "h018": 1,
+            "h019": 1,
+            "h020": 1,
+            "h021": 1,
+            "h022": 1,
+            "h023": 1,
+            "h024": 1,
+            "h025": 1,
+            "h026": 1,
+            "h027": 1,
+            "h028": 1,
+            "h029": 1,
+            "h030": 1,
+            "h031": 1,
+            "h032": 1,
+            "h033": 1,
+            "h034": 1,
+            "h035": 1,
+            "h036": 1,
+            "h037": 1,
+            "h038": 1,
+            "h039": 1,
+            "h040": 1,
+            "h041": 1,
+            "h042": 1,
+            "h043": 1,
+            "h044": 1,
+            "h045": 1,
+            "h046": 1,
+            "h047": 1,
+            "h048": 1,
+            "h049": 1,
+            "h050": 1,
+            "h051": 1,
+            "h052": 1,
+            "h053": 1,
+            "h054": 1,
+            "h055": 1,
+            "h056": 1,
+            "h057": 1,
+            "h058": 1,
+            "h059": 1,
+            "h060": 1,
+            "h061": 1,
+            "h062": 1,
+            "h063": 1,
+            "h064": 1,
+            "h065": 1,
+            "h066": 1,
+            "h067": 1,
+            "h068": 1,
+            "h069": 1,
+            "h070": 1,
+            "h071": 1,
+            "h072": 1,
+            "h073": 1,
+            "h074": 1,
+            "h075": 1,
+            "h076": 1,
+            "h077": 1,
+            "h078": 1,
+            "h079": 1,
+            "h080": 1,
+            "h081": 1,
+            "h082": 1,
+            "h083": 1,
+            "h084": 1,
+            "h085": 1,
+            "h086": 1,
+            "h087": 1,
+            "h088": 1,
+            "h089": 1,
+            "h090": 1,
+            "h091": 1,
+            "h092": 1,
+            "h093": 1,
+            "h094": 1,
+            "h095": 1,
+            "h096": 1,
+            "h097": 1,
+            "h098": 1,
+            "h099": 1,
+            "h100": 1
+          },
+          "total": 101
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_checkpoints_one_point_zero",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":1.0,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_checkpoints_exponent",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":1e1,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_checkpoints_neg_zero",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":-0,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_checkpoints_i128_max",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":170141183460469231731687303715884105727,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_tool_version_unicode",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":0,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"caf\\u00e9\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_minimal_spaced",
+      "raw": "{\n  \"by_adapter\": {},\n  \"checkpoints\": 0,\n  \"compaction_boundaries\": 0,\n  \"events\": {\n    \"by_actor\": {},\n    \"by_kind\": {},\n    \"total\": 0\n  },\n  \"events_per_file\": {\n    \"max\": 0,\n    \"p50\": 0,\n    \"p95\": 0,\n    \"total\": 0\n  },\n  \"file_bytes\": {\n    \"max\": 0,\n    \"p50\": 0,\n    \"p95\": 0,\n    \"total\": 0\n  },\n  \"files\": {\n    \"processed\": 0,\n    \"total\": 0,\n    \"undetected\": 0,\n    \"unreadable\": 0\n  },\n  \"root_path\": \"corpus\",\n  \"schema_version\": \"sesslint.stats/v1\",\n  \"tool_calls\": {\n    \"by_tool_hash\": {},\n    \"total\": 0\n  },\n  \"tool_version\": \"0\"\n}\n"
+    },
+    {
+      "expected": {
+        "detail": "by_adapter",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "by_adapter",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_by_adapter",
+      "instance": {
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "checkpoints",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_checkpoints",
+      "instance": {
+        "by_adapter": {},
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "compaction_boundaries",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_compaction_boundaries",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "events",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_events",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "events_per_file",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_events_per_file",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "file_bytes",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_file_bytes",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "files",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_files",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "root_path",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_root_path",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "tool_calls",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_tool_calls",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "tool_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_tool_version",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "extra": 1,
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_adapter",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_missing_by_adapter_and_extra",
+      "instance": {
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "extra": 1,
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "other",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_empty",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_number",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": 1,
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": null,
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": true,
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_version"
+      },
+      "id": "tool_version_number",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": 1
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_version"
+      },
+      "id": "tool_version_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": null
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_version"
+      },
+      "id": "tool_version_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": true
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/root_path"
+      },
+      "id": "root_path_number",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": 1,
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/root_path"
+      },
+      "id": "root_path_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": null,
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": [],
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "processed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_missing_processed",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_missing_total",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "undetected",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_missing_undetected",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "unreadable",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_missing_unreadable",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_additional",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "extra": 1,
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "events_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": [],
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_actor",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "events_missing_by_actor",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_kind",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "events_missing_by_kind",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "events_missing_total",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {}
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "events_additional",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "extra": 1,
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls"
+      },
+      "id": "tool_calls_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": [],
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_tool_hash",
+        "keyword": "required",
+        "ok": false,
+        "path": "/tool_calls"
+      },
+      "id": "tool_calls_missing_by_tool_hash",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/tool_calls"
+      },
+      "id": "tool_calls_missing_total",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {}
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/tool_calls"
+      },
+      "id": "tool_calls_additional",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "extra": 1,
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": [],
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "max",
+        "keyword": "required",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_missing_max",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "p50",
+        "keyword": "required",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_missing_p50",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "p95",
+        "keyword": "required",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_missing_p95",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_missing_total",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/file_bytes"
+      },
+      "id": "file_bytes_additional",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "extra": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": [],
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "max",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_missing_max",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "p50",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_missing_p50",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "p95",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_missing_p95",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_missing_total",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/events_per_file"
+      },
+      "id": "events_per_file_additional",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "extra": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "processed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_missing_processed_and_extra",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "extra": 1,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_extra_and_bad_processed",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "extra": 1,
+          "processed": "bad",
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter"
+      },
+      "id": "by_adapter_type",
+      "instance": {
+        "by_adapter": [],
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_string",
+      "instance": {
+        "by_adapter": {
+          "k": "0"
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_bool",
+      "instance": {
+        "by_adapter": {
+          "k": true
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_negative",
+      "instance": {
+        "by_adapter": {
+          "k": -1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_fraction",
+      "instance": {
+        "by_adapter": {
+          "k": 1.5
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_null",
+      "instance": {
+        "by_adapter": {
+          "k": null
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/k"
+      },
+      "id": "by_adapter_value_object",
+      "instance": {
+        "by_adapter": {
+          "k": {}
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind"
+      },
+      "id": "events_by_kind_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": [],
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": "0"
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": true
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": -1
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": 1.5
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": null
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_kind/k"
+      },
+      "id": "events_by_kind_value_object",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {
+            "k": {}
+          },
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor"
+      },
+      "id": "events_by_actor_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": [],
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": "0"
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": true
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": -1
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": 1.5
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": null
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/by_actor/k"
+      },
+      "id": "events_by_actor_value_object",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {
+            "k": {}
+          },
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash"
+      },
+      "id": "tool_calls_by_tool_hash_type",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": [],
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": "0"
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": true
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": -1
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": 1.5
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": null
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/by_tool_hash/k"
+      },
+      "id": "tool_calls_by_tool_hash_value_object",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {
+            "k": {}
+          },
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/processed"
+      },
+      "id": "files_processed_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": "0",
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/processed"
+      },
+      "id": "files_processed_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": true,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/processed"
+      },
+      "id": "files_processed_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": -1,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/processed"
+      },
+      "id": "files_processed_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 1.5,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/processed"
+      },
+      "id": "files_processed_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": null,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/total"
+      },
+      "id": "files_total_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": "0",
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/total"
+      },
+      "id": "files_total_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": true,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/total"
+      },
+      "id": "files_total_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": -1,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/total"
+      },
+      "id": "files_total_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 1.5,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/total"
+      },
+      "id": "files_total_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": null,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/undetected"
+      },
+      "id": "files_undetected_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": "0",
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/undetected"
+      },
+      "id": "files_undetected_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": true,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/undetected"
+      },
+      "id": "files_undetected_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": -1,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/undetected"
+      },
+      "id": "files_undetected_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 1.5,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/undetected"
+      },
+      "id": "files_undetected_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": null,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/unreadable"
+      },
+      "id": "files_unreadable_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": "0"
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/unreadable"
+      },
+      "id": "files_unreadable_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": true
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/unreadable"
+      },
+      "id": "files_unreadable_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": -1
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/unreadable"
+      },
+      "id": "files_unreadable_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 1.5
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/unreadable"
+      },
+      "id": "files_unreadable_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": null
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/total"
+      },
+      "id": "events_total_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": "0"
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/total"
+      },
+      "id": "events_total_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": true
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events/total"
+      },
+      "id": "events_total_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": -1
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/total"
+      },
+      "id": "events_total_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 1.5
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/total"
+      },
+      "id": "events_total_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": null
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/total"
+      },
+      "id": "tool_calls_total_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": "0"
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/total"
+      },
+      "id": "tool_calls_total_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": true
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/tool_calls/total"
+      },
+      "id": "tool_calls_total_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": -1
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/total"
+      },
+      "id": "tool_calls_total_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 1.5
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_calls/total"
+      },
+      "id": "tool_calls_total_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": null
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/compaction_boundaries"
+      },
+      "id": "compaction_boundaries_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": "0",
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/compaction_boundaries"
+      },
+      "id": "compaction_boundaries_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": true,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/compaction_boundaries"
+      },
+      "id": "compaction_boundaries_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": -1,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/compaction_boundaries"
+      },
+      "id": "compaction_boundaries_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 1.5,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/compaction_boundaries"
+      },
+      "id": "compaction_boundaries_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": null,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "checkpoints_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": "0",
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "checkpoints_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": true,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "checkpoints_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": -1,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "checkpoints_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 1.5,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "checkpoints_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": null,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/max"
+      },
+      "id": "file_bytes_max_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": "0",
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/max"
+      },
+      "id": "file_bytes_max_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": true,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/file_bytes/max"
+      },
+      "id": "file_bytes_max_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": -1,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/max"
+      },
+      "id": "file_bytes_max_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 1.5,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/max"
+      },
+      "id": "file_bytes_max_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": null,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p50"
+      },
+      "id": "file_bytes_p50_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": "0",
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p50"
+      },
+      "id": "file_bytes_p50_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": true,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/file_bytes/p50"
+      },
+      "id": "file_bytes_p50_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": -1,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p50"
+      },
+      "id": "file_bytes_p50_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 1.5,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p50"
+      },
+      "id": "file_bytes_p50_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": null,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p95"
+      },
+      "id": "file_bytes_p95_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": "0",
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p95"
+      },
+      "id": "file_bytes_p95_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": true,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/file_bytes/p95"
+      },
+      "id": "file_bytes_p95_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": -1,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p95"
+      },
+      "id": "file_bytes_p95_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 1.5,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/p95"
+      },
+      "id": "file_bytes_p95_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": null,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/total"
+      },
+      "id": "file_bytes_total_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": "0"
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/total"
+      },
+      "id": "file_bytes_total_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": true
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/file_bytes/total"
+      },
+      "id": "file_bytes_total_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": -1
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/total"
+      },
+      "id": "file_bytes_total_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 1.5
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/file_bytes/total"
+      },
+      "id": "file_bytes_total_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": null
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/max"
+      },
+      "id": "events_per_file_max_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": "0",
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/max"
+      },
+      "id": "events_per_file_max_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": true,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events_per_file/max"
+      },
+      "id": "events_per_file_max_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": -1,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/max"
+      },
+      "id": "events_per_file_max_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 1.5,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/max"
+      },
+      "id": "events_per_file_max_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": null,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p50"
+      },
+      "id": "events_per_file_p50_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": "0",
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p50"
+      },
+      "id": "events_per_file_p50_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": true,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events_per_file/p50"
+      },
+      "id": "events_per_file_p50_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": -1,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p50"
+      },
+      "id": "events_per_file_p50_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 1.5,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p50"
+      },
+      "id": "events_per_file_p50_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": null,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p95"
+      },
+      "id": "events_per_file_p95_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": "0",
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p95"
+      },
+      "id": "events_per_file_p95_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": true,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events_per_file/p95"
+      },
+      "id": "events_per_file_p95_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": -1,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p95"
+      },
+      "id": "events_per_file_p95_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 1.5,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/p95"
+      },
+      "id": "events_per_file_p95_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": null,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/total"
+      },
+      "id": "events_per_file_total_string",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": "0"
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/total"
+      },
+      "id": "events_per_file_total_bool",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": true
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events_per_file/total"
+      },
+      "id": "events_per_file_total_negative",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": -1
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/total"
+      },
+      "id": "events_per_file_total_fraction",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 1.5
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events_per_file/total"
+      },
+      "id": "events_per_file_total_null",
+      "instance": {
+        "by_adapter": {},
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": null
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/a~1b"
+      },
+      "id": "by_adapter_slash_string",
+      "instance": {
+        "by_adapter": {
+          "a/b": "x"
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/by_adapter/a~0b"
+      },
+      "id": "by_adapter_tilde_negative",
+      "instance": {
+        "by_adapter": {
+          "a~b": -1
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/a~0~1b"
+      },
+      "id": "by_adapter_tilde_slash_string",
+      "instance": {
+        "by_adapter": {
+          "a~/b": "x"
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/by_adapter/"
+      },
+      "id": "by_adapter_empty_string",
+      "instance": {
+        "by_adapter": {
+          "": "x"
+        },
+        "checkpoints": 0,
+        "compaction_boundaries": 0,
+        "events": {
+          "by_actor": {},
+          "by_kind": {},
+          "total": 0
+        },
+        "events_per_file": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "file_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "total": 0
+        },
+        "files": {
+          "processed": 0,
+          "total": 0,
+          "undetected": 0,
+          "unreadable": 0
+        },
+        "root_path": "corpus",
+        "schema_version": "sesslint.stats/v1",
+        "tool_calls": {
+          "by_tool_hash": {},
+          "total": 0
+        },
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "raw_checkpoints_fraction",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":1.5,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "raw_checkpoints_exponent_fraction",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":1e-1,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/checkpoints"
+      },
+      "id": "raw_checkpoints_i128_overflow",
+      "raw": "{\"by_adapter\":{},\"checkpoints\":170141183460469231731687303715884105728,\"compaction_boundaries\":0,\"events\":{\"by_actor\":{},\"by_kind\":{},\"total\":0},\"events_per_file\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"file_bytes\":{\"max\":0,\"p50\":0,\"p95\":0,\"total\":0},\"files\":{\"processed\":0,\"total\":0,\"undetected\":0,\"unreadable\":0},\"root_path\":\"corpus\",\"schema_version\":\"sesslint.stats/v1\",\"tool_calls\":{\"by_tool_hash\":{},\"total\":0},\"tool_version\":\"0\"}"
+    }
+  ]
+}

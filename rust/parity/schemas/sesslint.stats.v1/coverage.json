@@ -1,0 +1,15 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.stats",
+  "not_applicable_count": 1,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "The test writes one synthetic corpus file, calls main, reads stdout, and asserts exit 0, schema_version against the loaded schema const and STATS_SCHEMA_VERSION, every required key, files.total equal to processed plus undetected plus unreadable, and that the temporary path is absent from the JSON. validate judges one document. It does not run main, load a corpus, or apply the files sum. One accepted object is not that sweep.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_stats.py::test_stats_json_schema",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.stats.v1.json"
+}
