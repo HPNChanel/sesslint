@@ -7,6 +7,6 @@ mod error;
 pub use error::OutcomeError;
 
 pub mod contract;
-pub mod snapshot {}
+pub mod snapshot;
 pub mod engine {}
 pub mod report {}

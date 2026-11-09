@@ -589,7 +589,7 @@ fn py_repr(value: &str) -> String {
     out
 }
 
-fn repr_list<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
+pub(crate) fn repr_list<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
     format!(
         "[{}]",
         values

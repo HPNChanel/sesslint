@@ -4,7 +4,7 @@
   "module": "sesslint.outcome.contract",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "python_sha256": "37ec06a8baa66307c4652a1dc6ce2a64d6b5131af3a44d9ac14e3f24a61abf01",
-  "rust_sha256": "a337fde5f75d61b1ccb03802d9ade2c197a560f23f8fb66c646bfa504d1cadfc",
+  "rust_sha256": "d779d04a4406d1db157ffdf8428d1f492a30cd2f9df75920ac5f54294d7e4872",
   "schema": "sesslint.parity-module-vectors/v1",
   "test_source_sha256": "aee3b4212cd1d048c3545c3557c5cb6d013ffb5ac6b06d98581f9c773fb37397",
   "vector_count": 1270,
