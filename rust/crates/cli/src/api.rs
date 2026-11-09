@@ -1,8 +1,9 @@
 //! SessLint public programmatic API providing 1:1 library-CLI parity (TASK-024).
 //!
 //! Port of `src/sesslint/api.py` lines 1–516, [`check_dir`] lines 519–612,
-//! [`repair`] lines 615–865, [`verify`] lines 868–899, and [`plan`] through
-//! [`validate_session`] lines 902–1202
+//! [`repair`] lines 615–865, [`verify`] lines 868–899, [`plan`] through
+//! [`validate_session`] lines 902–1202, and [`build_internal_error_envelope`]
+//! through [`discover_session_roots`] lines 1205–1386
 //! @ `02694d537104659df66cdd084354739f3cccc440`.
 //!
 //! This module exposes pure library functions. It performs no terminal
@@ -103,6 +104,62 @@
 //! An existing path calls [`load_session_file`]. Its [`SchemaError`] is
 //! returned unchanged. This module does not parse JSON.
 //!
+//! [`build_internal_error_envelope`] (lines 1205–1218) returns four fields
+//! when `error_id` is `Some`: `code` is `INTERNAL_ERROR`, `error_id` is that
+//! string, `message` is [`Display`](fmt::Display) of the error, and `verdict`
+//! is `error`. There is no traceback field and no other field. `None` is the
+//! next call, `secrets.token_hex`. That function is not available. The result
+//! is [`ApiError::Unsupported`] with [`SECRETS_TOKEN_HEX_UNAVAILABLE`]. No id
+//! is minted. No clock, counter, or random source is used. The error is not
+//! formatted on that path.
+//!
+//! [`doctor_report`] (lines 1221–1239) starts at
+//! `from sesslint.doctor import doctor_report`. That function is not linked.
+//! The result is [`ApiError::Unsupported`] with [`DOCTOR_REPORT_UNAVAILABLE`].
+//! The arguments are bound and are not applied. `pyproject.toml` is not read.
+//! The home directory and agent roots are not read.
+//!
+//! [`stats_paths`] (lines 1242–1259) starts at
+//! `from sesslint.stats import stats_paths`. That function is not linked. The
+//! result is [`ApiError::Unsupported`] with [`STATS_PATHS_UNAVAILABLE`]. Paths
+//! are not stated, sorted, or walked.
+//!
+//! [`diff_sessions`] (lines 1262–1280) starts at
+//! `from sesslint.diff import diff_sessions`. That function is not linked. The
+//! result is [`ApiError::Unsupported`] with [`DIFF_SESSIONS_UNAVAILABLE`].
+//! Neither path is stated.
+//!
+//! [`export_file`] (lines 1283–1301) starts at
+//! `from sesslint.exporter import export_to_canonical`. That function is not
+//! linked. The result is [`ApiError::Unsupported`] with
+//! [`EXPORT_TO_CANONICAL_UNAVAILABLE`]. `output_path` is not created and
+//! nothing is written there.
+//!
+//! [`DiscoveredRoot`] (lines 1304–1327) has the frozen fields `agent`, `path`,
+//! `exists`, and `source`. [`DiscoveredRoot::to_dict`] starts at
+//! `from sesslint.report import minimize_path`. That one-argument function is
+//! not `report::minimize_path`, which takes `(path, home)`. The result is
+//! [`ApiError::Unsupported`] with [`MINIMIZE_PATH_UNAVAILABLE`]. The path is
+//! not formatted, and `report::minimize_path` is not called.
+//!
+//! [`discover_session_roots`] (lines 1330–1386) keeps the local resolution.
+//! Omitted agents are `claude` then `codex`. A stripped empty
+//! `CLAUDE_CONFIG_DIR` uses `home/.claude/projects` with source `default`. A
+//! non-empty override uses that directory joined with `projects` and source
+//! `env`. `CODEX_HOME` uses `sessions` the same way. An unknown agent is
+//! `ValueError`: `Unknown agent {repr}: expected 'claude' or 'codex'`, and
+//! `{repr}` is [`python_str_repr`]. `exists` is `is_dir and not is_symlink`,
+//! from one `symlink_metadata`. Links are not followed. Directories are not
+//! created. Children are not listed. `include_archived` appends
+//! `candidate.parent/archived_sessions` only for `codex`, with the same
+//! source. `home` and `env` are parameters. The process home and the process
+//! environment are not read.
+//!
+//! Lines 1389–1428 are `__all__`. That list does not add `triage`,
+//! `build_bundle`, `precheck`, `scan_bytes`, or a missing type from another
+//! module. `DoctorReport`, `SessionStats`, `SessionDiff`, and `ExportSummary`
+//! are not defined here. The functions that would return them stop first.
+//!
 //! # Recorded gaps
 //!
 //! * Python `bool` is not an `int` and not a `float`. Thresholds are
@@ -136,13 +193,26 @@
 //! * [`validate_session`] returns [`ValidateSessionError`]. Absence keeps
 //!   [`crate::bundle::path_text`]. [`load_session_file`] spells its own missing
 //!   file with `path.display()`, and that text is used only when the loader runs.
+//! * [`build_internal_error_envelope`] does not mint `ERR-` plus eight hex
+//!   digits. Omitted `error_id` stops at `secrets.token_hex`.
+//! * [`discover_session_roots`] does not accept `env=None` or `home=None`.
+//!   The pin would read `os.environ` and `Path.home()`. Callers pass the
+//!   mapping and the home. Tests pass both and do not read the user profile.
+//! * Injected env lookup is case-sensitive, matching a `Mapping`. The first
+//!   matching key is kept.
+//! * `str.strip` also drops U+001C through U+001F. Rust `trim` does not.
+//! * Unknown-agent text uses [`python_str_repr`]. Python `repr` may switch
+//!   to double quotes when the agent contains `'` and no `"`.
+//! * `exists` is one `symlink_metadata`. Python `is_dir` follows a link and
+//!   can raise on the target. A link is `false` here without that stat.
+//! * `Path::join` keeps a `.` anchor. Python `pathlib` drops it.
 
 use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use model::canonical::{load_session_file, Session, SessionEvent};
 use model::errors::SchemaError;
@@ -203,6 +273,39 @@ pub const REPAIR_PREVIEW_UNAVAILABLE: &str = "sesslint.preview.repair_preview is
 /// immediately.
 pub const REPAIR_MANY_UNAVAILABLE: &str = "sesslint.batch.repair_many is not available";
 
+/// `secrets.token_hex` is not available. [`build_internal_error_envelope`]
+/// returns this when `error_id` is omitted. No id is minted.
+pub const SECRETS_TOKEN_HEX_UNAVAILABLE: &str = "secrets.token_hex is not available";
+
+/// Envelope `code` when an id was supplied.
+pub const INTERNAL_ERROR_CODE: &str = "INTERNAL_ERROR";
+
+/// Envelope `verdict` when an id was supplied.
+pub const INTERNAL_ERROR_VERDICT: &str = "error";
+
+/// `sesslint.doctor.doctor_report` is not linked. [`doctor_report`] returns
+/// this immediately.
+pub const DOCTOR_REPORT_UNAVAILABLE: &str = "sesslint.doctor.doctor_report is not available";
+
+/// `sesslint.stats.stats_paths` is not linked. [`stats_paths`] returns this
+/// immediately.
+pub const STATS_PATHS_UNAVAILABLE: &str = "sesslint.stats.stats_paths is not available";
+
+/// `sesslint.diff.diff_sessions` is not linked. [`diff_sessions`] returns this
+/// immediately.
+pub const DIFF_SESSIONS_UNAVAILABLE: &str = "sesslint.diff.diff_sessions is not available";
+
+/// `sesslint.exporter.export_to_canonical` is not linked. [`export_file`]
+/// returns this immediately.
+pub const EXPORT_TO_CANONICAL_UNAVAILABLE: &str =
+    "sesslint.exporter.export_to_canonical is not available";
+
+/// One-argument `sesslint.report.minimize_path` is not linked.
+///
+/// [`DiscoveredRoot::to_dict`] returns this immediately. `report::minimize_path`
+/// takes `(path, home)` and is not called.
+pub const MINIMIZE_PATH_UNAVAILABLE: &str = "sesslint.report.minimize_path is not available";
+
 /// Marker that the pin's in-memory `plan` argument is not `None`.
 ///
 /// This is not a `RepairPlan`. [`repair`] only tests whether the [`Option`] is
@@ -215,28 +318,34 @@ type CaptureEvents<'a> = &'a dyn Fn(&str, &[SessionEvent]);
 
 /// Failure from [`check_file`], [`check_bytes`], [`check_dir`], [`_check_impl`],
 /// [`repair`], [`verify`], [`plan`], [`plan_repair`], [`apply_plan`],
-/// [`repair_preview`], [`repair_many`], and [`check`].
+/// [`repair_preview`], [`repair_many`], [`check`],
+/// [`build_internal_error_envelope`], [`doctor_report`], [`stats_paths`],
+/// [`diff_sessions`], [`export_file`], [`DiscoveredRoot::to_dict`], and
+/// [`discover_session_roots`].
 ///
 /// [`validate_session`] returns [`ValidateSessionError`] instead.
 ///
 /// [`Self::Value`] is a `ValueError` from `max_files`, `max_bytes`, a
-/// threshold, `emit`, or plan mutual exclusion. [`Self::NotFound`] is
-/// `FileNotFoundError`. [`Self::Io`] is an `OSError` from `Path.exists` or
-/// `Path.is_file`. [`Self::Unsupported`] is the static seam. Its text does
-/// not include a path or payload bytes.
+/// threshold, `emit`, plan mutual exclusion, or an unknown discovery agent.
+/// [`Self::NotFound`] is `FileNotFoundError`. [`Self::Io`] is an `OSError`
+/// from `Path.exists`, `Path.is_file`, or a discovery `is_dir` / `is_symlink`
+/// stat. [`Self::Unsupported`] is the static seam. Its text does not include
+/// a path or payload bytes.
 #[derive(Debug)]
 pub enum ApiError {
     /// The next call is not the same function as the pin.
     Unsupported(&'static str),
     /// Python `ValueError` from `max_files`, `max_bytes`,
-    /// `validate_detection_thresholds`, `emit`, or plan mutual exclusion.
+    /// `validate_detection_thresholds`, `emit`, plan mutual exclusion, or an
+    /// unknown discovery agent.
     Value(String),
     /// Python `FileNotFoundError`.
     ///
     /// [`check_file`] and [`check`] use `Path not found: {path}`. [`repair`] uses
     /// `Source file not found: {path}`.
     NotFound(String),
-    /// `Path.exists` or `Path.is_file` failed with an error other than absence.
+    /// `Path.exists`, `Path.is_file`, or a discovery root stat failed with an
+    /// error other than absence.
     Io(io::Error),
 }
 
@@ -1245,27 +1354,363 @@ pub fn validate_session(path: impl AsRef<Path>) -> Result<Session, ValidateSessi
     load_session_file(target).map_err(ValidateSessionError::Schema)
 }
 
+/// Four fields of the pin's internal-error dict. No traceback field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InternalErrorEnvelope {
+    /// `INTERNAL_ERROR`.
+    pub code: &'static str,
+    /// The supplied id. Not minted.
+    pub error_id: String,
+    /// [`Display`](fmt::Display) of the error. Not [`Debug`](fmt::Debug).
+    pub message: String,
+    /// `error`.
+    pub verdict: &'static str,
+}
+
+/// Structured envelope for an unexpected internal error, or the token stop.
+///
+/// Python `build_internal_error_envelope` lines 1205–1218. Rust has no
+/// keyword default. Pass `Some(id)` to keep that id, or `None` for the pin's
+/// omitted id.
+///
+/// `Some` returns [`INTERNAL_ERROR_CODE`], that id, [`Display`](fmt::Display)
+/// of `err`, and [`INTERNAL_ERROR_VERDICT`]. The id is not stripped. An empty
+/// id is still `Some`. The message is not a traceback.
+///
+/// `None` is `secrets.token_hex(4)`. That function is not available. The
+/// result is [`ApiError::Unsupported`] ([`SECRETS_TOKEN_HEX_UNAVAILABLE`]).
+/// `err` is not formatted. No clock, counter, or random source is used.
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`] when `error_id` is `None`.
+pub fn build_internal_error_envelope(
+    err: &dyn fmt::Display,
+    error_id: Option<&str>,
+) -> Result<InternalErrorEnvelope, ApiError> {
+    let Some(error_id) = error_id else {
+        // Pin line 1212 calls `secrets.token_hex` before `str(err)`.
+        let _pending = err;
+        return Err(ApiError::Unsupported(SECRETS_TOKEN_HEX_UNAVAILABLE));
+    };
+    Ok(InternalErrorEnvelope {
+        code: INTERNAL_ERROR_CODE,
+        error_id: error_id.to_owned(),
+        message: err.to_string(),
+        verdict: INTERNAL_ERROR_VERDICT,
+    })
+}
+
+/// Read-only environment diagnostics, then stop at the doctor import.
+///
+/// Python `doctor_report` lines 1221–1239. Argument order matches the pin.
+/// Rust has no keyword defaults. Pass `None` and `true` for those Python
+/// defaults.
+///
+/// The pin starts with `from sesslint.doctor import doctor_report`. That
+/// function is not linked. The result is [`ApiError::Unsupported`]
+/// ([`DOCTOR_REPORT_UNAVAILABLE`]). The arguments are bound and are not
+/// applied. This function does not read `pyproject.toml`, the home directory,
+/// or an agent root. It does not call [`discover_session_roots`].
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`]. Success is [`Infallible`].
+pub fn doctor_report(agents: Option<&[&str]>, quick_checks: bool) -> Result<Infallible, ApiError> {
+    let _pending = (agents, quick_checks);
+    Err(ApiError::Unsupported(DOCTOR_REPORT_UNAVAILABLE))
+}
+
+/// Aggregate content-free statistics, then stop at the stats import.
+///
+/// Python `stats_paths` lines 1242–1259. Argument order matches the pin. Rust
+/// has no keyword defaults. Pass `false` and `None` for those Python defaults.
+///
+/// The pin starts with `from sesslint.stats import stats_paths`. That function
+/// is not linked. The result is [`ApiError::Unsupported`]
+/// ([`STATS_PATHS_UNAVAILABLE`]). The arguments are bound and are not applied.
+/// This function does not stat a path, sort `paths`, or walk a directory.
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`]. Success is [`Infallible`].
+pub fn stats_paths(
+    paths: &[&Path],
+    recursive: bool,
+    format: Option<&str>,
+) -> Result<Infallible, ApiError> {
+    let _pending = (paths, recursive, format);
+    Err(ApiError::Unsupported(STATS_PATHS_UNAVAILABLE))
+}
+
+/// Compare two session files, then stop at the diff import.
+///
+/// Python `diff_sessions` lines 1262–1280. Argument order matches the pin.
+/// Rust has no keyword defaults. Pass `None` and `None` for those Python
+/// defaults.
+///
+/// The pin starts with `from sesslint.diff import diff_sessions`. That
+/// function is not linked. The result is [`ApiError::Unsupported`]
+/// ([`DIFF_SESSIONS_UNAVAILABLE`]). The arguments are bound and are not
+/// applied. This function does not stat either path.
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`]. Success is [`Infallible`].
+pub fn diff_sessions(
+    a: impl AsRef<Path>,
+    b: impl AsRef<Path>,
+    format_a: Option<&str>,
+    format_b: Option<&str>,
+) -> Result<Infallible, ApiError> {
+    let a = a.as_ref();
+    let b = b.as_ref();
+    let _pending = (a, b, format_a, format_b);
+    Err(ApiError::Unsupported(DIFF_SESSIONS_UNAVAILABLE))
+}
+
+/// Export one session artifact, then stop at the exporter import.
+///
+/// Python `export_file` lines 1283–1301. Argument order matches the pin. Rust
+/// has no keyword default. Pass `None` for the Python `format` default.
+///
+/// The pin starts with `from sesslint.exporter import export_to_canonical`.
+/// That function is not linked. The result is [`ApiError::Unsupported`]
+/// ([`EXPORT_TO_CANONICAL_UNAVAILABLE`]). The arguments are bound and are not
+/// applied. This function does not create or write `output_path`, and it does
+/// not stat `source_path`.
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`]. Success is [`Infallible`].
+pub fn export_file(
+    source_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    format: Option<&str>,
+) -> Result<Infallible, ApiError> {
+    let source_path = source_path.as_ref();
+    let output_path = output_path.as_ref();
+    let _pending = (source_path, output_path, format);
+    Err(ApiError::Unsupported(EXPORT_TO_CANONICAL_UNAVAILABLE))
+}
+
+/// A candidate well-known agent session root (DW-T-05).
+///
+/// Python `DiscoveredRoot` lines 1304–1327. The fields are frozen: they are
+/// written when the root is built and this module does not change them.
+/// `exists` is true only for a real directory, not for a symlink.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscoveredRoot {
+    agent: String,
+    path: PathBuf,
+    exists: bool,
+    source: String,
+}
+
+impl DiscoveredRoot {
+    /// Agent name (`claude` or `codex`).
+    #[must_use]
+    pub fn agent(&self) -> &str {
+        &self.agent
+    }
+
+    /// Candidate directory. Not minimized.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// `is_dir and not is_symlink` at discovery time.
+    #[must_use]
+    pub const fn exists(&self) -> bool {
+        self.exists
+    }
+
+    /// `env` when the override was non-empty after strip, otherwise `default`.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Serialize with a minimized path, then stop at that import.
+    ///
+    /// Python `to_dict` lines 1318–1327. The body starts with
+    /// `from sesslint.report import minimize_path`. That one-argument
+    /// function is not linked. `report::minimize_path` takes `(path, home)`
+    /// and is not the same function. The result is [`ApiError::Unsupported`]
+    /// ([`MINIMIZE_PATH_UNAVAILABLE`]). This method does not format `path`
+    /// and does not call `report::minimize_path`.
+    ///
+    /// # Errors
+    ///
+    /// [`ApiError::Unsupported`]. Success is [`Infallible`].
+    pub fn to_dict(&self) -> Result<Infallible, ApiError> {
+        let _pending = self;
+        Err(ApiError::Unsupported(MINIMIZE_PATH_UNAVAILABLE))
+    }
+}
+
+/// Python `str.strip()` with no arguments.
+///
+/// Unicode whitespace, plus U+001C through U+001F, which `str.isspace`
+/// treats as space and Rust [`char::is_whitespace`] does not.
+fn python_strip(text: &str) -> &str {
+    text.trim_matches(python_space)
+}
+
+fn python_space(ch: char) -> bool {
+    ch.is_whitespace() || matches!(ch, '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{1f}')
+}
+
+/// First matching key, or `""` when the key is absent. Case-sensitive.
+fn env_value<'a>(env: &'a [(&'a str, &'a str)], key: &str) -> &'a str {
+    env.iter()
+        .find_map(|(name, value)| (*name == key).then_some(*value))
+        .unwrap_or("")
+}
+
+/// Override directory joined with `leaf`, or `home/default_parent/leaf`.
+fn agent_candidate(
+    env: &[(&str, &str)],
+    home: &Path,
+    key: &str,
+    default_parent: &str,
+    leaf: &str,
+) -> (PathBuf, &'static str) {
+    let override_dir = python_strip(env_value(env, key));
+    if override_dir.is_empty() {
+        (home.join(default_parent).join(leaf), "default")
+    } else {
+        (Path::new(override_dir).join(leaf), "env")
+    }
+}
+
+/// `candidate.parent / "archived_sessions"`.
+fn archived_sessions(candidate: &Path) -> PathBuf {
+    match candidate.parent() {
+        Some(parent) => parent.join("archived_sessions"),
+        None => PathBuf::from("archived_sessions"),
+    }
+}
+
+/// `Path.is_dir() and not Path.is_symlink()`, without following a link.
+///
+/// Absence is `Ok(false)`, matching pathlib. Any other `symlink_metadata`
+/// error is returned. The path is not opened and its children are not listed.
+fn root_exists(path: &Path) -> io::Result<bool> {
+    let probed = if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    };
+    match fs::symlink_metadata(probed) {
+        Ok(metadata) => {
+            let kind = metadata.file_type();
+            Ok(kind.is_dir() && !kind.is_symlink())
+        }
+        Err(error) if is_missing(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn push_root(
+    roots: &mut Vec<DiscoveredRoot>,
+    agent: &str,
+    path: &Path,
+    source: &str,
+) -> Result<(), ApiError> {
+    let exists = root_exists(path)?;
+    roots.push(DiscoveredRoot {
+        agent: agent.to_owned(),
+        path: path.to_path_buf(),
+        exists,
+        source: source.to_owned(),
+    });
+    Ok(())
+}
+
+/// Enumerate well-known agent session roots in the given order (DW-T-05).
+///
+/// Python `discover_session_roots` lines 1330–1386. `agents`, then `env`,
+/// `home`, and `include_archived`. Rust has no keyword defaults. Pass `None`,
+/// an empty mapping, the home to use, and `false` for the Python defaults of
+/// the optional arguments. This function does not read the process environment
+/// or the process home. Tests pass `env` and `home`.
+///
+/// Omitted agents are `claude` then `codex`. A stripped empty
+/// `CLAUDE_CONFIG_DIR` uses `home/.claude/projects` with source `default`. A
+/// non-empty override uses that directory joined with `projects` and source
+/// `env`. `CODEX_HOME` uses `sessions` the same way. `exists` is
+/// [`root_exists`]. `include_archived` appends `candidate.parent /
+/// archived_sessions` only for `codex`, with the same source.
+///
+/// An unknown agent is [`ApiError::Value`]. The text is
+/// `Unknown agent {repr}: expected 'claude' or 'codex'`, and `{repr}` is
+/// [`python_str_repr`]. Roots collected earlier are not returned.
+///
+/// This function does not follow links, create directories, or list children.
+///
+/// # Errors
+///
+/// [`ApiError::Value`] for an unknown agent. [`ApiError::Io`] when stating a
+/// candidate fails for a reason other than absence.
+pub fn discover_session_roots(
+    agents: Option<&[&str]>,
+    env: &[(&str, &str)],
+    home: &Path,
+    include_archived: bool,
+) -> Result<Vec<DiscoveredRoot>, ApiError> {
+    let selected: &[&str] = match agents {
+        Some(agents) => agents,
+        None => &["claude", "codex"],
+    };
+    let mut roots = Vec::new();
+    for agent in selected {
+        let (candidate, source) = match *agent {
+            "claude" => agent_candidate(env, home, "CLAUDE_CONFIG_DIR", ".claude", "projects"),
+            "codex" => agent_candidate(env, home, "CODEX_HOME", ".codex", "sessions"),
+            _ => {
+                return Err(ApiError::Value(format!(
+                    "Unknown agent {}: expected 'claude' or 'codex'",
+                    python_str_repr(agent)
+                )));
+            }
+        };
+        push_root(&mut roots, agent, &candidate, source)?;
+        if *agent == "codex" && include_archived {
+            let archived = archived_sessions(&candidate);
+            push_root(&mut roots, agent, &archived, source)?;
+        }
+    }
+    Ok(roots)
+}
+
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
     use std::error::Error;
+    use std::fmt;
     use std::fs;
     use std::io;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use model::canonical::SessionEvent;
     use report::progress::{CancellationToken, OperationCancelled, ProgressEvent};
 
     use super::{
-        _check_impl, apply_plan, bound_max_file_bytes, check, check_bytes, check_dir, check_file,
-        display_path, is_missing, load_session_file, path_exists, plan, plan_repair,
-        python_float_text, python_str_repr, repair, repair_many, repair_preview, validate_session,
-        verify, ApiError, InMemoryPlan, ValidateSessionError, APPLY_RULE_SELECTION_UNAVAILABLE,
-        DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE,
-        DEFAULT_VIRTUAL_PATH, DETECT_FORMAT_UNAVAILABLE, LOAD_PLAN_UNAVAILABLE,
-        REPAIR_MANY_UNAVAILABLE, REPAIR_PREVIEW_UNAVAILABLE, SCAN_PATH_UNAVAILABLE,
-        VERIFY_UNAVAILABLE,
+        _check_impl, apply_plan, bound_max_file_bytes, build_internal_error_envelope, check,
+        check_bytes, check_dir, check_file, diff_sessions, discover_session_roots, display_path,
+        doctor_report, export_file, is_missing, load_session_file, path_exists, plan, plan_repair,
+        python_float_text, python_str_repr, repair, repair_many, repair_preview, stats_paths,
+        validate_session, verify, ApiError, DiscoveredRoot, InMemoryPlan, InternalErrorEnvelope,
+        ValidateSessionError, APPLY_RULE_SELECTION_UNAVAILABLE, DEFAULT_MAX_BYTES,
+        DEFAULT_MAX_FILES, DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE, DEFAULT_VIRTUAL_PATH,
+        DETECT_FORMAT_UNAVAILABLE, DIFF_SESSIONS_UNAVAILABLE, DOCTOR_REPORT_UNAVAILABLE,
+        EXPORT_TO_CANONICAL_UNAVAILABLE, INTERNAL_ERROR_CODE, INTERNAL_ERROR_VERDICT,
+        LOAD_PLAN_UNAVAILABLE, MINIMIZE_PATH_UNAVAILABLE, REPAIR_MANY_UNAVAILABLE,
+        REPAIR_PREVIEW_UNAVAILABLE, SCAN_PATH_UNAVAILABLE, SECRETS_TOKEN_HEX_UNAVAILABLE,
+        STATS_PATHS_UNAVAILABLE, VERIFY_UNAVAILABLE,
     };
     use crate::bundle::path_text;
 
@@ -3148,5 +3593,476 @@ mod tests {
             }
             ValidateSessionError::Schema(_) => panic!("loader ran before the exists check"),
         }
+    }
+
+    #[derive(Debug)]
+    struct SyntheticInternal;
+
+    impl fmt::Display for SyntheticInternal {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("Something unexpected broke")
+        }
+    }
+
+    impl Error for SyntheticInternal {}
+
+    #[test]
+    fn supplied_error_id_is_the_envelope_and_omitted_id_stops() {
+        let err = SyntheticInternal;
+        let envelope = build_internal_error_envelope(&err, Some("ERR-12345678"))
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            envelope,
+            InternalErrorEnvelope {
+                code: INTERNAL_ERROR_CODE,
+                error_id: "ERR-12345678".to_owned(),
+                message: "Something unexpected broke".to_owned(),
+                verdict: INTERNAL_ERROR_VERDICT,
+            }
+        );
+        assert_eq!(envelope.code, "INTERNAL_ERROR");
+        assert_eq!(envelope.verdict, "error");
+        assert_eq!(envelope.message, err.to_string());
+        let rendered = format!("{envelope:?}");
+        for absent in ["traceback", "Traceback", "SyntheticInternal", "DEBUG"] {
+            assert!(!rendered.contains(absent), "{absent}");
+        }
+        assert!(!envelope.message.contains('\n'));
+        assert!(!envelope.message.contains('\r'));
+
+        let spaced = build_internal_error_envelope(&err, Some("  ERR-1  "))
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(spaced.error_id, "  ERR-1  ");
+        assert_eq!(spaced.message, "Something unexpected broke");
+
+        let empty =
+            build_internal_error_envelope(&err, Some("")).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(empty.error_id, "");
+        assert_eq!(empty.code, "INTERNAL_ERROR");
+        assert_eq!(empty.verdict, "error");
+
+        let omitted = build_internal_error_envelope(&err, None).unwrap_err();
+        let again = build_internal_error_envelope(&err, None).unwrap_err();
+        assert_eq!(
+            omitted,
+            ApiError::Unsupported(SECRETS_TOKEN_HEX_UNAVAILABLE)
+        );
+        assert_eq!(again, omitted);
+        assert_eq!(
+            omitted.unsupported_message(),
+            Some(SECRETS_TOKEN_HEX_UNAVAILABLE)
+        );
+        assert_eq!(omitted.to_string(), "secrets.token_hex is not available");
+        assert!(Error::source(&omitted).is_none());
+        let text = omitted.to_string();
+        for absent in [
+            "Something unexpected broke",
+            "SyntheticInternal",
+            "ERR-",
+            "INTERNAL_ERROR",
+            "traceback",
+            "Traceback",
+            "\n",
+            "\r",
+        ] {
+            assert!(!text.contains(absent), "{absent}");
+        }
+    }
+
+    #[test]
+    fn doctor_stats_diff_and_export_stop_at_their_imports() {
+        let agents = ["cursor", "pyproject.toml"];
+        let from_doctor = must(doctor_report(Some(&agents), false));
+        let from_default = must(doctor_report(None, true));
+        assert_eq!(
+            from_doctor,
+            ApiError::Unsupported(DOCTOR_REPORT_UNAVAILABLE)
+        );
+        assert_eq!(from_default, from_doctor);
+        assert_eq!(
+            from_doctor.to_string(),
+            "sesslint.doctor.doctor_report is not available"
+        );
+        assert!(Error::source(&from_doctor).is_none());
+        assert_ne!(
+            from_doctor.to_string(),
+            "Unknown agent 'cursor': expected 'claude' or 'codex'"
+        );
+        let doctor_text = from_doctor.to_string();
+        for absent in ["cursor", "pyproject", "Unknown agent", "\n", "\r"] {
+            assert!(!doctor_text.contains(absent), "{absent}");
+        }
+
+        let later = Path::new("synthetic/\0sesslint-rx-cli-api-06-b");
+        let earlier = Path::new("synthetic/\0sesslint-rx-cli-api-06-a");
+        let paths = [later, earlier];
+        let from_stats = must(stats_paths(&paths, false, Some("UNIQUE_STATS_FORMAT")));
+        assert_eq!(from_stats, ApiError::Unsupported(STATS_PATHS_UNAVAILABLE));
+        assert_eq!(
+            from_stats.to_string(),
+            "sesslint.stats.stats_paths is not available"
+        );
+        assert!(!matches!(from_stats, ApiError::Io(_)));
+        assert!(Error::source(&from_stats).is_none());
+        let stats_text = from_stats.to_string();
+        for absent in ["UNIQUE_STATS_FORMAT", "synthetic", "\0", "\n", "\r"] {
+            assert!(!stats_text.contains(absent), "{absent}");
+        }
+        let empty: [&Path; 0] = [];
+        assert_eq!(must(stats_paths(&empty, true, None)), from_stats);
+        assert!(!Path::new("synthetic").exists());
+
+        let from_diff = must(diff_sessions(
+            Path::new("synthetic/\0sesslint-rx-cli-api-06-left"),
+            Path::new("synthetic/\0sesslint-rx-cli-api-06-right"),
+            Some("UNIQUE_DIFF_A"),
+            Some("UNIQUE_DIFF_B"),
+        ));
+        assert_eq!(from_diff, ApiError::Unsupported(DIFF_SESSIONS_UNAVAILABLE));
+        assert_eq!(
+            from_diff.to_string(),
+            "sesslint.diff.diff_sessions is not available"
+        );
+        assert!(!matches!(from_diff, ApiError::Io(_)));
+        let diff_text = from_diff.to_string();
+        for absent in [
+            "UNIQUE_DIFF_A",
+            "UNIQUE_DIFF_B",
+            "synthetic",
+            "\0",
+            "\n",
+            "\r",
+        ] {
+            assert!(!diff_text.contains(absent), "{absent}");
+        }
+        assert_eq!(
+            must(diff_sessions(existing_file(), existing_file(), None, None)),
+            from_diff
+        );
+        assert!(!from_diff.to_string().contains("Cargo"));
+
+        let output = Path::new("synthetic/sesslint-rx-cli-api-06-export.json");
+        assert!(!output.exists());
+        let from_export = must(export_file(
+            Path::new("synthetic/\0sesslint-rx-cli-api-06-source"),
+            output,
+            Some("UNIQUE_EXPORT_FORMAT"),
+        ));
+        assert_eq!(
+            from_export,
+            ApiError::Unsupported(EXPORT_TO_CANONICAL_UNAVAILABLE)
+        );
+        assert_eq!(
+            from_export.to_string(),
+            "sesslint.exporter.export_to_canonical is not available"
+        );
+        assert!(!matches!(from_export, ApiError::Io(_)));
+        let export_text = from_export.to_string();
+        for absent in ["UNIQUE_EXPORT_FORMAT", "synthetic", "\0", "\n", "\r"] {
+            assert!(!export_text.contains(absent), "{absent}");
+        }
+        assert!(!output.exists());
+        let manifest = existing_file();
+        let before = fs::metadata(manifest).expect("source metadata").len();
+        let from_real = must(export_file(manifest, output, None));
+        assert_eq!(from_real, from_export);
+        assert!(!output.exists());
+        assert!(!from_real.to_string().contains("Cargo"));
+        assert!(!from_real.to_string().contains("package"));
+        let after = fs::metadata(manifest).expect("source metadata").len();
+        assert_eq!(before, after);
+        assert!(!Path::new("synthetic").exists());
+    }
+
+    struct Sandbox {
+        path: PathBuf,
+    }
+
+    impl Sandbox {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "synthetic-rx-cli-api-06-{label}-{}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap_or_else(|err| panic!("temp dir: {err}"));
+            Self { path }
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn symlink_dir(original: &Path, link: &Path) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    #[test]
+    fn discover_session_roots_uses_injected_home_and_env() {
+        let sandbox = Sandbox::new("discover");
+        let home = sandbox.path.join("home");
+        let claude_projects = home.join(".claude").join("projects");
+        let codex_sessions = home.join(".codex").join("sessions");
+        fs::create_dir_all(&claude_projects).unwrap_or_else(|err| panic!("claude: {err}"));
+        fs::create_dir_all(&codex_sessions).unwrap_or_else(|err| panic!("codex: {err}"));
+        fs::write(claude_projects.join("child.txt"), b"")
+            .unwrap_or_else(|err| panic!("child: {err}"));
+
+        let roots = discover_session_roots(None, &[], &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].agent(), "claude");
+        assert_eq!(roots[0].path(), claude_projects.as_path());
+        assert!(roots[0].exists());
+        assert_eq!(roots[0].source(), "default");
+        assert_eq!(roots[1].agent(), "codex");
+        assert_eq!(roots[1].path(), codex_sessions.as_path());
+        assert!(roots[1].exists());
+        assert_eq!(roots[1].source(), "default");
+        assert!(roots.iter().all(|root| !root.path().ends_with("child.txt")));
+
+        let swapped = discover_session_roots(Some(&["codex", "claude"]), &[], &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            swapped
+                .iter()
+                .map(DiscoveredRoot::agent)
+                .collect::<Vec<_>>(),
+            ["codex", "claude"]
+        );
+
+        let ccfg = sandbox.path.join("ccfg");
+        let cx = sandbox.path.join("cx");
+        fs::create_dir_all(ccfg.join("projects")).unwrap_or_else(|err| panic!("ccfg: {err}"));
+        fs::create_dir_all(cx.join("sessions")).unwrap_or_else(|err| panic!("cx: {err}"));
+        let ccfg_text = ccfg.to_str().expect("ccfg text");
+        let padded = format!("  {ccfg_text}  ");
+        let env = [
+            ("claude_config_dir", "synthetic-ignored"),
+            ("CLAUDE_CONFIG_DIR", padded.as_str()),
+            ("CLAUDE_CONFIG_DIR", "synthetic-second"),
+            ("CODEX_HOME", ""),
+        ];
+        let mixed = discover_session_roots(None, &env, &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(mixed[0].path(), ccfg.join("projects").as_path());
+        assert_eq!(mixed[0].source(), "env");
+        assert!(mixed[0].exists());
+        assert_eq!(mixed[1].path(), codex_sessions.as_path());
+        assert_eq!(mixed[1].source(), "default");
+
+        let only_separator = [("CLAUDE_CONFIG_DIR", "\u{1c}"), ("CODEX_HOME", " \t")];
+        let defaults = discover_session_roots(None, &only_separator, &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(defaults[0].source(), "default");
+        assert_eq!(defaults[0].path(), claude_projects.as_path());
+        assert_eq!(defaults[1].source(), "default");
+        assert_eq!(defaults[1].path(), codex_sessions.as_path());
+
+        let cx_text = cx.to_str().expect("cx text");
+        let both = [("CLAUDE_CONFIG_DIR", ccfg_text), ("CODEX_HOME", cx_text)];
+        let from_env = discover_session_roots(Some(&["claude", "codex"]), &both, &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(from_env[0].path(), ccfg.join("projects").as_path());
+        assert_eq!(from_env[0].source(), "env");
+        assert_eq!(from_env[1].path(), cx.join("sessions").as_path());
+        assert_eq!(from_env[1].source(), "env");
+        assert!(from_env[1].exists());
+    }
+
+    #[test]
+    fn discover_session_roots_classifies_dirs_files_and_links() {
+        let sandbox = Sandbox::new("classify");
+        let home = sandbox.path.join("home");
+        fs::create_dir_all(home.join(".codex")).unwrap_or_else(|err| panic!("codex: {err}"));
+        fs::write(home.join(".codex").join("sessions"), b"")
+            .unwrap_or_else(|err| panic!("file: {err}"));
+        let roots = discover_session_roots(None, &[], &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(!roots[0].exists());
+        assert_eq!(
+            roots[0].path(),
+            home.join(".claude").join("projects").as_path()
+        );
+        assert!(!home.join(".claude").exists());
+        assert!(!roots[1].exists());
+        assert_eq!(roots[1].source(), "default");
+        assert!(home.join(".codex").join("sessions").is_file());
+
+        let real = sandbox.path.join("real-projects");
+        fs::create_dir_all(&real).unwrap_or_else(|err| panic!("real: {err}"));
+        fs::create_dir_all(home.join(".claude")).unwrap_or_else(|err| panic!("claude: {err}"));
+        let link = home.join(".claude").join("projects");
+        symlink_dir(&real, &link).unwrap_or_else(|err| panic!("symlink dir: {err}"));
+        let linked = fs::symlink_metadata(&link).unwrap_or_else(|err| panic!("lstat: {err}"));
+        assert!(linked.file_type().is_symlink());
+        let claude = discover_session_roots(Some(&["claude"]), &[], &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(claude.len(), 1);
+        assert_eq!(claude[0].path(), link.as_path());
+        assert!(!claude[0].exists());
+        assert!(real.is_dir());
+
+        let missing_home = sandbox.path.join("absent-home");
+        assert!(!missing_home.exists());
+        let absent = discover_session_roots(Some(&["claude"]), &[], &missing_home, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(absent.len(), 1);
+        assert!(!absent[0].exists());
+        assert!(!missing_home.exists());
+        assert!(!missing_home
+            .join(".claude")
+            .join("archived_sessions")
+            .exists());
+    }
+
+    #[test]
+    fn discover_session_roots_archives_only_codex_and_rejects_unknown_agents() {
+        let sandbox = Sandbox::new("archived");
+        let home = sandbox.path.join("home");
+        let archived = home.join(".codex").join("archived_sessions");
+        fs::create_dir_all(&archived).unwrap_or_else(|err| panic!("archived: {err}"));
+        fs::create_dir_all(home.join(".claude").join("projects"))
+            .unwrap_or_else(|err| panic!("projects: {err}"));
+        fs::create_dir_all(home.join(".claude").join("archived_sessions"))
+            .unwrap_or_else(|err| panic!("claude archived: {err}"));
+        let without = discover_session_roots(None, &[], &home, false)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(without.len(), 2);
+        assert!(without.iter().all(|root| root.path() != archived.as_path()));
+
+        let with = discover_session_roots(None, &[], &home, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(with.len(), 3);
+        assert_eq!(with[0].agent(), "claude");
+        assert_eq!(
+            with[0].path(),
+            home.join(".claude").join("projects").as_path()
+        );
+        assert_eq!(with[1].agent(), "codex");
+        assert!(!with[1].exists());
+        assert_eq!(with[1].source(), "default");
+        assert_eq!(
+            with[1].path(),
+            home.join(".codex").join("sessions").as_path()
+        );
+        assert_eq!(with[2].agent(), "codex");
+        assert_eq!(with[2].path(), archived.as_path());
+        assert!(with[2].exists());
+        assert_eq!(with[2].source(), with[1].source());
+        assert!(!home
+            .join(".codex")
+            .join("sessions")
+            .join("archived_sessions")
+            .exists());
+
+        let claude_only = discover_session_roots(Some(&["claude"]), &[], &home, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(claude_only.len(), 1);
+        assert_eq!(claude_only[0].agent(), "claude");
+
+        let cx = sandbox.path.join("cx");
+        fs::create_dir_all(cx.join("archived_sessions"))
+            .unwrap_or_else(|err| panic!("cx archived: {err}"));
+        let cx_text = cx.to_str().expect("cx text");
+        let env = [("CODEX_HOME", cx_text)];
+        let from_env = discover_session_roots(Some(&["codex"]), &env, &home, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(from_env.len(), 2);
+        assert_eq!(from_env[0].path(), cx.join("sessions").as_path());
+        assert_eq!(from_env[0].source(), "env");
+        assert!(!from_env[0].exists());
+        assert_eq!(from_env[1].path(), cx.join("archived_sessions").as_path());
+        assert_eq!(from_env[1].source(), "env");
+        assert!(from_env[1].exists());
+        assert!(!cx.join("sessions").exists());
+
+        let none: [&str; 0] = [];
+        let empty = discover_session_roots(Some(&none), &[], &home, true)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(empty.is_empty());
+
+        let unknown_home = Path::new("synthetic/sesslint-rx-cli-api-06-nohome");
+        assert!(!unknown_home.exists());
+        let unknown =
+            discover_session_roots(Some(&["cursor"]), &[], unknown_home, false).unwrap_err();
+        assert_eq!(
+            unknown.to_string(),
+            "Unknown agent 'cursor': expected 'claude' or 'codex'"
+        );
+        assert_eq!(
+            unknown,
+            ApiError::Value("Unknown agent 'cursor': expected 'claude' or 'codex'".to_owned())
+        );
+        assert!(unknown.unsupported_message().is_none());
+        assert!(Error::source(&unknown).is_none());
+        assert!(!unknown.to_string().contains('\\'));
+        assert!(!unknown.to_string().contains('/'));
+        assert!(!unknown_home.exists());
+
+        let quoted =
+            discover_session_roots(Some(&["bad'agent"]), &[], unknown_home, true).unwrap_err();
+        assert_eq!(
+            quoted.to_string(),
+            format!(
+                "Unknown agent {}: expected 'claude' or 'codex'",
+                python_str_repr("bad'agent")
+            )
+        );
+        assert_eq!(
+            quoted.to_string(),
+            "Unknown agent 'bad\\'agent': expected 'claude' or 'codex'"
+        );
+
+        let after_known =
+            discover_session_roots(Some(&["claude", "cursor"]), &[], &home, true).unwrap_err();
+        assert_eq!(after_known, unknown);
+        assert!(home.join(".claude").join("projects").is_dir());
+    }
+
+    #[test]
+    fn discovered_root_to_dict_stops_before_minimize_path() {
+        let root = DiscoveredRoot {
+            agent: "claude".to_owned(),
+            path: PathBuf::from("synthetic/UNIQUE_ROOT_PATH"),
+            exists: true,
+            source: "default".to_owned(),
+        };
+        assert_eq!(root.agent(), "claude");
+        assert_eq!(root.path(), Path::new("synthetic/UNIQUE_ROOT_PATH"));
+        assert!(root.exists());
+        assert_eq!(root.source(), "default");
+        let error = must(root.to_dict());
+        assert_eq!(error, ApiError::Unsupported(MINIMIZE_PATH_UNAVAILABLE));
+        assert_eq!(error.unsupported_message(), Some(MINIMIZE_PATH_UNAVAILABLE));
+        assert_eq!(
+            error.to_string(),
+            "sesslint.report.minimize_path is not available"
+        );
+        assert!(Error::source(&error).is_none());
+        assert!(!matches!(error, ApiError::Io(_)));
+        let text = error.to_string();
+        for absent in [
+            "UNIQUE_ROOT_PATH",
+            "synthetic",
+            "claude",
+            "default",
+            "~",
+            "\n",
+            "\r",
+        ] {
+            assert!(!text.contains(absent), "{absent}");
+        }
+        assert!(!Path::new("synthetic").exists());
     }
 }
