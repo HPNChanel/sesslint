@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.outcome-contract.v1 schema parity. Constraints and expected rejections come from the pinned schema. Documents are constructed objects, not contract_from_dict output. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.outcome-contract.v1/generate",
+  "known_parity_gaps": [
+    "contract.py imports sesslint._canonical_codec at module scope. That import is refused, so contract_from_dict and canonical_json_bytes are not executed. This checker writes no canonical bytes.",
+    "tests/outcome/test_outcome_contract.py is not one schema judgment. Every row is not_applicable. The orders fixture is not copied.",
+    "Bound order, on_time without due, duplicate ids, key width, and a decisive condition are producer rules. The schema does not state them, so those documents are accepted.",
+    "Duplicate JSON object keys are a syntax refusal. Python json.loads keeps the last key, so that case is not a vector.",
+    "pattern \\S is unanchored. U+001C, U+001D, U+001E, U+001F, U+0085, and U+FEFF are a Python re / ECMA-262 split. Those strings are unsupported, not vectors.",
+    "i128::MIN is inside the signed 128-bit range, but the checker does not prove that token. It is not a vector.",
+    "The 1 MiB load limit and the UTF-8 file check are producer behavior. validate reads one Unicode string."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

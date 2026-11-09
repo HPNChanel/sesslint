@@ -1,0 +1,5698 @@
+{
+  "facts": {
+    "condition_types": [
+      "any_of",
+      "count",
+      "equals",
+      "exists",
+      "on_time",
+      "one_of",
+      "range",
+      "required",
+      "route",
+      "type"
+    ],
+    "conditions_max_items": 64,
+    "conditions_min_items": 1,
+    "field_max_length": 256,
+    "id": "https://sesslint.dev/schemas/sesslint.outcome-contract.v1.json",
+    "id_pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+    "keywords": [
+      "$defs",
+      "$id",
+      "$ref",
+      "$schema",
+      "additionalProperties",
+      "anyOf",
+      "const",
+      "description",
+      "enum",
+      "items",
+      "maxItems",
+      "maxLength",
+      "maximum",
+      "minItems",
+      "minLength",
+      "minimum",
+      "oneOf",
+      "pattern",
+      "properties",
+      "required",
+      "title",
+      "type",
+      "uniqueItems"
+    ],
+    "pin_schema_version": "sesslint.outcome-contract/v1",
+    "predicate_ops": [
+      "absent",
+      "eq",
+      "gt",
+      "gte",
+      "in",
+      "lt",
+      "lte",
+      "ne",
+      "not_in",
+      "present"
+    ],
+    "property_names": [
+      "schema_version",
+      "name",
+      "version",
+      "description",
+      "key",
+      "eligibility",
+      "due",
+      "conditions"
+    ],
+    "required": [
+      "schema_version",
+      "name",
+      "version",
+      "key",
+      "conditions"
+    ],
+    "schema_version_const": "sesslint.outcome-contract/v1",
+    "text_pattern": "\\S",
+    "value_kinds": [
+      "string",
+      "integer",
+      "number",
+      "boolean",
+      "date-time"
+    ],
+    "within_seconds_maximum": 316224000,
+    "within_seconds_minimum": 0
+  },
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "synthetic_minimal",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "description_present",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "description": "d",
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "name_max_length",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "name_internal_space",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": " a",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "version_max_length",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "due_null",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": null,
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "due_zero",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": 0
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "due_max",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": 316224000
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "key_arrays",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": [
+            "a",
+            "b"
+          ],
+          "target": [
+            "c",
+            "d"
+          ]
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "key_width_differs",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": [
+            "a",
+            "b"
+          ],
+          "target": "r"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "key_eight_fields",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": [
+            "f0",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7"
+          ],
+          "target": "r"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_empty",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_present",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "present"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_absent",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "absent"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_eq_string",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "eq",
+            "value": "a"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_eq_int",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "eq",
+            "value": 1
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_eq_bool",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "eq",
+            "value": true
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_eq_null",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "eq",
+            "value": null
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_gt_fraction",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "gt",
+            "value": 1.5
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_in_scalars",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "in",
+            "values": [
+              "a",
+              1,
+              true,
+              null
+            ]
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_not_in",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "not_in",
+            "values": [
+              "a"
+            ]
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "eligibility_full",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_count",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "max": 2,
+            "min": 0,
+            "type": "count"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_count_max_null",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "max": null,
+            "min": 1,
+            "type": "count"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_required",
+      "instance": {
+        "conditions": [
+          {
+            "allow_empty": false,
+            "allow_null": true,
+            "field": "s",
+            "id": "e",
+            "type": "required"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_type_string",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "kind": "string",
+            "type": "type"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_type_integer",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "kind": "integer",
+            "type": "type"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_type_number",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "kind": "number",
+            "type": "type"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_type_boolean",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "kind": "boolean",
+            "type": "type"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_type_date_time",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "kind": "date-time",
+            "type": "type"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_one_of",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "normalize": [
+              "trim"
+            ],
+            "type": "one_of",
+            "values": [
+              "a",
+              1,
+              false,
+              null
+            ]
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_one_of_both_normalize",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "normalize": [
+              "casefold",
+              "trim"
+            ],
+            "type": "one_of",
+            "values": [
+              "a"
+            ]
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_equals",
+      "instance": {
+        "conditions": [
+          {
+            "field": "s",
+            "id": "e",
+            "normalize": [
+              "casefold"
+            ],
+            "source_field": "t",
+            "type": "equals"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_range_min",
+      "instance": {
+        "conditions": [
+          {
+            "field": "n",
+            "id": "e",
+            "min": 1.5,
+            "type": "range"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_range_max",
+      "instance": {
+        "conditions": [
+          {
+            "field": "n",
+            "id": "e",
+            "max": 2,
+            "type": "range"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_range_min_null",
+      "instance": {
+        "conditions": [
+          {
+            "field": "n",
+            "id": "e",
+            "max": 1,
+            "min": null,
+            "type": "range"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_route",
+      "instance": {
+        "conditions": [
+          {
+            "field": "w",
+            "id": "e",
+            "type": "route",
+            "values": [
+              "a"
+            ],
+            "when": [
+              {
+                "field": "f",
+                "op": "present"
+              }
+            ]
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "on_time_with_due",
+      "instance": {
+        "conditions": [
+          {
+            "basis": "target_time",
+            "field": "t",
+            "id": "e",
+            "type": "on_time"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": 1
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "on_time_without_due",
+      "instance": {
+        "conditions": [
+          {
+            "basis": "target_time",
+            "field": "t",
+            "id": "e",
+            "type": "on_time"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "on_time_observation",
+      "instance": {
+        "conditions": [
+          {
+            "basis": "observation",
+            "id": "e",
+            "type": "on_time"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "condition_any_of",
+      "instance": {
+        "conditions": [
+          {
+            "conditions": [
+              {
+                "id": "a",
+                "type": "exists"
+              },
+              {
+                "id": "b",
+                "min": 1,
+                "type": "count"
+              }
+            ],
+            "id": "o",
+            "type": "any_of"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "advisory_only",
+      "instance": {
+        "conditions": [
+          {
+            "advisory": true,
+            "description": "d",
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "all_disabled",
+      "instance": {
+        "conditions": [
+          {
+            "disabled": "later",
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "duplicate_ids",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          },
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "count_bounds_reversed",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "max": 2,
+            "min": 3,
+            "type": "count"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "conditions_full",
+      "instance": {
+        "conditions": [
+          {
+            "id": "c00",
+            "type": "exists"
+          },
+          {
+            "id": "c01",
+            "type": "exists"
+          },
+          {
+            "id": "c02",
+            "type": "exists"
+          },
+          {
+            "id": "c03",
+            "type": "exists"
+          },
+          {
+            "id": "c04",
+            "type": "exists"
+          },
+          {
+            "id": "c05",
+            "type": "exists"
+          },
+          {
+            "id": "c06",
+            "type": "exists"
+          },
+          {
+            "id": "c07",
+            "type": "exists"
+          },
+          {
+            "id": "c08",
+            "type": "exists"
+          },
+          {
+            "id": "c09",
+            "type": "exists"
+          },
+          {
+            "id": "c10",
+            "type": "exists"
+          },
+          {
+            "id": "c11",
+            "type": "exists"
+          },
+          {
+            "id": "c12",
+            "type": "exists"
+          },
+          {
+            "id": "c13",
+            "type": "exists"
+          },
+          {
+            "id": "c14",
+            "type": "exists"
+          },
+          {
+            "id": "c15",
+            "type": "exists"
+          },
+          {
+            "id": "c16",
+            "type": "exists"
+          },
+          {
+            "id": "c17",
+            "type": "exists"
+          },
+          {
+            "id": "c18",
+            "type": "exists"
+          },
+          {
+            "id": "c19",
+            "type": "exists"
+          },
+          {
+            "id": "c20",
+            "type": "exists"
+          },
+          {
+            "id": "c21",
+            "type": "exists"
+          },
+          {
+            "id": "c22",
+            "type": "exists"
+          },
+          {
+            "id": "c23",
+            "type": "exists"
+          },
+          {
+            "id": "c24",
+            "type": "exists"
+          },
+          {
+            "id": "c25",
+            "type": "exists"
+          },
+          {
+            "id": "c26",
+            "type": "exists"
+          },
+          {
+            "id": "c27",
+            "type": "exists"
+          },
+          {
+            "id": "c28",
+            "type": "exists"
+          },
+          {
+            "id": "c29",
+            "type": "exists"
+          },
+          {
+            "id": "c30",
+            "type": "exists"
+          },
+          {
+            "id": "c31",
+            "type": "exists"
+          },
+          {
+            "id": "c32",
+            "type": "exists"
+          },
+          {
+            "id": "c33",
+            "type": "exists"
+          },
+          {
+            "id": "c34",
+            "type": "exists"
+          },
+          {
+            "id": "c35",
+            "type": "exists"
+          },
+          {
+            "id": "c36",
+            "type": "exists"
+          },
+          {
+            "id": "c37",
+            "type": "exists"
+          },
+          {
+            "id": "c38",
+            "type": "exists"
+          },
+          {
+            "id": "c39",
+            "type": "exists"
+          },
+          {
+            "id": "c40",
+            "type": "exists"
+          },
+          {
+            "id": "c41",
+            "type": "exists"
+          },
+          {
+            "id": "c42",
+            "type": "exists"
+          },
+          {
+            "id": "c43",
+            "type": "exists"
+          },
+          {
+            "id": "c44",
+            "type": "exists"
+          },
+          {
+            "id": "c45",
+            "type": "exists"
+          },
+          {
+            "id": "c46",
+            "type": "exists"
+          },
+          {
+            "id": "c47",
+            "type": "exists"
+          },
+          {
+            "id": "c48",
+            "type": "exists"
+          },
+          {
+            "id": "c49",
+            "type": "exists"
+          },
+          {
+            "id": "c50",
+            "type": "exists"
+          },
+          {
+            "id": "c51",
+            "type": "exists"
+          },
+          {
+            "id": "c52",
+            "type": "exists"
+          },
+          {
+            "id": "c53",
+            "type": "exists"
+          },
+          {
+            "id": "c54",
+            "type": "exists"
+          },
+          {
+            "id": "c55",
+            "type": "exists"
+          },
+          {
+            "id": "c56",
+            "type": "exists"
+          },
+          {
+            "id": "c57",
+            "type": "exists"
+          },
+          {
+            "id": "c58",
+            "type": "exists"
+          },
+          {
+            "id": "c59",
+            "type": "exists"
+          },
+          {
+            "id": "c60",
+            "type": "exists"
+          },
+          {
+            "id": "c61",
+            "type": "exists"
+          },
+          {
+            "id": "c62",
+            "type": "exists"
+          },
+          {
+            "id": "c63",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "id_max_length",
+      "instance": {
+        "conditions": [
+          {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_name_unicode",
+      "raw": "{\"conditions\":[{\"id\":\"e\",\"type\":\"exists\"}],\"key\":{\"source\":\"id\",\"target\":\"ref\"},\"name\":\"caf\\u00e9\",\"schema_version\":\"sesslint.outcome-contract/v1\",\"version\":\"1\"}",
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_minimal_spaced",
+      "raw": "{\n  \"conditions\": [\n    {\n      \"id\": \"e\",\n      \"type\": \"exists\"\n    }\n  ],\n  \"key\": {\n    \"source\": \"id\",\n    \"target\": \"ref\"\n  },\n  \"name\": \"c\",\n  \"schema_version\": \"sesslint.outcome-contract/v1\",\n  \"version\": \"1\"\n}\n",
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_due_one_point_zero",
+      "raw": "{\"conditions\":[{\"id\":\"e\",\"type\":\"exists\"}],\"due\":{\"source_time_field\":\"at\",\"within_seconds\":1.0},\"key\":{\"source\":\"id\",\"target\":\"ref\"},\"name\":\"c\",\"schema_version\":\"sesslint.outcome-contract/v1\",\"version\":\"1\"}",
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {},
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": [],
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x",
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null,
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true,
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1,
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "name",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_name",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_version",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "key",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_key",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "conditions",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_conditions",
+      "instance": {
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "extra": 1,
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "name",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_missing_name_and_extra",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "extra": 1,
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_extra_and_bad_version",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "extra": 1,
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "other/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "other/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_number",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": 1,
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/name"
+      },
+      "id": "name_empty",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/name"
+      },
+      "id": "name_whitespace",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "   ",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxLength",
+        "ok": false,
+        "path": "/name"
+      },
+      "id": "name_too_long",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/name"
+      },
+      "id": "name_number",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": 1,
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "version_empty",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": ""
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxLength",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "version_too_long",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/description"
+      },
+      "id": "description_empty",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "description": "",
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/description"
+      },
+      "id": "description_whitespace",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "description": "   ",
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/key"
+      },
+      "id": "key_type",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": [],
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "source",
+        "keyword": "required",
+        "ok": false,
+        "path": "/key"
+      },
+      "id": "key_missing_source_and_extra",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "extra": 1,
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/key"
+      },
+      "id": "key_extra",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "extra": 1,
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/key/source"
+      },
+      "id": "key_source_number",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": 1,
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/key/source"
+      },
+      "id": "key_source_empty_array",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": [],
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/key/source"
+      },
+      "id": "key_source_too_many",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": [
+            "f0",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7",
+            "f8"
+          ],
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/due"
+      },
+      "id": "due_string",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": "x",
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/due"
+      },
+      "id": "due_empty_object",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {},
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/due"
+      },
+      "id": "due_negative",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": -1
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/due"
+      },
+      "id": "due_above_max",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": 316224001
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": "/due"
+      },
+      "id": "due_bool",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "due": {
+          "source_time_field": "at",
+          "within_seconds": true
+        },
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minItems",
+        "ok": false,
+        "path": "/conditions"
+      },
+      "id": "conditions_empty",
+      "instance": {
+        "conditions": [],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxItems",
+        "ok": false,
+        "path": "/conditions"
+      },
+      "id": "conditions_too_many",
+      "instance": {
+        "conditions": [
+          {
+            "id": "c00",
+            "type": "exists"
+          },
+          {
+            "id": "c01",
+            "type": "exists"
+          },
+          {
+            "id": "c02",
+            "type": "exists"
+          },
+          {
+            "id": "c03",
+            "type": "exists"
+          },
+          {
+            "id": "c04",
+            "type": "exists"
+          },
+          {
+            "id": "c05",
+            "type": "exists"
+          },
+          {
+            "id": "c06",
+            "type": "exists"
+          },
+          {
+            "id": "c07",
+            "type": "exists"
+          },
+          {
+            "id": "c08",
+            "type": "exists"
+          },
+          {
+            "id": "c09",
+            "type": "exists"
+          },
+          {
+            "id": "c10",
+            "type": "exists"
+          },
+          {
+            "id": "c11",
+            "type": "exists"
+          },
+          {
+            "id": "c12",
+            "type": "exists"
+          },
+          {
+            "id": "c13",
+            "type": "exists"
+          },
+          {
+            "id": "c14",
+            "type": "exists"
+          },
+          {
+            "id": "c15",
+            "type": "exists"
+          },
+          {
+            "id": "c16",
+            "type": "exists"
+          },
+          {
+            "id": "c17",
+            "type": "exists"
+          },
+          {
+            "id": "c18",
+            "type": "exists"
+          },
+          {
+            "id": "c19",
+            "type": "exists"
+          },
+          {
+            "id": "c20",
+            "type": "exists"
+          },
+          {
+            "id": "c21",
+            "type": "exists"
+          },
+          {
+            "id": "c22",
+            "type": "exists"
+          },
+          {
+            "id": "c23",
+            "type": "exists"
+          },
+          {
+            "id": "c24",
+            "type": "exists"
+          },
+          {
+            "id": "c25",
+            "type": "exists"
+          },
+          {
+            "id": "c26",
+            "type": "exists"
+          },
+          {
+            "id": "c27",
+            "type": "exists"
+          },
+          {
+            "id": "c28",
+            "type": "exists"
+          },
+          {
+            "id": "c29",
+            "type": "exists"
+          },
+          {
+            "id": "c30",
+            "type": "exists"
+          },
+          {
+            "id": "c31",
+            "type": "exists"
+          },
+          {
+            "id": "c32",
+            "type": "exists"
+          },
+          {
+            "id": "c33",
+            "type": "exists"
+          },
+          {
+            "id": "c34",
+            "type": "exists"
+          },
+          {
+            "id": "c35",
+            "type": "exists"
+          },
+          {
+            "id": "c36",
+            "type": "exists"
+          },
+          {
+            "id": "c37",
+            "type": "exists"
+          },
+          {
+            "id": "c38",
+            "type": "exists"
+          },
+          {
+            "id": "c39",
+            "type": "exists"
+          },
+          {
+            "id": "c40",
+            "type": "exists"
+          },
+          {
+            "id": "c41",
+            "type": "exists"
+          },
+          {
+            "id": "c42",
+            "type": "exists"
+          },
+          {
+            "id": "c43",
+            "type": "exists"
+          },
+          {
+            "id": "c44",
+            "type": "exists"
+          },
+          {
+            "id": "c45",
+            "type": "exists"
+          },
+          {
+            "id": "c46",
+            "type": "exists"
+          },
+          {
+            "id": "c47",
+            "type": "exists"
+          },
+          {
+            "id": "c48",
+            "type": "exists"
+          },
+          {
+            "id": "c49",
+            "type": "exists"
+          },
+          {
+            "id": "c50",
+            "type": "exists"
+          },
+          {
+            "id": "c51",
+            "type": "exists"
+          },
+          {
+            "id": "c52",
+            "type": "exists"
+          },
+          {
+            "id": "c53",
+            "type": "exists"
+          },
+          {
+            "id": "c54",
+            "type": "exists"
+          },
+          {
+            "id": "c55",
+            "type": "exists"
+          },
+          {
+            "id": "c56",
+            "type": "exists"
+          },
+          {
+            "id": "c57",
+            "type": "exists"
+          },
+          {
+            "id": "c58",
+            "type": "exists"
+          },
+          {
+            "id": "c59",
+            "type": "exists"
+          },
+          {
+            "id": "c60",
+            "type": "exists"
+          },
+          {
+            "id": "c61",
+            "type": "exists"
+          },
+          {
+            "id": "c62",
+            "type": "exists"
+          },
+          {
+            "id": "c63",
+            "type": "exists"
+          },
+          {
+            "id": "c64",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/conditions"
+      },
+      "id": "conditions_type",
+      "instance": {
+        "conditions": {},
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxItems",
+        "ok": false,
+        "path": "/eligibility"
+      },
+      "id": "eligibility_too_many",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          },
+          {
+            "field": "f",
+            "op": "present"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "id",
+        "keyword": "required",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "condition_empty",
+      "instance": {
+        "conditions": [
+          {}
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "condition_bad_type",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "magic"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "exists_extra",
+      "instance": {
+        "conditions": [
+          {
+            "fieldd": "a",
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "id_too_long",
+      "instance": {
+        "conditions": [
+          {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "id_bad_start",
+      "instance": {
+        "conditions": [
+          {
+            "id": "-a",
+            "type": "exists"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/conditions/0"
+      },
+      "id": "nested_any_of",
+      "instance": {
+        "conditions": [
+          {
+            "conditions": [
+              {
+                "conditions": [
+                  {
+                    "id": "a",
+                    "type": "exists"
+                  },
+                  {
+                    "id": "b",
+                    "type": "exists"
+                  }
+                ],
+                "id": "n",
+                "type": "any_of"
+              },
+              {
+                "id": "c",
+                "type": "exists"
+              }
+            ],
+            "id": "o",
+            "type": "any_of"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/eligibility/0"
+      },
+      "id": "predicate_present_value",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "present",
+            "value": 1
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/eligibility/0"
+      },
+      "id": "predicate_eq_missing_value",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "eq"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": "/eligibility/0"
+      },
+      "id": "predicate_unknown_op",
+      "instance": {
+        "conditions": [
+          {
+            "id": "e",
+            "type": "exists"
+          }
+        ],
+        "eligibility": [
+          {
+            "field": "f",
+            "op": "like"
+          }
+        ],
+        "key": {
+          "source": "id",
+          "target": "ref"
+        },
+        "name": "c",
+        "schema_version": "sesslint.outcome-contract/v1",
+        "version": "1"
+      },
+      "schema_pointer": ""
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": ""
+      },
+      "id": "id_empty",
+      "instance": "",
+      "schema_pointer": "/$defs/id"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "id_ok",
+      "instance": "A.b_c-1",
+      "schema_pointer": "/$defs/id"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "id_pattern_max",
+      "instance": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "schema_pointer": "/$defs/id"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": ""
+      },
+      "id": "id_pattern_over",
+      "instance": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "schema_pointer": "/$defs/id"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": ""
+      },
+      "id": "id_pattern_dash",
+      "instance": "-a",
+      "schema_pointer": "/$defs/id"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "field_space",
+      "instance": " ",
+      "schema_pointer": "/$defs/field"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": ""
+      },
+      "id": "field_empty",
+      "instance": "",
+      "schema_pointer": "/$defs/field"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "field_max",
+      "instance": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "schema_pointer": "/$defs/field"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxLength",
+        "ok": false,
+        "path": ""
+      },
+      "id": "field_over",
+      "instance": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "schema_pointer": "/$defs/field"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": ""
+      },
+      "id": "text_spaces",
+      "instance": "   ",
+      "schema_pointer": "/$defs/text"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "text_ok",
+      "instance": " a",
+      "schema_pointer": "/$defs/text"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": ""
+      },
+      "id": "within_negative",
+      "instance": -1,
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maximum",
+        "ok": false,
+        "path": ""
+      },
+      "id": "within_above_max",
+      "instance": 316224001,
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "within_zero",
+      "instance": 0,
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "within_max",
+      "instance": 316224000,
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "within_bool",
+      "instance": true,
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "within_one_point_zero",
+      "raw": "1.0",
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "within_exponent",
+      "raw": "1e2",
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "within_neg_zero",
+      "raw": "-0",
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "within_fraction",
+      "raw": "1.5",
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "within_i128_overflow",
+      "raw": "170141183460469231731687303715884105728",
+      "schema_pointer": "/properties/due/anyOf/1/properties/within_seconds"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": ""
+      },
+      "id": "normalize_duplicate",
+      "instance": [
+        "trim",
+        "trim"
+      ],
+      "schema_pointer": "/$defs/normalize"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "normalize_ok",
+      "instance": [
+        "trim",
+        "casefold"
+      ],
+      "schema_pointer": "/$defs/normalize"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/0"
+      },
+      "id": "normalize_unknown",
+      "instance": [
+        "stem"
+      ],
+      "schema_pointer": "/$defs/normalize"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "normalize_empty",
+      "instance": [],
+      "schema_pointer": "/$defs/normalize"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": ""
+      },
+      "id": "kind_unknown",
+      "instance": "magic",
+      "schema_pointer": "/$defs/branch/oneOf/3/properties/kind"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_string",
+      "instance": "string",
+      "schema_pointer": "/$defs/branch/oneOf/3/properties/kind"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": ""
+      },
+      "id": "count_max_zero",
+      "instance": 0,
+      "schema_pointer": "/$defs/branch/oneOf/1/properties/max"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "count_max_null",
+      "instance": null,
+      "schema_pointer": "/$defs/branch/oneOf/1/properties/max"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "count_max_one",
+      "instance": 1,
+      "schema_pointer": "/$defs/branch/oneOf/1/properties/max"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "anyOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "range_missing_bounds",
+      "instance": {
+        "field": "n"
+      },
+      "schema_pointer": "/$defs/branch/oneOf/6"
+    },
+    {
+      "expected": {
+        "detail": "field",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "range_missing_field",
+      "instance": {
+        "min": 1
+      },
+      "schema_pointer": "/$defs/branch/oneOf/6"
+    },
+    {
+      "expected": {
+        "detail": "value",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "present_extra_value",
+      "instance": {
+        "field": "f",
+        "op": "present",
+        "value": 1
+      },
+      "schema_pointer": "/$defs/predicate/oneOf/0"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "number_value_bool",
+      "instance": true,
+      "schema_pointer": "/$defs/predicate/oneOf/2/properties/value"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "number_value_fraction",
+      "instance": 1.5,
+      "schema_pointer": "/$defs/predicate/oneOf/2/properties/value"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minItems",
+        "ok": false,
+        "path": ""
+      },
+      "id": "values_empty",
+      "instance": [],
+      "schema_pointer": "/$defs/values"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "values_ok",
+      "instance": [
+        "a",
+        1,
+        false,
+        null
+      ],
+      "schema_pointer": "/$defs/values"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/1"
+      },
+      "id": "values_bad_item",
+      "instance": [
+        1,
+        {}
+      ],
+      "schema_pointer": "/$defs/values"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxItems",
+        "ok": false,
+        "path": ""
+      },
+      "id": "values_too_many",
+      "instance": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "schema_pointer": "/$defs/values"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "values_full",
+      "instance": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "schema_pointer": "/$defs/values"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": ""
+      },
+      "id": "key_array_duplicate",
+      "instance": [
+        "a",
+        "a"
+      ],
+      "schema_pointer": "/$defs/key_fields/anyOf/1"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "key_array_ok",
+      "instance": [
+        "a",
+        "b"
+      ],
+      "schema_pointer": "/$defs/key_fields/anyOf/1"
+    }
+  ]
+}

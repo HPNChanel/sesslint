@@ -1,0 +1,70 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.outcome.contract",
+  "not_applicable_count": 10,
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "note": "The test reads fixtures/outcome/orders/contract.json, calls assert_schema, then load_contract, and asserts source_key, the first condition id, and warnings(). validate judges one document. It does not read that fixture or build a contract. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_fixture_contract_loads_and_matches_schema",
+      "vector_id": null
+    },
+    {
+      "note": "The test calls contract_from_dict on an empty conditions list and asserts a producer problem string. validate does not build a contract. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_empty_contract_is_an_error_not_a_pass",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized contract_from_dict sweep. Several needles are cross-field rules the schema leaves to the producer. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_invalid_contracts_are_rejected",
+      "vector_id": null
+    },
+    {
+      "note": "Two contract_from_dict calls. The assertions look for producer strings about nesting and flags. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_any_of_cannot_nest_or_hide_flags",
+      "vector_id": null
+    },
+    {
+      "note": "The test requires at least three producer problems from one call. validate returns one failure. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_every_problem_is_reported_at_once",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized load_contract over duplicate keys, NaN, a truncated array, and a BOM. It expects ContractError. Duplicate keys are a syntax refusal in this checker, so that text is not a vector. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_load_rejects_non_strict_json",
+      "vector_id": null
+    },
+    {
+      "note": "The test writes an oversized file and a non-UTF-8 file and expects ContractError. validate reads one Unicode string. It does not apply the byte-size limit. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_load_rejects_oversized_and_non_utf8",
+      "vector_id": null
+    },
+    {
+      "note": "The test compares sha256 values from contract_from_dict. Hashing is not a schema keyword. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_fingerprint_ignores_key_order_but_not_values",
+      "vector_id": null
+    },
+    {
+      "note": "The test builds a contract and joins warnings(). The schema does not state warnings. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_warnings_flag_gaps_without_failing",
+      "vector_id": null
+    },
+    {
+      "note": "The test loads a fixture twice and compares explain_contract text. That text is not a schema document, and the fixture is not copied. Not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_contract.py::test_explain_is_deterministic_and_lists_every_condition",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.outcome-contract.v1.json",
+  "test_file": "tests/outcome/test_outcome_contract.py"
+}

@@ -27,6 +27,8 @@ pub mod diff;
 pub mod diff_schema;
 #[path = "schema/sesslint.stats.v1.rs"]
 pub mod stats_schema;
+#[path = "schema/sesslint.outcome-contract.v1.rs"]
+pub mod outcome_contract_schema;
 pub mod doctor;
 pub mod export;
 pub mod hook;

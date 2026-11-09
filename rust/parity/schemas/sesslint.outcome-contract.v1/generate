@@ -1,0 +1,1717 @@
+#!/usr/bin/env python3
+"""Generate sesslint.outcome-contract.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. ``sesslint.*`` imports
+are refused. ``contract.py`` is read with ``ast`` and is not executed, so
+``canonical_json_bytes`` is not called and no canonical document is invented.
+No network.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib
+import importlib.abc
+import json
+import math
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = (
+    ROOT / "rust" / "crates" / "cli" / "src" / "schema" / "sesslint.outcome-contract.v1.rs"
+)
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.outcome-contract.v1.json"
+CONTRACT_GIT = f"{PYTHON_COMMIT}:src/sesslint/outcome/contract.py"
+TEST_GIT = f"{PYTHON_COMMIT}:tests/outcome/test_outcome_contract.py"
+GENERATOR = "rust/parity/schemas/sesslint.outcome-contract.v1/generate"
+TEST_FILE = "tests/outcome/test_outcome_contract.py"
+TEXT_PATTERN = "\\S"
+ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+CHECK_MAX_DEPTH = 32
+_MISSING = object()
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "maximum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "$ref",
+    "$defs",
+    "anyOf",
+    "oneOf",
+}
+ALLOWED_FAILURES = {
+    "additionalProperties",
+    "anyOf",
+    "const",
+    "enum",
+    "maxItems",
+    "maxLength",
+    "maximum",
+    "minItems",
+    "minLength",
+    "minimum",
+    "oneOf",
+    "pattern",
+    "required",
+    "type",
+    "uniqueItems",
+}
+TYPE_NAMES = {"object", "array", "string", "boolean", "null", "integer", "number"}
+AMBIGUOUS_SPACE = {0x001C, 0x001D, 0x001E, 0x001F, 0x0085, 0xFEFF}
+PROVEN_SPACE = {
+    0x0009,
+    0x000A,
+    0x000B,
+    0x000C,
+    0x000D,
+    0x0020,
+    0x00A0,
+    0x1680,
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+}
+
+NOTES = {
+    "test_fixture_contract_loads_and_matches_schema": (
+        "The test reads fixtures/outcome/orders/contract.json, calls assert_schema, "
+        "then load_contract, and asserts source_key, the first condition id, and "
+        "warnings(). validate judges one document. It does not read that fixture "
+        "or build a contract. Not one schema result."
+    ),
+    "test_empty_contract_is_an_error_not_a_pass": (
+        "The test calls contract_from_dict on an empty conditions list and asserts "
+        "a producer problem string. validate does not build a contract. Not one "
+        "schema result."
+    ),
+    "test_invalid_contracts_are_rejected": (
+        "Parametrized contract_from_dict sweep. Several needles are cross-field "
+        "rules the schema leaves to the producer. Not one schema result."
+    ),
+    "test_any_of_cannot_nest_or_hide_flags": (
+        "Two contract_from_dict calls. The assertions look for producer strings "
+        "about nesting and flags. Not one schema result."
+    ),
+    "test_every_problem_is_reported_at_once": (
+        "The test requires at least three producer problems from one call. "
+        "validate returns one failure. Not one schema result."
+    ),
+    "test_load_rejects_non_strict_json": (
+        "Parametrized load_contract over duplicate keys, NaN, a truncated array, "
+        "and a BOM. It expects ContractError. Duplicate keys are a syntax refusal "
+        "in this checker, so that text is not a vector. Not one schema result."
+    ),
+    "test_load_rejects_oversized_and_non_utf8": (
+        "The test writes an oversized file and a non-UTF-8 file and expects "
+        "ContractError. validate reads one Unicode string. It does not apply the "
+        "byte-size limit. Not one schema result."
+    ),
+    "test_fingerprint_ignores_key_order_but_not_values": (
+        "The test compares sha256 values from contract_from_dict. Hashing is not "
+        "a schema keyword. Not one schema result."
+    ),
+    "test_warnings_flag_gaps_without_failing": (
+        "The test builds a contract and joins warnings(). The schema does not "
+        "state warnings. Not one schema result."
+    ),
+    "test_explain_is_deterministic_and_lists_every_condition": (
+        "The test loads a fixture twice and compares explain_contract text. That "
+        "text is not a schema document, and the fixture is not copied. Not one "
+        "schema result."
+    ),
+}
+
+ORACLE_CHECKS = {
+    "advisory_only": {"ok": True},
+    "condition_bad_type": {"detail": "", "keyword": "oneOf", "ok": False, "path": "/conditions/0"},
+    "condition_empty": {
+        "detail": "id",
+        "keyword": "required",
+        "ok": False,
+        "path": "/conditions/0",
+    },
+    "conditions_empty": {"detail": "", "keyword": "minItems", "ok": False, "path": "/conditions"},
+    "conditions_too_many": {"detail": "", "keyword": "maxItems", "ok": False, "path": "/conditions"},
+    "count_max_zero": {"detail": "", "keyword": "minimum", "ok": False, "path": ""},
+    "due_string": {"detail": "", "keyword": "anyOf", "ok": False, "path": "/due"},
+    "duplicate_ids": {"ok": True},
+    "eligibility_too_many": {
+        "detail": "",
+        "keyword": "maxItems",
+        "ok": False,
+        "path": "/eligibility",
+    },
+    "empty_object": {"detail": "schema_version", "keyword": "required", "ok": False, "path": ""},
+    "field_space": {"ok": True},
+    "id_empty": {"detail": "", "keyword": "pattern", "ok": False, "path": ""},
+    "key_extra": {"detail": "extra", "keyword": "additionalProperties", "ok": False, "path": "/key"},
+    "key_source_number": {"detail": "", "keyword": "anyOf", "ok": False, "path": "/key/source"},
+    "key_width_differs": {"ok": True},
+    "kind_unknown": {"detail": "", "keyword": "enum", "ok": False, "path": ""},
+    "name_too_long": {"detail": "", "keyword": "maxLength", "ok": False, "path": "/name"},
+    "name_whitespace": {"detail": "", "keyword": "pattern", "ok": False, "path": "/name"},
+    "nested_any_of": {"detail": "", "keyword": "oneOf", "ok": False, "path": "/conditions/0"},
+    "normalize_duplicate": {"detail": "", "keyword": "uniqueItems", "ok": False, "path": ""},
+    "on_time_without_due": {"ok": True},
+    "range_missing_bounds": {"detail": "", "keyword": "anyOf", "ok": False, "path": ""},
+    "root_array": {"detail": "", "keyword": "type", "ok": False, "path": ""},
+    "root_extra_and_bad_version": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": False,
+        "path": "",
+    },
+    "root_missing_name_and_extra": {"detail": "name", "keyword": "required", "ok": False, "path": ""},
+    "schema_version_const": {
+        "detail": "",
+        "keyword": "const",
+        "ok": False,
+        "path": "/schema_version",
+    },
+    "synthetic_minimal": {"ok": True},
+    "version_empty": {"detail": "", "keyword": "minLength", "ok": False, "path": "/version"},
+    "within_above_max": {"detail": "", "keyword": "maximum", "ok": False, "path": ""},
+    "within_negative": {"detail": "", "keyword": "minimum", "ok": False, "path": ""},
+}
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class Unproven(Exception):
+    """A comparison cannot be proven."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def install_refusal() -> None:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+
+
+def assert_checkout_import_refused() -> None:
+    try:
+        importlib.import_module("sesslint.outcome.contract")
+    except CheckoutImportRefused:
+        return
+    except ModuleNotFoundError as exc:
+        raise SystemExit("isolated ModuleNotFoundError is not a pin result") from exc
+    raise SystemExit("sesslint import was not refused")
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'OUTCOME_CONTRACT_SCHEMA_JSON: &str = r##"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"##;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def value_node(source: str, name: str) -> ast.AST:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == name and node.value is not None:
+                return node.value
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    return node.value
+    raise SystemExit(f"{name} missing")
+
+
+def eval_int(node: ast.AST) -> int:
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        return eval_int(node.left) * eval_int(node.right)
+    raise SystemExit("unproven int expression")
+
+
+def eval_str_constant(node: ast.AST) -> str:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    raise SystemExit("unproven string")
+
+
+def eval_str_set(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Call) and len(node.args) == 1:
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "frozenset":
+            node = node.args[0]
+        else:
+            raise SystemExit("unproven set")
+    value = ast.literal_eval(node)
+    if not isinstance(value, set) or not all(isinstance(item, str) for item in value):
+        raise SystemExit("unproven set")
+    return value
+
+
+def eval_str_tuple(node: ast.AST) -> tuple[str, ...]:
+    value = ast.literal_eval(node)
+    if not isinstance(value, tuple) or not all(isinstance(item, str) for item in value):
+        raise SystemExit("unproven tuple")
+    return value
+
+
+def regex_source(node: ast.AST) -> str:
+    if not isinstance(node, ast.Call) or len(node.args) != 1:
+        raise SystemExit("unproven regex")
+    func = node.func
+    if not isinstance(func, ast.Attribute) or func.attr != "compile":
+        raise SystemExit("unproven regex")
+    return eval_str_constant(node.args[0])
+
+
+def iter_tests(tree: ast.AST) -> list[tuple[str, ast.FunctionDef]]:
+    found: list[tuple[str, ast.FunctionDef]] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
+                    raise SystemExit(f"class schema test is not flat: {node.name}.{item.name}")
+        elif isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+            found.append((node.name, node))
+    return found
+
+
+def is_direct_schema_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr in {"validate", "is_valid", "iter_errors", "assert_schema"}
+    if isinstance(func, ast.Name):
+        return func.id in {"validate", "assert_schema"}
+    return False
+
+
+def is_schema_only(fn: ast.FunctionDef) -> bool:
+    if fn.decorator_list:
+        return False
+    interesting = [
+        stmt
+        for stmt in fn.body
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
+    ]
+    if len(interesting) != 1 or not isinstance(interesting[0], ast.Expr):
+        return False
+    return is_direct_schema_call(interesting[0].value)
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) < value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool | None:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        if isinstance(left, bool) and isinstance(right, bool):
+            return left == right
+        return False
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        for item, other in zip(left, right, strict=True):
+            compared = json_equal(item, other)
+            if compared is None:
+                return None
+            if not compared:
+                return False
+        return True
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        for key in left:
+            compared = json_equal(left[key], right[key])
+            if compared is None:
+                return None
+            if not compared:
+                return False
+        return True
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            return None
+        return left_int == right_int
+    raise Unproven()
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        if not spec:
+            raise Unproven()
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def unescape_pointer(token: str) -> str | None:
+    out: list[str] = []
+    index = 0
+    while index < len(token):
+        if token[index] != "~":
+            out.append(token[index])
+            index += 1
+            continue
+        if index + 1 >= len(token):
+            return None
+        nxt = token[index + 1]
+        if nxt == "0":
+            out.append("~")
+        elif nxt == "1":
+            out.append("/")
+        else:
+            return None
+        index += 2
+    return "".join(out)
+
+
+def canonical_index(token: str, length: int) -> int | None:
+    if not token or not token.isascii() or not token.isdigit():
+        return None
+    if len(token) > 1 and token.startswith("0"):
+        return None
+    index = int(token)
+    if index >= length:
+        return None
+    return index
+
+
+def resolve_pointer(root: object, pointer_text: str) -> object:
+    if pointer_text == "":
+        return root
+    if not pointer_text.startswith("/"):
+        raise SystemExit(f"bad pointer {pointer_text}")
+    current = root
+    rest = pointer_text[1:]
+    if rest == "":
+        return root
+    for token in rest.split("/"):
+        key = unescape_pointer(token)
+        if key is None:
+            raise SystemExit(f"bad pointer token {pointer_text}")
+        if isinstance(current, dict):
+            if key not in current:
+                raise SystemExit(f"missing pointer {pointer_text}")
+            current = current[key]
+        elif isinstance(current, list):
+            index = canonical_index(key, len(current))
+            if index is None:
+                raise SystemExit(f"bad pointer index {pointer_text}")
+            current = current[index]
+        else:
+            raise SystemExit(f"pointer left container {pointer_text}")
+    return current
+
+
+def resolve_ref(root: object, reference: object) -> object | None:
+    if not isinstance(reference, str) or not reference.startswith("#/$defs/"):
+        return None
+    name = reference[len("#/$defs/") :]
+    if not name or not all(char.isalnum() or char in "_-" for char in name):
+        return None
+    if not isinstance(root, dict):
+        return None
+    defs = root.get("$defs")
+    if not isinstance(defs, dict) or name not in defs:
+        return None
+    return defs[name]
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def space_class(ch: str) -> str:
+    code = ord(ch)
+    if code in PROVEN_SPACE or 0x2000 <= code <= 0x200A:
+        return "ws"
+    if code in AMBIGUOUS_SPACE:
+        return "amb"
+    return "other"
+
+
+def match_non_whitespace(text: str) -> bool | None:
+    ambiguous = False
+    for ch in text:
+        kind = space_class(ch)
+        if kind == "other":
+            return True
+        if kind == "amb":
+            ambiguous = True
+    if ambiguous:
+        return None
+    return False
+
+
+def is_id(text: str) -> bool:
+    if not text or not text[0].isascii() or not text[0].isalnum():
+        return False
+    if len(text) > 64:
+        return False
+    return all(ch.isascii() and (ch.isalnum() or ch in "._-") for ch in text[1:])
+
+
+def pattern_match(pattern: str, text: str) -> bool | None:
+    if pattern == TEXT_PATTERN:
+        return match_non_whitespace(text)
+    if pattern == ID_PATTERN:
+        return is_id(text)
+    return None
+
+
+def check(
+    schema: object,
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if depth >= CHECK_MAX_DEPTH:
+        return ("unsupported", path, "depth")
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "$ref" in schema:
+        target = resolve_ref(root, schema["$ref"])
+        if target is None:
+            return ("unsupported", path, "$ref")
+        failure = check(target, value, path, root, depth + 1)
+        if failure is not None:
+            return failure
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = json_equal(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        failure = check_enum(schema["enum"], value, path)
+        if failure is not None:
+            return failure
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_bound(schema, value, path, "minimum", True)
+    if failure is not None:
+        return failure
+    failure = check_bound(schema, value, path, "maximum", False)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path, root, depth)
+    if failure is not None:
+        return failure
+    failure = check_array(schema, value, path, root, depth)
+    if failure is not None:
+        return failure
+    if "anyOf" in schema:
+        failure = check_some_of(schema, value, path, root, depth, "anyOf")
+        if failure is not None:
+            return failure
+    if "oneOf" in schema:
+        return check_some_of(schema, value, path, root, depth, "oneOf")
+    return None
+
+
+def check_enum(choices: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(choices, list) or not choices:
+        return ("unsupported", path, "enum")
+    for choice in choices:
+        compared = json_equal(value, choice)
+        if compared is None:
+            return ("unsupported", path, "enum")
+        if compared:
+            return None
+    return ("enum", path, "")
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            return ("unsupported", path, "pattern")
+        matched = pattern_match(pattern, value)
+        if matched is None:
+            return ("unsupported", path, "pattern")
+        if not matched:
+            return ("pattern", path, "")
+    return None
+
+
+def check_bound(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    keyword: str,
+    minimum: bool,
+) -> tuple[str, str, str] | None:
+    if keyword not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, keyword)
+    limit = schema[keyword]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, keyword)
+    failed = number < limit if minimum else number > limit
+    if failed:
+        return (keyword, path, "")
+    return None
+
+
+def check_some_of(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+    keyword: str,
+) -> tuple[str, str, str] | None:
+    branches = schema.get(keyword)
+    if not isinstance(branches, list) or not branches:
+        return ("unsupported", path, keyword)
+    matched = 0
+    unsupported: tuple[str, str, str] | None = None
+    for branch in branches:
+        failure = check(branch, value, path, root, depth + 1)
+        if failure is None:
+            matched += 1
+        elif failure[0] == "unsupported":
+            unsupported = failure
+    if keyword == "anyOf":
+        if matched >= 1:
+            return None
+        if unsupported is not None:
+            return unsupported
+        return ("anyOf", path, "")
+    if matched > 1:
+        return ("oneOf", path, "")
+    if unsupported is not None:
+        return unsupported
+    if matched != 1:
+        return ("oneOf", path, "")
+    return None
+
+
+def check_object(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        failure = check_additional(schema, value, path, root, depth)
+        if failure is not None:
+            return failure
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)), root, depth + 1)
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_additional(
+    schema: dict[str, Any],
+    value: dict[str, Any],
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    flag = schema["additionalProperties"]
+    props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        return ("unsupported", path, "properties")
+    if flag is False:
+        for key in value:
+            if key not in props:
+                return ("additionalProperties", path, str(key))
+        return None
+    if flag is True:
+        return None
+    if isinstance(flag, dict):
+        for key, item in value.items():
+            if key not in props:
+                failure = check(flag, item, pointer(path, str(key)), root, depth + 1)
+                if failure is not None:
+                    return failure
+        return None
+    return ("unsupported", path, "additionalProperties")
+
+
+def check_array(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "minItems" in schema:
+        limit = length_bound(schema["minItems"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minItems", path, "")
+    if "maxItems" in schema:
+        limit = length_bound(schema["maxItems"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxItems", path, "")
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}", root, depth + 1)
+            if failure is not None:
+                return failure
+    if "uniqueItems" not in schema:
+        return None
+    flag = schema["uniqueItems"]
+    if flag is False:
+        return None
+    if flag is not True:
+        return ("unsupported", path, "uniqueItems")
+    for right in range(1, len(value)):
+        for left in range(right):
+            compared = json_equal(value[left], value[right])
+            if compared is None:
+                return ("unsupported", path, "uniqueItems")
+            if compared:
+                return ("uniqueItems", path, "")
+    return None
+
+
+def expect(schema_node: object, value: object, root: object) -> dict[str, Any]:
+    failure = check(schema_node, value, "", root, 0)
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword not in ALLOWED_FAILURES:
+        raise SystemExit(f"oracle unsupported at {path} ({detail}) via {keyword}")
+    return {"detail": detail, "keyword": keyword, "ok": False, "path": path}
+
+
+def walk_keywords(schema: object, seen: set[str]) -> None:
+    if not isinstance(schema, dict):
+        return
+    for key, value in schema.items():
+        seen.add(str(key))
+        if key in {"properties", "$defs"} and isinstance(value, dict):
+            for child in value.values():
+                walk_keywords(child, seen)
+        elif key in {"additionalProperties", "items"}:
+            walk_keywords(value, seen)
+        elif key in {"anyOf", "oneOf"} and isinstance(value, list):
+            for child in value:
+                walk_keywords(child, seen)
+
+
+def branch_index(schema: dict[str, Any], type_name: str, basis: str | None = None) -> int:
+    found: int | None = None
+    for index, branch in enumerate(schema["$defs"]["branch"]["oneOf"]):
+        if branch["properties"]["type"]["const"] != type_name:
+            continue
+        got = branch["properties"].get("basis", {}).get("const")
+        if basis is None and "basis" in branch["properties"]:
+            continue
+        if basis is not None and got != basis:
+            continue
+        if found is not None:
+            raise SystemExit(f"duplicate branch {type_name}")
+        found = index
+    if found is None:
+        raise SystemExit(f"missing branch {type_name}")
+    return found
+
+
+def predicate_index(schema: dict[str, Any], op: str) -> int:
+    found: int | None = None
+    for index, branch in enumerate(schema["$defs"]["predicate"]["oneOf"]):
+        choices = branch["properties"]["op"]["enum"]
+        if op not in choices:
+            continue
+        if found is not None and found != index:
+            raise SystemExit(f"op {op} is in two branches")
+        found = index
+    if found is None:
+        raise SystemExit(f"missing op {op}")
+    return found
+
+
+def assert_schema_shape(schema: dict[str, Any], constants: dict[str, Any]) -> None:
+    seen: set[str] = set()
+    walk_keywords(schema, seen)
+    unknown = sorted(seen - ANNOTATIONS - KNOWN)
+    if unknown:
+        raise SystemExit(f"pinned schema states {unknown}")
+    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+        raise SystemExit("dialect changed")
+    if schema.get("$id") != "https://sesslint.dev/schemas/sesslint.outcome-contract.v1.json":
+        raise SystemExit("schema id changed")
+    if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+        raise SystemExit("root object changed")
+    if schema.get("required") != ["schema_version", "name", "version", "key", "conditions"]:
+        raise SystemExit("root required changed")
+    props = schema.get("properties")
+    if not isinstance(props, dict) or list(props) != [
+        "schema_version",
+        "name",
+        "version",
+        "description",
+        "key",
+        "eligibility",
+        "due",
+        "conditions",
+    ]:
+        raise SystemExit("root properties changed")
+    version = props["schema_version"].get("const")
+    if version != "sesslint.outcome-contract/v1" or version != constants["version"]:
+        raise SystemExit("schema_version const changed")
+    defs = schema["$defs"]
+    if defs["text"] != {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "pattern": TEXT_PATTERN,
+    }:
+        raise SystemExit("text schema changed")
+    if defs["id"] != {"type": "string", "pattern": ID_PATTERN}:
+        raise SystemExit("id schema changed")
+    if defs["field"] != {"type": "string", "minLength": 1, "maxLength": 256}:
+        raise SystemExit("field schema changed")
+    if defs["scalar"] != {"type": ["string", "number", "boolean", "null"]}:
+        raise SystemExit("scalar schema changed")
+    if defs["values"] != {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 1000,
+        "items": {"$ref": "#/$defs/scalar"},
+    }:
+        raise SystemExit("values schema changed")
+    if defs["normalize"] != {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"enum": ["trim", "casefold"]},
+    }:
+        raise SystemExit("normalize schema changed")
+    if defs["predicates"] != {
+        "type": "array",
+        "maxItems": 32,
+        "items": {"$ref": "#/$defs/predicate"},
+    }:
+        raise SystemExit("predicates schema changed")
+    if props["name"] != {"$ref": "#/$defs/text"} or props["description"] != {"$ref": "#/$defs/text"}:
+        raise SystemExit("text ref changed")
+    if props["version"] != {"type": "string", "minLength": 1, "maxLength": 64}:
+        raise SystemExit("version schema changed")
+    if props["conditions"] != {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "items": {"$ref": "#/$defs/condition"},
+    }:
+        raise SystemExit("conditions schema changed")
+    if props["eligibility"] != {"$ref": "#/$defs/predicates"}:
+        raise SystemExit("eligibility ref changed")
+    within = resolve_pointer(schema, "/properties/due/anyOf/1/properties/within_seconds")
+    if within != {"type": "integer", "minimum": 0, "maximum": 316224000}:
+        raise SystemExit(f"within_seconds schema changed: {within}")
+    if constants["within"] != 316224000 or constants["conditions"] != 64:
+        raise SystemExit("producer limit disagrees with the schema")
+    if constants["predicates"] != 32 or constants["values"] != 1000 or constants["key_fields"] != 8:
+        raise SystemExit("producer array limit disagrees with the schema")
+    if constants["field_chars"] != 256 or constants["text_chars"] != 2000:
+        raise SystemExit("producer length disagrees with the schema")
+    if constants["id_pattern"] != ID_PATTERN:
+        raise SystemExit("producer id pattern disagrees with the schema")
+    if constants["normalizations"] != ("trim", "casefold"):
+        raise SystemExit("producer normalizations changed")
+    if constants["condition_types"] != condition_type_set(schema):
+        raise SystemExit("producer condition types disagree with the schema")
+    if constants["predicate_ops"] != predicate_op_set(schema):
+        raise SystemExit("producer predicate ops disagree with the schema")
+    if constants["value_kinds"] != set(kind_enum(schema)):
+        raise SystemExit("producer value kinds disagree with the schema")
+    if constants["deadline_bases"] != deadline_bases(schema):
+        raise SystemExit("producer deadline bases disagree with the schema")
+    if expect(schema, base_document(schema), schema) != {"ok": True}:
+        raise SystemExit("synthetic minimal document is not valid")
+
+
+def condition_type_set(schema: dict[str, Any]) -> set[str]:
+    found = set()
+    for branch in schema["$defs"]["branch"]["oneOf"]:
+        found.add(branch["properties"]["type"]["const"])
+    any_of = schema["$defs"]["condition"]["oneOf"][1]
+    found.add(any_of["properties"]["type"]["const"])
+    return found
+
+
+def predicate_op_set(schema: dict[str, Any]) -> set[str]:
+    found: set[str] = set()
+    for branch in schema["$defs"]["predicate"]["oneOf"]:
+        found.update(branch["properties"]["op"]["enum"])
+    return found
+
+
+def kind_enum(schema: dict[str, Any]) -> list[str]:
+    index = branch_index(schema, "type")
+    values = schema["$defs"]["branch"]["oneOf"][index]["properties"]["kind"]["enum"]
+    if not isinstance(values, list):
+        raise SystemExit("kind enum changed")
+    return list(values)
+
+
+def deadline_bases(schema: dict[str, Any]) -> set[str]:
+    found = set()
+    for branch in schema["$defs"]["branch"]["oneOf"]:
+        basis = branch["properties"].get("basis")
+        if isinstance(basis, dict) and "const" in basis:
+            found.add(basis["const"])
+    return found
+
+
+def clone(value: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(value))
+    if not isinstance(cloned, dict):
+        raise SystemExit("clone did not return an object")
+    return cloned
+
+
+def base_document(schema: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "conditions": [{"id": "e", "type": "exists"}],
+        "key": {"source": "id", "target": "ref"},
+        "name": "c",
+        "schema_version": schema["properties"]["schema_version"]["const"],
+        "version": "1",
+    }
+
+
+def compact(document: dict[str, Any]) -> str:
+    return json.dumps(document, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
+def build_vectors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    version = schema["properties"]["schema_version"]["const"]
+    within_pointer = "/properties/due/anyOf/1/properties/within_seconds"
+    kind_pointer = f"/$defs/branch/oneOf/{branch_index(schema, 'type')}/properties/kind"
+    count_max_pointer = f"/$defs/branch/oneOf/{branch_index(schema, 'count')}/properties/max"
+    range_pointer = f"/$defs/branch/oneOf/{branch_index(schema, 'range')}"
+    present_pointer = f"/$defs/predicate/oneOf/{predicate_index(schema, 'present')}"
+    number_pointer = f"/$defs/predicate/oneOf/{predicate_index(schema, 'gt')}/properties/value"
+    key_array_pointer = "/$defs/key_fields/anyOf/1"
+
+    def add(
+        vector_id: str,
+        instance: object = _MISSING,
+        raw: str | None = None,
+        pointer: str = "",
+    ) -> None:
+        node = resolve_pointer(schema, pointer)
+        if raw is None:
+            if instance is _MISSING:
+                raise SystemExit(f"{vector_id} has no instance")
+            value = instance
+            vectors.append(
+                {
+                    "expected": expect(node, value, schema),
+                    "id": vector_id,
+                    "instance": value,
+                    "schema_pointer": pointer,
+                }
+            )
+            return
+        if instance is not _MISSING:
+            raise SystemExit(f"{vector_id} has both raw and instance")
+        value = json.loads(raw)
+        vectors.append(
+            {
+                "expected": expect(node, value, schema),
+                "id": vector_id,
+                "raw": raw,
+                "schema_pointer": pointer,
+            }
+        )
+
+    def with_condition(condition: dict[str, Any], **over: object) -> dict[str, Any]:
+        document = clone(base_document(schema))
+        document["conditions"] = [condition]
+        document.update(over)
+        return document
+
+    base = base_document(schema)
+    add("synthetic_minimal", clone(base))
+    described = clone(base)
+    described["description"] = "d"
+    add("description_present", described)
+    long_name = clone(base)
+    long_name["name"] = "n" * 2000
+    add("name_max_length", long_name)
+    spaced_name = clone(base)
+    spaced_name["name"] = " a"
+    add("name_internal_space", spaced_name)
+    long_version = clone(base)
+    long_version["version"] = "v" * 64
+    add("version_max_length", long_version)
+    due_null = clone(base)
+    due_null["due"] = None
+    add("due_null", due_null)
+    due_zero = clone(base)
+    due_zero["due"] = {"source_time_field": "at", "within_seconds": 0}
+    add("due_zero", due_zero)
+    due_max = clone(base)
+    due_max["due"] = {"source_time_field": "at", "within_seconds": 316224000}
+    add("due_max", due_max)
+    key_arrays = clone(base)
+    key_arrays["key"] = {"source": ["a", "b"], "target": ["c", "d"]}
+    add("key_arrays", key_arrays)
+    key_width = clone(base)
+    key_width["key"] = {"source": ["a", "b"], "target": "r"}
+    add("key_width_differs", key_width)
+    key_eight = clone(base)
+    key_eight["key"] = {"source": [f"f{index}" for index in range(8)], "target": "r"}
+    add("key_eight_fields", key_eight)
+    empty_eligibility = clone(base)
+    empty_eligibility["eligibility"] = []
+    add("eligibility_empty", empty_eligibility)
+    add(
+        "eligibility_present",
+        with_condition({"id": "e", "type": "exists"}, eligibility=[{"field": "f", "op": "present"}]),
+    )
+    add(
+        "eligibility_absent",
+        with_condition({"id": "e", "type": "exists"}, eligibility=[{"field": "f", "op": "absent"}]),
+    )
+    add(
+        "eligibility_eq_string",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "eq", "value": "a"}],
+        ),
+    )
+    add(
+        "eligibility_eq_int",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "eq", "value": 1}],
+        ),
+    )
+    add(
+        "eligibility_eq_bool",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "eq", "value": True}],
+        ),
+    )
+    add(
+        "eligibility_eq_null",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "eq", "value": None}],
+        ),
+    )
+    add(
+        "eligibility_gt_fraction",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "gt", "value": 1.5}],
+        ),
+    )
+    add(
+        "eligibility_in_scalars",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "in", "values": ["a", 1, True, None]}],
+        ),
+    )
+    add(
+        "eligibility_not_in",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "not_in", "values": ["a"]}],
+        ),
+    )
+    add(
+        "eligibility_full",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "present"} for _ in range(32)],
+        ),
+    )
+    add("condition_count", with_condition({"id": "e", "type": "count", "min": 0, "max": 2}))
+    add("condition_count_max_null", with_condition({"id": "e", "type": "count", "min": 1, "max": None}))
+    add("condition_required", with_condition({"id": "e", "type": "required", "field": "s", "allow_null": True, "allow_empty": False}))
+    for kind in kind_enum(schema):
+        add(
+            f"condition_type_{kind.replace('-', '_')}",
+            with_condition({"id": "e", "type": "type", "field": "s", "kind": kind}),
+        )
+    add(
+        "condition_one_of",
+        with_condition(
+            {"id": "e", "type": "one_of", "field": "s", "values": ["a", 1, False, None], "normalize": ["trim"]}
+        ),
+    )
+    add(
+        "condition_one_of_both_normalize",
+        with_condition(
+            {
+                "id": "e",
+                "type": "one_of",
+                "field": "s",
+                "values": ["a"],
+                "normalize": ["casefold", "trim"],
+            }
+        ),
+    )
+    add(
+        "condition_equals",
+        with_condition(
+            {"id": "e", "type": "equals", "field": "s", "source_field": "t", "normalize": ["casefold"]}
+        ),
+    )
+    add("condition_range_min", with_condition({"id": "e", "type": "range", "field": "n", "min": 1.5}))
+    add("condition_range_max", with_condition({"id": "e", "type": "range", "field": "n", "max": 2}))
+    add(
+        "condition_range_min_null",
+        with_condition({"id": "e", "type": "range", "field": "n", "min": None, "max": 1}),
+    )
+    add(
+        "condition_route",
+        with_condition(
+            {
+                "id": "e",
+                "type": "route",
+                "field": "w",
+                "values": ["a"],
+                "when": [{"field": "f", "op": "present"}],
+            }
+        ),
+    )
+    add(
+        "on_time_with_due",
+        with_condition(
+            {"id": "e", "type": "on_time", "basis": "target_time", "field": "t"},
+            due={"source_time_field": "at", "within_seconds": 1},
+        ),
+    )
+    add(
+        "on_time_without_due",
+        with_condition({"id": "e", "type": "on_time", "basis": "target_time", "field": "t"}),
+    )
+    add(
+        "on_time_observation",
+        with_condition({"id": "e", "type": "on_time", "basis": "observation"}),
+    )
+    add(
+        "condition_any_of",
+        with_condition(
+            {
+                "id": "o",
+                "type": "any_of",
+                "conditions": [
+                    {"id": "a", "type": "exists"},
+                    {"id": "b", "type": "count", "min": 1},
+                ],
+            }
+        ),
+    )
+    add(
+        "advisory_only",
+        with_condition({"id": "e", "type": "exists", "advisory": True, "description": "d"}),
+    )
+    add("all_disabled", with_condition({"id": "e", "type": "exists", "disabled": "later"}))
+    add(
+        "duplicate_ids",
+        clone(base) | {"conditions": [{"id": "e", "type": "exists"}, {"id": "e", "type": "exists"}]},
+    )
+    add(
+        "count_bounds_reversed",
+        with_condition({"id": "e", "type": "count", "min": 3, "max": 2}),
+    )
+    add(
+        "conditions_full",
+        clone(base)
+        | {"conditions": [{"id": f"c{index:02d}", "type": "exists"} for index in range(64)]},
+    )
+    long_id = "a" * 64
+    add("id_max_length", with_condition({"id": long_id, "type": "exists"}))
+    unicode_doc = clone(base)
+    unicode_doc["name"] = "caf\u00e9"
+    add("raw_name_unicode", raw=compact(unicode_doc))
+    add("raw_minimal_spaced", raw=json.dumps(base, indent=2, sort_keys=True) + "\n")
+    due_token = clone(base)
+    due_token["due"] = {"source_time_field": "at", "within_seconds": 0}
+    due_raw = compact(due_token)
+    needle = '"within_seconds":0'
+    if due_raw.count(needle) != 1:
+        raise SystemExit("within_seconds zero is not unique")
+    add("raw_due_one_point_zero", raw=due_raw.replace(needle, '"within_seconds":1.0', 1))
+
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_bool", True)
+    add("root_number", 1)
+    for name in schema["required"]:
+        removed = clone(base)
+        removed.pop(name)
+        add(f"missing_{name}", removed)
+    extra = clone(base)
+    extra["extra"] = 1
+    add("root_additional_property", extra)
+    missing_and_extra = clone(base)
+    missing_and_extra.pop("name")
+    missing_and_extra["extra"] = 1
+    add("root_missing_name_and_extra", missing_and_extra)
+    bad_const = clone(base)
+    bad_const["schema_version"] = "other/v1"
+    bad_const["extra"] = 1
+    add("root_extra_and_bad_version", bad_const)
+    const_only = clone(base)
+    const_only["schema_version"] = "other/v1"
+    add("schema_version_const", const_only)
+    add("schema_version_number", clone(base) | {"schema_version": 1})
+    add("name_empty", clone(base) | {"name": ""})
+    add("name_whitespace", clone(base) | {"name": "   "})
+    add("name_too_long", clone(base) | {"name": "n" * 2001})
+    add("name_number", clone(base) | {"name": 1})
+    add("version_empty", clone(base) | {"version": ""})
+    add("version_too_long", clone(base) | {"version": "v" * 65})
+    add("description_empty", clone(base) | {"description": ""})
+    add("description_whitespace", clone(base) | {"description": "   "})
+    add("key_type", clone(base) | {"key": []})
+    key_missing = clone(base)
+    key_missing["key"] = {"target": "ref", "extra": 1}
+    add("key_missing_source_and_extra", key_missing)
+    key_extra = clone(base)
+    key_extra["key"] = {"source": "id", "target": "ref", "extra": 1}
+    add("key_extra", key_extra)
+    add("key_source_number", clone(base) | {"key": {"source": 1, "target": "ref"}})
+    add("key_source_empty_array", clone(base) | {"key": {"source": [], "target": "ref"}})
+    add(
+        "key_source_too_many",
+        clone(base) | {"key": {"source": [f"f{index}" for index in range(9)], "target": "ref"}},
+    )
+    add("due_string", clone(base) | {"due": "x"})
+    add("due_empty_object", clone(base) | {"due": {}})
+    add("due_negative", clone(base) | {"due": {"source_time_field": "at", "within_seconds": -1}})
+    add(
+        "due_above_max",
+        clone(base) | {"due": {"source_time_field": "at", "within_seconds": 316224001}},
+    )
+    add("due_bool", clone(base) | {"due": {"source_time_field": "at", "within_seconds": True}})
+    add("conditions_empty", clone(base) | {"conditions": []})
+    add(
+        "conditions_too_many",
+        clone(base)
+        | {"conditions": [{"id": f"c{index:02d}", "type": "exists"} for index in range(65)]},
+    )
+    add("conditions_type", clone(base) | {"conditions": {}})
+    add(
+        "eligibility_too_many",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "present"} for _ in range(33)],
+        ),
+    )
+    add("condition_empty", clone(base) | {"conditions": [{}]})
+    add("condition_bad_type", with_condition({"id": "e", "type": "magic"}))
+    add("exists_extra", with_condition({"id": "e", "type": "exists", "fieldd": "a"}))
+    add("id_too_long", with_condition({"id": "a" * 65, "type": "exists"}))
+    add("id_bad_start", with_condition({"id": "-a", "type": "exists"}))
+    add(
+        "nested_any_of",
+        with_condition(
+            {
+                "id": "o",
+                "type": "any_of",
+                "conditions": [
+                    {
+                        "id": "n",
+                        "type": "any_of",
+                        "conditions": [
+                            {"id": "a", "type": "exists"},
+                            {"id": "b", "type": "exists"},
+                        ],
+                    },
+                    {"id": "c", "type": "exists"},
+                ],
+            }
+        ),
+    )
+    add(
+        "predicate_present_value",
+        with_condition(
+            {"id": "e", "type": "exists"},
+            eligibility=[{"field": "f", "op": "present", "value": 1}],
+        ),
+    )
+    add(
+        "predicate_eq_missing_value",
+        with_condition({"id": "e", "type": "exists"}, eligibility=[{"field": "f", "op": "eq"}]),
+    )
+    add(
+        "predicate_unknown_op",
+        with_condition({"id": "e", "type": "exists"}, eligibility=[{"field": "f", "op": "like"}]),
+    )
+
+    add("id_empty", "", pointer="/$defs/id")
+    add("id_ok", "A.b_c-1", pointer="/$defs/id")
+    add("id_pattern_max", "a" * 64, pointer="/$defs/id")
+    add("id_pattern_over", "a" * 65, pointer="/$defs/id")
+    add("id_pattern_dash", "-a", pointer="/$defs/id")
+    add("field_space", " ", pointer="/$defs/field")
+    add("field_empty", "", pointer="/$defs/field")
+    add("field_max", "f" * 256, pointer="/$defs/field")
+    add("field_over", "f" * 257, pointer="/$defs/field")
+    add("text_spaces", "   ", pointer="/$defs/text")
+    add("text_ok", " a", pointer="/$defs/text")
+    add("within_negative", -1, pointer=within_pointer)
+    add("within_above_max", 316224001, pointer=within_pointer)
+    add("within_zero", 0, pointer=within_pointer)
+    add("within_max", 316224000, pointer=within_pointer)
+    add("within_bool", True, pointer=within_pointer)
+    add("within_one_point_zero", raw="1.0", pointer=within_pointer)
+    add("within_exponent", raw="1e2", pointer=within_pointer)
+    add("within_neg_zero", raw="-0", pointer=within_pointer)
+    add("within_fraction", raw="1.5", pointer=within_pointer)
+    add("within_i128_overflow", raw=str(2**127), pointer=within_pointer)
+    add("normalize_duplicate", ["trim", "trim"], pointer="/$defs/normalize")
+    add("normalize_ok", ["trim", "casefold"], pointer="/$defs/normalize")
+    add("normalize_unknown", ["stem"], pointer="/$defs/normalize")
+    add("normalize_empty", [], pointer="/$defs/normalize")
+    add("kind_unknown", "magic", pointer=kind_pointer)
+    add("kind_string", "string", pointer=kind_pointer)
+    add("count_max_zero", 0, pointer=count_max_pointer)
+    add("count_max_null", None, pointer=count_max_pointer)
+    add("count_max_one", 1, pointer=count_max_pointer)
+    add("range_missing_bounds", {"field": "n"}, pointer=range_pointer)
+    add("range_missing_field", {"min": 1}, pointer=range_pointer)
+    add(
+        "present_extra_value",
+        {"field": "f", "op": "present", "value": 1},
+        pointer=present_pointer,
+    )
+    add("number_value_bool", True, pointer=number_pointer)
+    add("number_value_fraction", 1.5, pointer=number_pointer)
+    add("values_empty", [], pointer="/$defs/values")
+    add("values_ok", ["a", 1, False, None], pointer="/$defs/values")
+    add("values_bad_item", [1, {}], pointer="/$defs/values")
+    add("values_too_many", [None] * 1001, pointer="/$defs/values")
+    add("values_full", [None] * 1000, pointer="/$defs/values")
+    add("key_array_duplicate", ["a", "a"], pointer=key_array_pointer)
+    add("key_array_ok", ["a", "b"], pointer=key_array_pointer)
+
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    for vector_id, want in ORACLE_CHECKS.items():
+        found = next(item for item in vectors if item["id"] == vector_id)
+        if found["expected"] != want:
+            raise SystemExit(f"{vector_id} oracle {found['expected']} != {want}")
+    seen_failures = {item["expected"]["keyword"] for item in vectors if not item["expected"]["ok"]}
+    missing = sorted(ALLOWED_FAILURES - seen_failures)
+    if missing:
+        raise SystemExit(f"missing failure keywords: {missing}")
+    if not any(item["expected"]["ok"] for item in vectors):
+        raise SystemExit("no accepted document")
+    return vectors
+
+
+def facts_from(schema: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
+    properties = schema["properties"]
+    defs = schema["$defs"]
+    within = resolve_pointer(schema, "/properties/due/anyOf/1/properties/within_seconds")
+    keywords: set[str] = set()
+    walk_keywords(schema, keywords)
+    return {
+        "condition_types": sorted(condition_type_set(schema)),
+        "conditions_max_items": properties["conditions"]["maxItems"],
+        "conditions_min_items": properties["conditions"]["minItems"],
+        "field_max_length": defs["field"]["maxLength"],
+        "id": schema["$id"],
+        "id_pattern": defs["id"]["pattern"],
+        "keywords": sorted(keywords),
+        "pin_schema_version": constants["version"],
+        "predicate_ops": sorted(predicate_op_set(schema)),
+        "property_names": list(properties),
+        "required": schema["required"],
+        "schema_version_const": properties["schema_version"]["const"],
+        "text_pattern": defs["text"]["pattern"],
+        "value_kinds": kind_enum(schema),
+        "within_seconds_maximum": within["maximum"],
+        "within_seconds_minimum": within["minimum"],
+    }
+
+
+def coverage_rows(functions: list[tuple[str, ast.FunctionDef]]) -> list[dict[str, Any]]:
+    names = [name for name, _fn in functions]
+    if names != list(NOTES):
+        raise SystemExit(f"pinned test list does not match NOTES: {names}")
+    rows = []
+    for name, fn in functions:
+        if is_schema_only(fn):
+            raise SystemExit(f"entire schema test has no proven vector: {name}")
+        rows.append(
+            {
+                "note": NOTES[name],
+                "status": "not_applicable",
+                "test": f"{TEST_FILE}::{name}",
+                "vector_id": None,
+            }
+        )
+    return rows
+
+
+def constants_from(source: str) -> dict[str, Any]:
+    return {
+        "condition_types": eval_str_set(value_node(source, "CONDITION_TYPES")),
+        "conditions": eval_int(value_node(source, "MAX_CONDITIONS")),
+        "deadline_bases": eval_str_set(value_node(source, "DEADLINE_BASES")),
+        "field_chars": eval_int(value_node(source, "_MAX_FIELD_CHARS")),
+        "id_pattern": regex_source(value_node(source, "_ID_RE")),
+        "key_fields": eval_int(value_node(source, "MAX_KEY_FIELDS")),
+        "normalizations": eval_str_tuple(value_node(source, "NORMALIZATIONS")),
+        "predicate_ops": eval_str_set(value_node(source, "PREDICATE_OPS")),
+        "predicates": eval_int(value_node(source, "MAX_PREDICATES")),
+        "text_chars": eval_int(value_node(source, "_MAX_TEXT_CHARS")),
+        "value_kinds": eval_str_set(value_node(source, "VALUE_KINDS")),
+        "values": eval_int(value_node(source, "MAX_VALUES")),
+        "version": eval_str_constant(value_node(source, "CONTRACT_SCHEMA_VERSION")),
+        "within": eval_int(value_node(source, "MAX_WITHIN_SECONDS")),
+    }
+
+
+def dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if (
+        "\r" in text
+        or "FOR_WORK" in text
+        or "sesslint-wt-" in text
+        or "shipment-exists" in text
+        or "order_id" in text
+    ):
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def load_oracle() -> object | None:
+    try:
+        import jsonschema
+    except ModuleNotFoundError:
+        return None
+    return jsonschema.Draft202012Validator
+
+
+def assert_jsonschema(validator_cls: object, schema: dict[str, Any], vectors: list[dict[str, Any]]) -> None:
+    if validator_cls is None:
+        return
+    validator = validator_cls(schema)
+    for case in vectors:
+        if case["schema_pointer"]:
+            continue
+        value = json.loads(case["raw"]) if "raw" in case else case["instance"]
+        valid = validator.is_valid(value)
+        if bool(case["expected"]["ok"]) != bool(valid):
+            raise SystemExit(
+                f"jsonschema mismatch {case['id']}: checker {case['expected']['ok']} jsonschema {valid}"
+            )
+
+
+def assert_self() -> None:
+    if integer_value(True) is not None or integer_value(False) is not None:
+        raise SystemExit("bool is not an integer")
+    if integer_value(1.0) != 1 or integer_value(-0.0) != 0:
+        raise SystemExit("integral float mismatch")
+    if integer_value(1.5) is not None:
+        raise SystemExit("fraction was treated as an integer")
+    if integer_value(2**127) is not None or integer_value(-(2**127)) is not None:
+        raise SystemExit("i128 boundary was proven")
+    if integer_value(2**127 - 1) != 2**127 - 1:
+        raise SystemExit("i128 max was not proven")
+    if pattern_match(TEXT_PATTERN, "a") is not True or pattern_match(TEXT_PATTERN, " ") is not False:
+        raise SystemExit("text pattern mismatch")
+    if pattern_match(TEXT_PATTERN, "\ufeff") is not None:
+        raise SystemExit("ambiguous space was proven")
+    if pattern_match(ID_PATTERN, "A.b_c-1") is not True or pattern_match(ID_PATTERN, "-a") is not False:
+        raise SystemExit("id pattern mismatch")
+    if pattern_match(".*", "a") is not None:
+        raise SystemExit("unknown pattern was proven")
+
+
+def main() -> None:
+    assert_self()
+    install_refusal()
+    assert_checkout_import_refused()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    contract_bytes = git_show_bytes(CONTRACT_GIT)
+    test_bytes = git_show_bytes(TEST_GIT)
+    if b"\r" in schema_bytes or b"\r" in contract_bytes or b"\r" in test_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    contract_source = contract_bytes.decode("utf-8")
+    test_source = test_bytes.decode("utf-8")
+    constants = constants_from(contract_source)
+    functions = iter_tests(ast.parse(test_source))
+    rows = coverage_rows(functions)
+    assert_schema_shape(schema, constants)
+    vectors = build_vectors(schema)
+    document = {
+        "facts": facts_from(schema, constants),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    loaded = json.loads(vectors_text)
+    for case in loaded["vectors"]:
+        node = resolve_pointer(schema, case["schema_pointer"])
+        value = json.loads(case["raw"]) if "raw" in case else case["instance"]
+        again = expect(node, value, schema)
+        if again != case["expected"]:
+            raise SystemExit(f"round trip changed {case['id']}: {again} != {case['expected']}")
+    assert_jsonschema(load_oracle(), schema, vectors)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    schema_sha = hashlib.sha256(schema_bytes).hexdigest()
+    manifest = {
+        "contract_py_sha256": hashlib.sha256(contract_bytes).hexdigest(),
+        "covered_count": 0,
+        "generator": GENERATOR,
+        "module": "sesslint.outcome.contract",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.outcome-contract.v1.json",
+        "schema_sha256": schema_sha,
+        "test_file": TEST_FILE,
+        "test_outcome_contract_py_sha256": hashlib.sha256(test_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    coverage = {
+        "covered_count": 0,
+        "module": "sesslint.outcome.contract",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.outcome-contract.v1.json",
+        "test_file": TEST_FILE,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.outcome-contract.v1 schema parity. Constraints and "
+            "expected rejections come from the pinned schema. Documents are "
+            "constructed objects, not contract_from_dict output. No session text "
+            "is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            (
+                "contract.py imports sesslint._canonical_codec at module scope. "
+                "That import is refused, so contract_from_dict and canonical_json_bytes "
+                "are not executed. This checker writes no canonical bytes."
+            ),
+            (
+                "tests/outcome/test_outcome_contract.py is not one schema judgment. "
+                "Every row is not_applicable. The orders fixture is not copied."
+            ),
+            (
+                "Bound order, on_time without due, duplicate ids, key width, and a "
+                "decisive condition are producer rules. The schema does not state "
+                "them, so those documents are accepted."
+            ),
+            (
+                "Duplicate JSON object keys are a syntax refusal. Python json.loads "
+                "keeps the last key, so that case is not a vector."
+            ),
+            (
+                "pattern \\S is unanchored. U+001C, U+001D, U+001E, U+001F, U+0085, "
+                "and U+FEFF are a Python re / ECMA-262 split. Those strings are "
+                "unsupported, not vectors."
+            ),
+            (
+                "i128::MIN is inside the signed 128-bit range, but the checker does "
+                "not prove that token. It is not a vector."
+            ),
+            (
+                "The 1 MiB load limit and the UTF-8 file check are producer behavior. "
+                "validate reads one Unicode string."
+            ),
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    encoded = vectors_text.encode("utf-8")
+    print(f"vector_count={len(vectors)}")
+    print("covered_count=0")
+    print(f"not_applicable_count={len(rows)}")
+    print(f"vectors_sha256={vectors_sha}")
+    print(f"schema_sha256={schema_sha}")
+    print(f"vectors_bytes={len(encoded)}")
+    print(f"vectors_lf={encoded.count(bytes((10,)))}")
+    print(f"vectors_cr={encoded.count(bytes((13,)))}")
+    print("oracle=skipped" if load_oracle() is None else "oracle=jsonschema")
+
+
+if __name__ == "__main__":
+    main()
