@@ -1,6 +1,6 @@
 //! SessLint public programmatic API providing 1:1 library-CLI parity (TASK-024).
 //!
-//! Port of `src/sesslint/api.py` lines 1–516
+//! Port of `src/sesslint/api.py` lines 1–516 and [`check_dir`] lines 519–612
 //! @ `02694d537104659df66cdd084354739f3cccc440`.
 //!
 //! This module exposes pure library functions. It performs no terminal
@@ -27,6 +27,15 @@
 //! `sesslint.repair.errors` and `sesslint.repair.writeback` are not imported
 //! in lines 184–516.
 //!
+//! [`check_dir`] (lines 519–612) rejects a non-positive `max_files`, then a
+//! non-positive `max_bytes`, then screens thresholds with
+//! [`screen_thresholds`]. The next call is `sesslint.scan.scan_path` (line
+//! 585). That function is not linked. The call returns
+//! [`ApiError::Unsupported`] with [`SCAN_PATH_UNAVAILABLE`]. The directory
+//! is not walked. No file is read. `progress_cb` is not called. `baseline`
+//! is not copied into a set. No report or finding is built. Lines 586–612
+//! are not evaluated.
+//!
 //! # Recorded gaps
 //!
 //! * Python `bool` is not an `int` and not a `float`. Thresholds are
@@ -40,6 +49,10 @@
 //!   Other magnitudes can differ from Python `str(float)`.
 //! * `Path.exists` errors that are not absence keep Rust's [`std::io::Error`]
 //!   text. Python would raise that `OSError`.
+//! * `check_dir` rejects a Python `bool` before the `int` test. `max_files`
+//!   and `max_bytes` are `i64`. `True` renders as `True` and `False` as
+//!   `False`. Those sentences cannot be produced. Decimal `str(int)` is used
+//!   for `0` and for negative values.
 //! * Line 80 is `VerifyVerdict = Verdict`. `sesslint.verify.Verdict` is not a
 //!   dependency of this crate. This module does not alias another verdict type.
 
@@ -59,6 +72,18 @@ use report::progress::{CancellationToken, ProgressEvent};
 /// not link `sesslint.io`. The integer is that default, not a read.
 pub const DEFAULT_MAX_FILE_BYTES: i64 = 100 * 1024 * 1024;
 
+/// Python `sesslint.scan.DEFAULT_MAX_FILES` (`10000`).
+///
+/// The pin imports the name and uses it as the `check_dir` default. This
+/// crate does not link `sesslint.scan`. The integer is that default, not a walk.
+pub const DEFAULT_MAX_FILES: i64 = 10000;
+
+/// Python `sesslint.scan.DEFAULT_MAX_BYTES` (`1024 * 1024 * 1024`).
+///
+/// The pin imports the name and uses it as the `check_dir` default. This
+/// crate does not link `sesslint.scan`. The integer is that default, not a walk.
+pub const DEFAULT_MAX_BYTES: i64 = 1024 * 1024 * 1024;
+
 /// Python `profile: str = "neutral"`.
 pub const DEFAULT_PROFILE: &str = "neutral";
 
@@ -71,20 +96,24 @@ pub const DEFAULT_VIRTUAL_PATH: &str = "<stdin>";
 pub const APPLY_RULE_SELECTION_UNAVAILABLE: &str =
     "sesslint.profiles.apply_rule_selection is not available";
 
+/// Next call after the `check_dir` threshold screen. `sesslint.scan` is not linked.
+pub const SCAN_PATH_UNAVAILABLE: &str = "sesslint.scan.scan_path is not available";
+
 /// Python `_capture_events`. Not invoked by this slice.
 type CaptureEvents<'a> = &'a dyn Fn(&str, &[SessionEvent]);
 
-/// Failure from [`check_file`], [`check_bytes`], and [`_check_impl`].
+/// Failure from [`check_file`], [`check_bytes`], [`check_dir`], and [`_check_impl`].
 ///
-/// [`Self::Value`] is a threshold `ValueError`. [`Self::NotFound`] is
-/// `FileNotFoundError`. [`Self::Io`] is an `OSError` from `Path.exists`.
-/// [`Self::Unsupported`] is the static seam. Its text does not include a
-/// path or payload bytes.
+/// [`Self::Value`] is a `ValueError` from `max_files`, `max_bytes`, or a
+/// threshold. [`Self::NotFound`] is `FileNotFoundError`. [`Self::Io`] is an
+/// `OSError` from `Path.exists`. [`Self::Unsupported`] is the static seam.
+/// Its text does not include a path or payload bytes.
 #[derive(Debug)]
 pub enum ApiError {
     /// The next call is not the same function as the pin.
     Unsupported(&'static str),
-    /// Python `ValueError` from `validate_detection_thresholds`.
+    /// Python `ValueError` from `max_files`, `max_bytes`, or
+    /// `validate_detection_thresholds`.
     Value(String),
     /// Python `FileNotFoundError`: `Path not found: {path}`.
     NotFound(String),
@@ -410,6 +439,112 @@ fn _check_impl(
     Err(ApiError::Unsupported(APPLY_RULE_SELECTION_UNAVAILABLE))
 }
 
+/// `max_files` and `max_bytes` must be a positive `int` (pin lines 580–583).
+///
+/// Python rejects `bool` before `int` because `bool` is a subclass of `int`.
+/// `True` renders as `True` and `False` as `False`, not as `1` or `0`. An
+/// `i64` cannot receive a `bool`, so those sentences are not produced. `0`
+/// and every negative value render with decimal `str(int)`. `1` is the
+/// smallest positive value and is accepted.
+fn screen_positive_count(name: &str, value: i64) -> Result<(), ApiError> {
+    if value <= 0 {
+        return Err(ApiError::Value(format!(
+            "{name} must be a positive integer (> 0), got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Scan a directory tree and stop before `scan_path`.
+///
+/// Python `check_dir` lines 519–612. Argument order matches the pin. Rust
+/// has no keyword defaults. Pass `true`, `false`, [`DEFAULT_MAX_FILES`],
+/// [`DEFAULT_MAX_BYTES`], `None`, [`DEFAULT_PROFILE`], `None`, `None`,
+/// `None`, `None`, `false`, `None`, `None`, `None`, `None`, `None`, `1`,
+/// `false`, `None`, [`DEFAULT_MAX_FILE_BYTES`], `None`, `None`, `None`,
+/// `None`, and `20` for those Python defaults.
+///
+/// `max_files` is screened, then `max_bytes`, then [`screen_thresholds`].
+/// The next call is `scan_path`, which this crate does not link. The result
+/// is [`ApiError::Unsupported`] ([`SCAN_PATH_UNAVAILABLE`]).
+///
+/// The other arguments are bound and are not applied. This function does not
+/// stat `path`, walk a directory, read a file, call `progress_cb`, check
+/// `cancel_token`, copy `baseline`, or build a report.
+///
+/// # Errors
+///
+/// [`ApiError::Value`] when `max_files`, `max_bytes`, or a threshold is
+/// rejected. [`ApiError::Unsupported`] when those checks pass. Success is
+/// [`Infallible`].
+#[allow(
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
+    reason = "pinned keyword list, in that order"
+)]
+pub fn check_dir(
+    path: impl AsRef<Path>,
+    recursive: bool,
+    follow_symlinks: bool,
+    max_files: i64,
+    max_bytes: i64,
+    format: Option<&str>,
+    profile: &str,
+    confidence_min: Option<f64>,
+    margin_min: Option<f64>,
+    progress_cb: Option<&dyn Fn(&ProgressEvent)>,
+    cancel_token: Option<&CancellationToken>,
+    skip_undetected: bool,
+    select: Option<&[&str]>,
+    ignore: Option<&[&str]>,
+    baseline: Option<&[&str]>,
+    exclude: Option<&[&str]>,
+    ext: Option<&[&str]>,
+    jobs: i64,
+    incremental: bool,
+    cache_dir: Option<&Path>,
+    max_file_bytes: i64,
+    timestamp_skew_ms: Option<i64>,
+    vendor_layout: Option<&str>,
+    newest: Option<i64>,
+    since: Option<&str>,
+    max_findings_per_code: i64,
+) -> Result<Infallible, ApiError> {
+    screen_positive_count("max_files", max_files)?;
+    screen_positive_count("max_bytes", max_bytes)?;
+    screen_thresholds(confidence_min, margin_min)?;
+    // Pin line 585. These are the values `scan_path` would read. They are
+    // not applied. `progress_cb` is not called.
+    let path = path.as_ref();
+    let _pending = (
+        path,
+        recursive,
+        follow_symlinks,
+        max_files,
+        max_bytes,
+        format,
+        profile,
+        progress_cb,
+        cancel_token,
+        skip_undetected,
+        select,
+        ignore,
+        baseline,
+        exclude,
+        ext,
+        jobs,
+        incremental,
+        cache_dir,
+        max_file_bytes,
+        timestamp_skew_ms,
+        vendor_layout,
+        newest,
+        since,
+        max_findings_per_code,
+    );
+    Err(ApiError::Unsupported(SCAN_PATH_UNAVAILABLE))
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -421,9 +556,10 @@ mod tests {
     use report::progress::{CancellationToken, OperationCancelled, ProgressEvent};
 
     use super::{
-        _check_impl, bound_max_file_bytes, check_bytes, check_file, display_path, is_missing,
-        path_exists, python_float_text, ApiError, APPLY_RULE_SELECTION_UNAVAILABLE,
-        DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE, DEFAULT_VIRTUAL_PATH,
+        _check_impl, bound_max_file_bytes, check_bytes, check_dir, check_file, display_path,
+        is_missing, path_exists, python_float_text, ApiError, APPLY_RULE_SELECTION_UNAVAILABLE,
+        DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE,
+        DEFAULT_VIRTUAL_PATH, SCAN_PATH_UNAVAILABLE,
     };
     use crate::bundle::path_text;
 
@@ -1099,5 +1235,265 @@ mod tests {
         assert!(error.unsupported_message().is_none());
         assert!(!error.to_string().contains("apply_rule_selection"));
         assert!(!error.to_string().contains("SL001"));
+    }
+
+    fn missing_dir() -> &'static Path {
+        Path::new("synthetic/sesslint-rx-cli-api-03-missing")
+    }
+
+    fn require_scan_stop(error: &ApiError) {
+        assert_eq!(error, &ApiError::Unsupported(SCAN_PATH_UNAVAILABLE));
+        assert_eq!(error.unsupported_message(), Some(SCAN_PATH_UNAVAILABLE));
+        assert_eq!(
+            error.to_string(),
+            "sesslint.scan.scan_path is not available"
+        );
+        assert!(Error::source(error).is_none());
+        let text = error.to_string();
+        for absent in [
+            "Path not found",
+            "max_files must be a positive integer",
+            "max_bytes must be a positive integer",
+            "apply_rule_selection",
+            "confidence_min",
+            "margin_min",
+            "SL001",
+            "finding",
+            "synthetic",
+            "Cargo",
+            "not-a-format",
+            "not-a-profile",
+            "not-a-layout",
+            "not-a-date",
+            "fp-",
+            ".secret",
+            ".jsonl",
+            "\n",
+            "\r",
+        ] {
+            assert!(!text.contains(absent), "{absent}");
+        }
+    }
+
+    fn dir_limits(
+        max_files: i64,
+        max_bytes: i64,
+        confidence_min: Option<f64>,
+        margin_min: Option<f64>,
+    ) -> ApiError {
+        match check_dir(
+            missing_dir(),
+            true,
+            false,
+            max_files,
+            max_bytes,
+            None,
+            DEFAULT_PROFILE,
+            confidence_min,
+            margin_min,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            1,
+            false,
+            None,
+            DEFAULT_MAX_FILE_BYTES,
+            None,
+            None,
+            None,
+            None,
+            20,
+        ) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn directory_limit_defaults_match_the_pin() {
+        assert_eq!(DEFAULT_MAX_FILES, 10000);
+        assert_eq!(DEFAULT_MAX_BYTES, 1024 * 1024 * 1024);
+        assert_eq!(DEFAULT_MAX_BYTES, 1_073_741_824);
+        assert_eq!(
+            SCAN_PATH_UNAVAILABLE,
+            "sesslint.scan.scan_path is not available"
+        );
+    }
+
+    #[test]
+    fn max_files_rejects_zero_and_negative_with_pin_rendering() {
+        // A bool cannot be passed. `got True` and `got False` are not expressible.
+        let cases = [
+            (0, "max_files must be a positive integer (> 0), got 0"),
+            (-1, "max_files must be a positive integer (> 0), got -1"),
+            (-500, "max_files must be a positive integer (> 0), got -500"),
+            (
+                i64::MIN,
+                "max_files must be a positive integer (> 0), got -9223372036854775808",
+            ),
+        ];
+        for (value, expected) in cases {
+            let error = dir_limits(value, 0, Some(f64::NAN), Some(1.0));
+            require_value(&error, expected);
+            assert!(!error.to_string().contains("max_bytes"));
+            assert!(!error.to_string().contains("confidence_min"));
+            assert!(!error.to_string().contains("scan_path"));
+            assert!(!error.to_string().contains("synthetic"));
+            assert!(!error.to_string().contains("True"));
+            assert!(!error.to_string().contains("False"));
+        }
+    }
+
+    #[test]
+    fn max_bytes_is_screened_after_the_positive_boundary() {
+        // `1` is the smallest positive `i64` and passes the `max_files` check.
+        let cases = [
+            (0, "max_bytes must be a positive integer (> 0), got 0"),
+            (-1, "max_bytes must be a positive integer (> 0), got -1"),
+            (-500, "max_bytes must be a positive integer (> 0), got -500"),
+            (
+                i64::MIN,
+                "max_bytes must be a positive integer (> 0), got -9223372036854775808",
+            ),
+        ];
+        for (value, expected) in cases {
+            let error = dir_limits(1, value, Some(0.0), None);
+            require_value(&error, expected);
+            assert!(!error.to_string().contains("max_files"));
+            assert!(!error.to_string().contains("confidence_min"));
+            assert!(!error.to_string().contains("scan_path"));
+            assert!(!error.to_string().contains("True"));
+            assert!(!error.to_string().contains("False"));
+        }
+        require_value(
+            &dir_limits(i64::MAX, -4, None, None),
+            "max_bytes must be a positive integer (> 0), got -4",
+        );
+    }
+
+    #[test]
+    fn omitted_thresholds_stop_at_scan_path() {
+        let missing = missing_dir();
+        assert!(!missing.exists());
+        require_scan_stop(&dir_limits(1, 1, None, None));
+        require_scan_stop(&dir_limits(
+            DEFAULT_MAX_FILES,
+            DEFAULT_MAX_BYTES,
+            None,
+            None,
+        ));
+        require_scan_stop(&dir_limits(i64::MAX, i64::MAX, None, None));
+    }
+
+    #[test]
+    fn invalid_threshold_fails_before_the_scan_stop() {
+        let error = dir_limits(1, DEFAULT_MAX_BYTES, Some(0.0), None);
+        require_value(
+            &error,
+            "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0",
+        );
+        assert_ne!(error.to_string(), SCAN_PATH_UNAVAILABLE);
+        let margin = dir_limits(DEFAULT_MAX_FILES, 1, Some(0.2), Some(0.3));
+        require_value(
+            &margin,
+            "margin_min (0.3) cannot exceed confidence_min (0.2)",
+        );
+        assert!(!margin.to_string().contains("scan_path"));
+        assert!(!margin.to_string().contains("synthetic"));
+    }
+
+    #[test]
+    fn valid_directory_call_stops_at_scan_path() {
+        let called = AtomicBool::new(false);
+        let progress = |_event: &ProgressEvent| {
+            called.store(true, Ordering::Relaxed);
+        };
+        let token = CancellationToken::new();
+        token.cancel();
+        let select = ["SL001"];
+        let ignore = ["SL101"];
+        let baseline = ["fp-a"];
+        let exclude = ["*.secret"];
+        let ext = [".jsonl"];
+        let cache = Path::new("synthetic/sesslint-rx-cli-api-03-cache");
+        let missing = missing_dir();
+        assert!(!missing.exists());
+        let error = match check_dir(
+            missing,
+            false,
+            true,
+            1,
+            1,
+            Some("not-a-format"),
+            "not-a-profile",
+            Some(0.5),
+            Some(0.4),
+            Some(&progress),
+            Some(&token),
+            true,
+            Some(&select),
+            Some(&ignore),
+            Some(&baseline),
+            Some(&exclude),
+            Some(&ext),
+            0,
+            true,
+            Some(cache),
+            0,
+            Some(-1),
+            Some("not-a-layout"),
+            Some(0),
+            Some("not-a-date"),
+            0,
+        ) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        require_scan_stop(&error);
+        assert!(!called.load(Ordering::Relaxed));
+        assert!(token.is_cancelled());
+        assert_ne!(error.to_string(), OperationCancelled::MESSAGE);
+        let from_defaults = dir_limits(DEFAULT_MAX_FILES, DEFAULT_MAX_BYTES, Some(0.5), Some(0.5));
+        assert_eq!(error, from_defaults);
+        let from_dot = match check_dir(
+            Path::new("."),
+            true,
+            false,
+            DEFAULT_MAX_FILES,
+            DEFAULT_MAX_BYTES,
+            None,
+            DEFAULT_PROFILE,
+            None,
+            None,
+            Some(&progress),
+            Some(&token),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            1,
+            false,
+            None,
+            DEFAULT_MAX_FILE_BYTES,
+            None,
+            None,
+            None,
+            None,
+            20,
+        ) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(from_dot, from_defaults);
+        require_scan_stop(&from_dot);
+        assert!(!called.load(Ordering::Relaxed));
+        assert!(Path::new(".").is_dir());
     }
 }
