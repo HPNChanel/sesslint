@@ -13,3 +13,5 @@ pub mod io;
 pub mod state_db;
 pub mod scan;
 pub mod batch;
+#[path = "schema/sesslint.scan-report.v1.rs"]
+pub mod scan_report_schema;

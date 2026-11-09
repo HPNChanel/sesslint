@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.scan-report.v1 schema parity. Constraints and expected rejections come from the pinned schema. Documents are hand-built. ScanReport.to_dict is not executed. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.scan-report.v1/generate",
+  "known_parity_gaps": [
+    "Schema loading and the ALL_CODES enum lockstep are not this validator.",
+    "Bucket sums, sorted reason keys, and reason sums are outside the pinned schema.",
+    "JSON round trip and skipped_reason_totals are emitter behavior.",
+    "Emitter omission of empty skipped_reasons is not one accepted object.",
+    "Duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "A JSON number is an integer only when it is a proven i128."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

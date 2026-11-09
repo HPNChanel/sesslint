@@ -1,0 +1,39 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.scan",
+  "not_applicable_count": 5,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "get_scan_schema_path and load_scan_schema open the schema file, then compare the draft $schema, required subsets, the verdict enum, and the code enum with ALL_CODES including its length. validate_scan_report_json checks one instance. Facts recorded from the pin are not that loader call.",
+      "status": "not_applicable",
+      "test": "tests/test_scan_schema.py::test_scan_schema_loads_and_self_consistent",
+      "vector_id": null
+    },
+    {
+      "note": "_sample_report().to_dict() then _validate_scan_dict_strictly, which calls assert_schema and also checks the bucket sum, sorted skipped_reasons keys, non-empty reason keys, and the reason sum against skipped. Those comparisons are outside the pinned schema. One valid object is not that sweep.",
+      "status": "not_applicable",
+      "test": "tests/test_scan_schema.py::test_scan_report_dict_validates",
+      "vector_id": null
+    },
+    {
+      "note": "json.loads of ScanReport.to_json then the same multi-assert sweep. validate_scan_report_json does not round-trip an emitter document.",
+      "status": "not_applicable",
+      "test": "tests/test_scan_schema.py::test_scan_report_json_round_trip_validates",
+      "vector_id": null
+    },
+    {
+      "note": "skipped_reason_totals must equal a two-key dict, to_dict must repeat it, and the strict sweep must pass. validate_scan_report_json does not aggregate skipped reasons.",
+      "status": "not_applicable",
+      "test": "tests/test_scan_schema.py::test_scan_report_skipped_reasons_aggregated",
+      "vector_id": null
+    },
+    {
+      "note": "the test asserts ScanReport.to_dict omits skipped_reasons. A valid object without that key is not the emitter omission.",
+      "status": "not_applicable",
+      "test": "tests/test_scan_schema.py::test_scan_report_skipped_reasons_omitted_when_empty",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.scan-report.v1.json"
+}

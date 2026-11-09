@@ -1,0 +1,10 @@
+{
+  "generator": "rust/parity/schemas/sesslint.scan-report.v1/generate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.scan-report.v1.json",
+  "schema_sha256": "be49c6563a3e3ce2649eb2ed14efb1f9db137d4ea93553f7ab5e7b16256b7acb",
+  "test_py_sha256": "e112a69f274c5f0c9bc2d23505dd3f612809ebcb1a40549232706ab279f5cb4f",
+  "vector_count": 123,
+  "vectors_sha256": "0f60ca5227453d0b0918d79ce002e8d7de7ce123839d8fee0e08896ea20f9f6f"
+}
