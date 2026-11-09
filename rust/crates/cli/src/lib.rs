@@ -38,5 +38,5 @@ pub mod repair;
 pub mod stats;
 pub mod verify;
 pub mod watch;
-pub mod registry {}
+pub mod registry;
 pub mod main__ {}
