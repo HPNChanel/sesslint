@@ -14,12 +14,25 @@
 //! outside i64, non-string fallback schema versions and composite/float header
 //! string coercions are explicit unsupported domains, not silently coerced.
 //! Existing model validation limitations also apply (see model::canonical).
+//!
+//! Part 2 ports `_load_source_with_stream_findings` and `_run_detector_checks`.
+//! Those functions call the ported `sesslint.io` probes directly.
+//! [`NativeReaders::stream`] is unchanged, so [`load_artifact_events`] still
+//! stops at the part-1 seam and does not call the new loader.
+//! `load_canonical` does not return an event list, so a canonical document
+//! that reaches it is [`VerifyReadError::Unsupported`] and is not turned into
+//! an empty ledger.
+//! Profile names are resolved on the ported registry. `get_profile` is not
+//! called: it reports the builtin module missing for every name, including
+//! names the registry holds. A missing name does not invent a close-match
+//! suggestion.
 
 use std::fmt;
 use std::path::Path;
 
 use adapters::detect::{self, ThresholdInput};
 use model::canonical::{self, Payload, SessionEvent, SessionHeader};
+use model::events::EventValue;
 use model::finding::Finding;
 use repair::planner::{PlanParseError, PlanValue, RepairPlan};
 use scan::io::{self as strict_io, JsonDecodeError, JsonValue};
@@ -563,6 +576,223 @@ pub fn load_artifact_events_with(
     }
 }
 
+/// `sesslint.profiles.profile.get_profile` suggests a close match after a miss.
+///
+/// That suggestion is not ported. Exact registry hits do not use this seam.
+const GET_PROFILE_CLOSE_MATCH_UNAVAILABLE: &str =
+    "sesslint.profiles.profile.get_profile close-match is not available";
+
+/// Failure from [`run_detector_checks`].
+///
+/// [`Self::Unsupported`] is a missing capability. [`Self::Failed`] is a
+/// detector or runner failure whose text is preserved. Neither variant is an
+/// empty finding list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DetectorChecksError {
+    /// The named capability is not available.
+    Unsupported(&'static str),
+    /// [`checks::runner::run_all_checks`] failed. The string is its [`Display`].
+    Failed(String),
+}
+
+impl fmt::Display for DetectorChecksError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsupported(name) => write!(formatter, "Unsupported: {name}"),
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for DetectorChecksError {}
+
+fn codec_seam(message: &str) -> Option<&'static str> {
+    const SEAMS: &[&str] = &[
+        model::finding::FINGERPRINT_CODEC_UNAVAILABLE,
+        model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE,
+        model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE,
+        model::canonical::SYNTHETIC_ID_UNAVAILABLE,
+        model::canonical::CONTENT_IDENTITY_BYTES_UNAVAILABLE,
+        model::canonical::CONTENT_IDENTITY_HASH_UNAVAILABLE,
+        model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+        checks::runner::COVERAGE_UNAVAILABLE,
+        checks::profile::BUILTIN_UNAVAILABLE,
+        checks::tool_pairing_2::PROFILES_UNAVAILABLE,
+        adapters::canonical::SECRET_SCAN_TRACKER_UNAVAILABLE,
+    ];
+    SEAMS.iter().copied().find(|seam| *seam == message)
+}
+
+fn read_header_error(error: strict_io::ReadHeaderError) -> VerifyReadError {
+    match &error {
+        strict_io::ReadHeaderError::Finding(inner)
+            if inner.message() == model::finding::FINGERPRINT_CODEC_UNAVAILABLE =>
+        {
+            VerifyReadError::Unsupported(model::finding::FINGERPRINT_CODEC_UNAVAILABLE)
+        }
+        _ => invalid(error.to_string()),
+    }
+}
+
+fn iter_events_error(error: strict_io::IterEventsError) -> VerifyReadError {
+    match &error {
+        strict_io::IterEventsError::Finding(inner)
+            if inner.message() == model::finding::FINGERPRINT_CODEC_UNAVAILABLE =>
+        {
+            VerifyReadError::Unsupported(model::finding::FINGERPRINT_CODEC_UNAVAILABLE)
+        }
+        _ => invalid(error.to_string()),
+    }
+}
+
+fn read_stream_source(path: &Path) -> Result<StreamEvents, VerifyReadError> {
+    let header = strict_io::read_header(
+        strict_io::HeaderInput::Path(path),
+        &strict_io::DEFAULT_READER_LIMITS,
+        None,
+        None,
+    )
+    .map_err(read_header_error)?;
+    let stream = strict_io::iter_events(strict_io::EventInput::Path(path), None, None)
+        .map_err(iter_events_error)?;
+    let mut events = Vec::new();
+    for item in stream {
+        match item {
+            Ok(event) => events.push(event),
+            // A finding would be an item in Python. This reader stops with
+            // the fingerprint seam instead of yielding it. Keep that failure;
+            // an empty finding list would drop it.
+            Err(error) => return Err(iter_events_error(error)),
+        }
+    }
+    Ok((Some(header), events, Vec::new()))
+}
+
+fn decode_utf8_sig(bytes: &[u8]) -> Result<&str, ()> {
+    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
+    std::str::from_utf8(bytes).map_err(|_| ())
+}
+
+enum StreamFallback {
+    Original,
+    Unsupported(&'static str),
+}
+
+fn canonical_document_fallback(path: &Path) -> Result<StreamEvents, StreamFallback> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(StreamFallback::Original),
+    };
+    let text = match decode_utf8_sig(&bytes) {
+        Ok(text) => text,
+        Err(_) => return Err(StreamFallback::Original),
+    };
+    let text = text.trim_matches(python_space);
+    if !text.starts_with('{') {
+        return Err(StreamFallback::Original);
+    }
+    let parsed = match serde_json::from_str::<Value>(text) {
+        Ok(parsed) => parsed,
+        Err(_) => return Err(StreamFallback::Original),
+    };
+    let Some(object) = parsed.as_object() else {
+        return Err(StreamFallback::Original);
+    };
+    if !object.contains_key("events") {
+        return Err(StreamFallback::Original);
+    }
+    // Python builds the header from `ev_list.source` after `load_canonical`.
+    // This port returns no event list: schema version `sesslint.session/v1`,
+    // `session_id` from source or `Path.stem`, and `created_at` from source
+    // or `2026-09-05T12:00:00Z` are not invented.
+    let label = path.to_str().unwrap_or("");
+    match adapters::canonical::load_canonical(
+        adapters::canonical::CanonicalSource::PathLike(label),
+        None,
+    ) {
+        Ok(never) => match never {},
+        Err(error) => Err(StreamFallback::Unsupported(error.message())),
+    }
+}
+
+/// Load a session header, its events, and stream findings.
+///
+/// Python: `_load_source_with_stream_findings` at
+/// `02694d537104659df66cdd084354739f3cccc440` lines 305–335.
+/// `read_header` then `iter_events` run first, with default limits and no
+/// duplicate sink. A capability seam from either probe propagates.
+/// Any other failure may read the file as `utf-8-sig`, strip it, and accept
+/// only a JSON object that contains `events`. That object calls
+/// `load_canonical`. The loader's seam propagates. A fallback that does not
+/// apply, or that fails as input, restores the first probe's error.
+///
+/// # Errors
+///
+/// The first probe's input error, or [`VerifyReadError::Unsupported`] when a
+/// finding cannot be emitted or the canonical loader cannot return events.
+pub fn load_source_with_stream_findings(path: &Path) -> Result<StreamEvents, VerifyReadError> {
+    match read_stream_source(path) {
+        Ok(loaded) => Ok(loaded),
+        Err(error @ VerifyReadError::Unsupported(_)) => Err(error),
+        Err(original) => match canonical_document_fallback(path) {
+            Ok(loaded) => Ok(loaded),
+            Err(StreamFallback::Unsupported(name)) => Err(VerifyReadError::Unsupported(name)),
+            Err(StreamFallback::Original) => Err(original),
+        },
+    }
+}
+
+fn detector_failure(error: checks::runner::RunnerError) -> DetectorChecksError {
+    match codec_seam(error.message()) {
+        Some(name) => DetectorChecksError::Unsupported(name),
+        None => DetectorChecksError::Failed(error.message().to_owned()),
+    }
+}
+
+/// Run the shared detector pipeline over canonical events.
+///
+/// Python: `_run_detector_checks` at
+/// `02694d537104659df66cdd084354739f3cccc440` lines 338–358.
+/// Callers pass the Python defaults `source_path` `"<canonical>"`,
+/// `profile_name` `"neutral"`, and `adapter` `"canonical"` when they want
+/// those defaults. The profile string is an exact registry lookup. Detector
+/// errors propagate. `return_coverage` stays false, so coverage is not
+/// requested and an empty list is not substituted for a detector failure.
+///
+/// # Errors
+///
+/// An unknown profile name, or a detector failure.
+pub fn run_detector_checks(
+    events: &[SessionEvent],
+    source_path: &str,
+    profile_name: &str,
+    adapter: &str,
+) -> Result<Vec<Finding>, DetectorChecksError> {
+    let Some(profile) = checks::builtin::REGISTRY.get(profile_name) else {
+        return Err(DetectorChecksError::Unsupported(
+            GET_PROFILE_CLOSE_MATCH_UNAVAILABLE,
+        ));
+    };
+    let encoded: Vec<EventValue> = events
+        .iter()
+        .cloned()
+        .map(EventValue::from_session)
+        .collect();
+    let input = checks::runner::RunAllChecksInput {
+        events: &encoded,
+        event_source: checks::runner::EventSource::Absent,
+        profile: checks::runner::ProfileArg::Profile(profile),
+        source_path,
+        context: None,
+        adapter: Some(adapter),
+        adapter_skips: &[],
+        adapter_performed: &[],
+        deselected_rules: &[],
+        return_coverage: false,
+    };
+    checks::runner::run_all_checks(&input).map_err(detector_failure)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -891,5 +1121,262 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("required"));
+    }
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "sesslint-rx-verify02-{label}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("scratch");
+            Self(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn write(&self, name: &str, bytes: &[u8]) -> std::path::PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, bytes).expect("write");
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn ledger(events: &[&str]) -> Vec<u8> {
+        let mut body = String::from(HEADER);
+        body.push('\n');
+        for event in events {
+            body.push_str(event);
+            body.push('\n');
+        }
+        body.into_bytes()
+    }
+
+    #[test]
+    fn stream_load_returns_header_and_events_without_findings() {
+        let scratch = Scratch::new("happy");
+        let second = EVENT
+            .replace("\"id\":\"m0\"", "\"id\":\"m1\"")
+            .replace("\"seq\":0", "\"seq\":1");
+        let path = scratch.write("session.jsonl", &ledger(&[EVENT, &second]));
+        let (header, events, findings) = load_source_with_stream_findings(&path).unwrap();
+        let header = header.unwrap();
+        assert_eq!(header.schema_version, "sesslint.session/v1");
+        assert_eq!(header.session_id, "synthetic");
+        assert_eq!(header.created_at, "2026-09-05T12:00:00Z");
+        assert_eq!(header.title, None);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id, "m0");
+        assert_eq!(events[0].seq, 0);
+        assert_eq!(events[1].id, "m1");
+        assert_eq!(events[1].seq, 1);
+        assert!(findings.is_empty());
+
+        let mut bom = b"\xef\xbb\xbf".to_vec();
+        bom.extend(ledger(&[EVENT]));
+        let path = scratch.write("bom.jsonl", &bom);
+        let (header, events, findings) = load_source_with_stream_findings(&path).unwrap();
+        assert_eq!(header.unwrap().session_id, "synthetic");
+        assert_eq!(events.len(), 1);
+        assert!(findings.is_empty());
+
+        let path = scratch.write("header-only.jsonl", format!("{HEADER}\n").as_bytes());
+        let (header, events, findings) = load_source_with_stream_findings(&path).unwrap();
+        assert_eq!(header.unwrap().session_id, "synthetic");
+        assert!(events.is_empty());
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn stream_load_keeps_the_first_probe_error_when_fallback_does_not_apply() {
+        let scratch = Scratch::new("probe");
+        let missing = scratch.path().join("absent-synthetic.jsonl");
+        let missing_err = load_source_with_stream_findings(&missing).unwrap_err();
+        assert!(matches!(missing_err, VerifyReadError::Invalid(_)));
+        assert!(missing_err.to_string().contains("Session file not found:"));
+        assert!(missing_err.to_string().contains("absent-synthetic.jsonl"));
+        assert!(!missing_err.to_string().contains('\\'));
+
+        let dir = scratch.path().join("nested");
+        std::fs::create_dir(&dir).expect("dir");
+        let dir_err = load_source_with_stream_findings(&dir).unwrap_err();
+        assert!(matches!(dir_err, VerifyReadError::Invalid(_)));
+        assert!(dir_err
+            .to_string()
+            .contains("Expected session file, got directory"));
+
+        let empty = scratch.write("empty.jsonl", b"");
+        let empty_err = load_source_with_stream_findings(&empty).unwrap_err();
+        assert!(matches!(empty_err, VerifyReadError::Invalid(_)));
+        assert!(empty_err
+            .to_string()
+            .contains("Session file is empty or contains no header"));
+
+        let array = scratch.write("array.jsonl", b"[1]\n");
+        let array_err = load_source_with_stream_findings(&array).unwrap_err();
+        assert!(matches!(array_err, VerifyReadError::Invalid(_)));
+        assert!(array_err.to_string().contains("must be a mapping"));
+        assert!(!array_err
+            .to_string()
+            .contains(adapters::canonical::SECRET_SCAN_TRACKER_UNAVAILABLE));
+
+        let mapping = scratch.write("mapping.jsonl", br#"{"nope":1}"#);
+        let mapping_err = load_source_with_stream_findings(&mapping).unwrap_err();
+        assert!(matches!(mapping_err, VerifyReadError::Invalid(_)));
+        assert!(mapping_err.to_string().contains("not a session header"));
+
+        let junk = scratch.write("junk.jsonl", br#"{"events":[]}[]"#);
+        let junk_err = load_source_with_stream_findings(&junk).unwrap_err();
+        assert!(matches!(junk_err, VerifyReadError::Invalid(_)));
+        assert!(!junk_err
+            .to_string()
+            .contains(adapters::canonical::SECRET_SCAN_TRACKER_UNAVAILABLE));
+
+        let bytes = scratch.write("bad-utf8.jsonl", b"\xff");
+        let utf8_err = load_source_with_stream_findings(&bytes).unwrap_err();
+        assert!(matches!(utf8_err, VerifyReadError::Invalid(_)));
+        assert!(utf8_err.to_string().contains("Invalid UTF-8"));
+    }
+
+    #[test]
+    fn canonical_document_reaches_the_loader_seam_and_does_not_invent_events() {
+        let scratch = Scratch::new("canonical");
+        for (name, bytes) in [
+            ("events.json", br#"{"events":[]}"#.to_vec()),
+            ("padded.json", b"\xef\xbb\xbf\x1c{\"events\":[]}\n".to_vec()),
+        ] {
+            let path = scratch.write(name, &bytes);
+            match load_source_with_stream_findings(&path) {
+                Err(VerifyReadError::Unsupported(
+                    adapters::canonical::SECRET_SCAN_TRACKER_UNAVAILABLE,
+                )) => {}
+                other => panic!("{name}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn stream_findings_stay_unsupported_instead_of_an_empty_list() {
+        let scratch = Scratch::new("dups");
+        let duplicate = EVENT.replace("\"id\":\"m0\"", "\"id\":\"m0\",\"id\":\"m0\"");
+        let path = scratch.write("dups.jsonl", &ledger(&[&duplicate]));
+        let err = load_source_with_stream_findings(&path).unwrap_err();
+        assert!(matches!(
+            err,
+            VerifyReadError::Unsupported(model::finding::FINGERPRINT_CODEC_UNAVAILABLE)
+        ));
+    }
+
+    fn synthetic_event(id: &str, parent: Option<&str>, seq: i64) -> SessionEvent {
+        SessionEvent::new(
+            id,
+            parent.map(str::to_owned),
+            seq,
+            "2024-02-29T00:00:00Z",
+            "user",
+            "message",
+        )
+    }
+
+    fn direct_detector_result(
+        events: &[SessionEvent],
+        source_path: &str,
+        profile_name: &str,
+        adapter: &str,
+    ) -> Result<Vec<Finding>, checks::runner::RunnerError> {
+        let profile = checks::builtin::REGISTRY
+            .get(profile_name)
+            .expect("profile");
+        let encoded: Vec<_> = events
+            .iter()
+            .cloned()
+            .map(EventValue::from_session)
+            .collect();
+        let input = checks::runner::RunAllChecksInput {
+            events: &encoded,
+            event_source: checks::runner::EventSource::Absent,
+            profile: checks::runner::ProfileArg::Profile(profile),
+            source_path,
+            context: None,
+            adapter: Some(adapter),
+            adapter_skips: &[],
+            adapter_performed: &[],
+            deselected_rules: &[],
+            return_coverage: false,
+        };
+        checks::runner::run_all_checks(&input)
+    }
+
+    fn assert_detector_delegates(
+        events: &[SessionEvent],
+        source_path: &str,
+        profile_name: &str,
+        adapter: &str,
+    ) {
+        let via = run_detector_checks(events, source_path, profile_name, adapter);
+        let direct = direct_detector_result(events, source_path, profile_name, adapter);
+        match (via, direct) {
+            (Ok(left), Ok(right)) => assert_eq!(left, right),
+            (Err(DetectorChecksError::Failed(message)), Err(error)) => {
+                assert_eq!(message, error.to_string());
+            }
+            (Err(DetectorChecksError::Unsupported(message)), Err(error)) => {
+                assert_eq!(message, error.message());
+            }
+            (via, direct) => panic!("detector delegation diverged: {via:?} vs {direct:?}"),
+        }
+    }
+
+    #[test]
+    fn detector_checks_delegate_and_do_not_use_the_profile_stub() {
+        assert_detector_delegates(&[], "<canonical>", "neutral", "canonical");
+        assert!(run_detector_checks(&[], "<canonical>", "neutral", "canonical").is_ok());
+        assert_detector_delegates(&[], "s.jsonl", "claude-strict", "canonical");
+        let chain = vec![
+            synthetic_event("parent-synthetic", None, 0),
+            synthetic_event("child-synthetic", Some("parent-synthetic"), 1),
+        ];
+        assert_detector_delegates(&chain, "s.jsonl", "neutral", "canonical");
+        // Neutral enables pairing 2. That detector stops before findings.
+        assert_eq!(
+            run_detector_checks(&chain, "s.jsonl", "neutral", "canonical").unwrap_err(),
+            DetectorChecksError::Unsupported(checks::tool_pairing_2::PROFILES_UNAVAILABLE)
+        );
+        let duplicates = vec![
+            synthetic_event("same-synthetic", None, 0),
+            synthetic_event("same-synthetic", None, 1),
+        ];
+        let duplicate_err =
+            run_detector_checks(&duplicates, "<canonical>", "neutral", "canonical").unwrap_err();
+        assert_eq!(
+            duplicate_err,
+            DetectorChecksError::Unsupported(model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE)
+        );
+        let unknown =
+            run_detector_checks(&[], "<canonical>", "secret-looking", "canonical").unwrap_err();
+        assert_eq!(
+            unknown,
+            DetectorChecksError::Unsupported(GET_PROFILE_CLOSE_MATCH_UNAVAILABLE)
+        );
+        assert!(!unknown.to_string().contains("secret-looking"));
+        // `get_profile` refuses every name. A known profile must not take that path.
+        assert!(checks::profile::get_profile("neutral").is_err());
+        assert_eq!(
+            checks::profile::get_profile("neutral")
+                .unwrap_err()
+                .to_string(),
+            checks::profile::BUILTIN_UNAVAILABLE
+        );
     }
 }
