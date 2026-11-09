@@ -7,6 +7,8 @@ mod error;
 pub use error::ReportError;
 
 pub mod baseline;
+#[path = "schema/sesslint.baseline.v2.rs"]
+pub mod baseline_schema;
 pub mod progress;
 pub mod report;
 pub mod html_report;

@@ -1,0 +1,13 @@
+{
+  "baseline_py_sha256": "7d641bb31d495783f7f14b0d99e8a29ef3c80f85924ed616013ba883892d0851",
+  "covered_count": 3,
+  "generator": "rust/parity/schemas/sesslint.baseline.v2/generate",
+  "module": "sesslint.baseline",
+  "not_applicable_count": 19,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
+  "schema_sha256": "d2b1e0a160b0289db257f353df01f4b7e1620804ee748236f5eeecff6b9802dd",
+  "vector_count": 25,
+  "vectors_sha256": "9e2dc91e68e60bb53c7f947861a94ed7cefa7de63d6368e3ec1a8afc2ed050a7"
+}

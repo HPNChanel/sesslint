@@ -1,0 +1,164 @@
+{
+  "covered_count": 3,
+  "module": "sesslint.baseline",
+  "not_applicable_count": 19,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "column": "column_0",
+      "note": "write_baseline, load_baseline, dump_baseline, and compute_v2_key on _findings. Several functions. A fixture session is not stored. One document is not the whole test.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_baseline_v2_round_trip",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "load_baseline of sesslint.baseline/v1. Different schema from v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_load_v1_still_supported",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "load_baseline of a missing path. There is no v2 document.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_load_missing_fails",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "load_baseline of a v1 document whose fingerprint is not 16 hex. Different schema from v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_load_malformed_v1_fails",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "",
+      "status": "covered",
+      "test": "tests/test_baseline.py::test_load_malformed_v2_fails",
+      "vector_id": "load_malformed_v2"
+    },
+    {
+      "column": "column_0",
+      "note": "load_baseline rejects schema_version other/v9 on a fingerprints document. That loader check is not validate_baseline_v2 of a v2 object.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_load_wrong_schema_fails",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "file_role of five spellings. Different function from upgrade_baseline and from validate_baseline_v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_file_role_normalizes_spelling",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "file_role reads the process working directory. Different function, and the directory spelling is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_file_role_bare_name_uses_cwd",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "compute_v2_key and make_finding for two paths. Different function from validate_baseline_v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_v2_key_path_spelling_independent",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "compute_v2_key for two parents. Different function from validate_baseline_v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_v2_key_immediate_parent_rename_differs",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main check writes a baseline and then applies it. Different function. A fixture session is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_check_write_v2_then_baseline",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main check with a relative spelling. Different function. A fixture session is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_check_v2_baseline_survives_relative_invoke",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main check of a v1 baseline. Different schema and different function.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_v1_baseline_still_suppresses_via_v1_leg",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "filter_findings runs twice, once for a shared key and once for a single key. Two modes. Different function from validate_baseline_v2.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_ambiguous_v2_key_suppresses_nothing",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "",
+      "status": "covered",
+      "test": "tests/test_baseline.py::test_upgrade_unverified_without_source",
+      "vector_id": "upgrade_unverified_without_source"
+    },
+    {
+      "column": "column_0",
+      "note": "upgrade_baseline of fixture findings, then compute_v2_key and file_role. The synthetic verified document is a different finding and does not check those equalities.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_upgrade_verified_with_source",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "write_baseline of fixture findings, then upgrade_baseline failure. Two functions. A fixture session is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_upgrade_rejects_non_v1",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "",
+      "status": "covered",
+      "test": "tests/test_baseline.py::test_upgrade_deterministic",
+      "vector_id": "upgrade_deterministic"
+    },
+    {
+      "column": "column_0",
+      "note": "main check of a missing baseline path. Different function.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_check_missing_baseline_fails",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main scan writes and applies a baseline. Different function. A fixture session is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_scan_baseline_suppresses",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main scan after a directory move. Different function. A fixture session is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_scan_v2_baseline_survives_tree_rename",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "main rejects both baseline flags together. Different function.",
+      "status": "not_applicable",
+      "test": "tests/test_baseline.py::test_baseline_flags_mutually_exclusive",
+      "vector_id": null
+    }
+  ],
+  "schema_id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
+  "test_file": "tests/test_baseline.py"
+}
