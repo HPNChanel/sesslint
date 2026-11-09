@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.diff.v1 schema parity. Constraints and expected rejections come from the pinned schema. Documents are constructed objects, not SessionDiff.to_dict output. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.diff.v1/generate",
+  "known_parity_gaps": [
+    "diff.py imports sesslint.canonical, sesslint.adapters, and sesslint.report. Those imports are refused, so SessionDiff.to_dict is not executed.",
+    "tests/cli/test_diff.py::test_diff_json_output_schema calls the CLI and checks several fields. validate is one document, not that sweep.",
+    "tests/cli/test_diff.py::test_diff_json_validates_against_schema calls diff_sessions and load_diff_schema. One object is not that sweep.",
+    "Duplicate JSON object keys are a syntax refusal. Python json.loads keeps the last key, so that case is not a vector.",
+    "uniqueItems, minLength, maxLength, and pattern are absent from the pinned schema. A schema that stated them fails closed as unsupported."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

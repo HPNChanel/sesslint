@@ -1,0 +1,21 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.diff",
+  "not_applicable_count": 2,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "main compares two session files and asserts exit 1, schema_version, identical, counts.added, both event counts, and that every delta category is one of the six names. validate judges one document. A synthetic object does not run that CLI sweep.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_diff.py::test_diff_json_output_schema",
+      "vector_id": null
+    },
+    {
+      "note": "diff_sessions and to_dict build one document, then load_diff_schema checks the const, every required key, every side required key, and category membership for each delta. validate does not load sessions or open a schema path. One accepted object is not that multi-assert sweep.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_diff.py::test_diff_json_validates_against_schema",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.diff.v1.json"
+}

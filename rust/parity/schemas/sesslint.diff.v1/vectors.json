@@ -1,0 +1,2569 @@
+{
+  "facts": {
+    "additional_properties": false,
+    "category_enum": [
+      "added",
+      "removed",
+      "kind-changed",
+      "parent-relinked",
+      "seq-reordered",
+      "content-changed"
+    ],
+    "count_minimum": 0,
+    "counts_required": [
+      "added",
+      "content-changed",
+      "kind-changed",
+      "parent-relinked",
+      "removed",
+      "seq-reordered"
+    ],
+    "detail_value_type": "string",
+    "id": "https://sesslint.dev/schemas/sesslint.diff/v1",
+    "index_minimum": 0,
+    "pin_categories": [
+      "added",
+      "removed",
+      "kind-changed",
+      "parent-relinked",
+      "seq-reordered",
+      "content-changed"
+    ],
+    "pin_schema_version": "sesslint.diff/v1",
+    "property_names": [
+      "schema_version",
+      "tool_version",
+      "a",
+      "b",
+      "identical",
+      "counts",
+      "deltas"
+    ],
+    "required": [
+      "a",
+      "b",
+      "counts",
+      "deltas",
+      "identical",
+      "schema_version",
+      "tool_version"
+    ],
+    "schema_version_const": "sesslint.diff/v1",
+    "side_property_names": [
+      "path",
+      "format",
+      "event_count"
+    ],
+    "side_ref": "#/$defs/side",
+    "side_required": [
+      "event_count",
+      "format",
+      "path"
+    ]
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "synthetic_minimal",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "tool_version_empty",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": ""
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "event_counts_positive",
+      "instance": {
+        "a": {
+          "event_count": 1,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 2,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "identical_false_empty_deltas",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "counts_added_without_deltas",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 1,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_added",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 1,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "added"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_removed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 1,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "removed"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_kind_changed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 1,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "kind-changed"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_parent_relinked",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 1,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "parent-relinked"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_seq_reordered",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 1
+        },
+        "deltas": [
+          {
+            "category": "seq-reordered"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_content_changed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 1,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_full_kind_changed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 1,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "a_index": 0,
+            "b_index": 0,
+            "category": "kind-changed",
+            "detail": {
+              "kind_a": "message",
+              "kind_b": "checkpoint"
+            },
+            "event_id": "e1"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_detail_empty",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 1,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {}
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_detail_string",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 1,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "k": "v"
+            }
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_detail_slash_key",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 1,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "a/b": "left"
+            }
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "delta_indexes_zero",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 1,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "a_index": 0,
+            "category": "removed"
+          }
+        ],
+        "identical": false,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_added_one_point_zero",
+      "raw": "{\"a\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"a.jsonl\"},\"b\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"b.jsonl\"},\"counts\":{\"added\":1.0,\"content-changed\":0,\"kind-changed\":0,\"parent-relinked\":0,\"removed\":0,\"seq-reordered\":0},\"deltas\":[],\"identical\":true,\"schema_version\":\"sesslint.diff/v1\",\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_added_exponent",
+      "raw": "{\"a\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"a.jsonl\"},\"b\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"b.jsonl\"},\"counts\":{\"added\":1e1,\"content-changed\":0,\"kind-changed\":0,\"parent-relinked\":0,\"removed\":0,\"seq-reordered\":0},\"deltas\":[],\"identical\":true,\"schema_version\":\"sesslint.diff/v1\",\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_tool_version_unicode",
+      "raw": "{\"a\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"a.jsonl\"},\"b\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"b.jsonl\"},\"counts\":{\"added\":0,\"content-changed\":0,\"kind-changed\":0,\"parent-relinked\":0,\"removed\":0,\"seq-reordered\":0},\"deltas\":[],\"identical\":true,\"schema_version\":\"sesslint.diff/v1\",\"tool_version\":\"caf\\u00e9\"}"
+    },
+    {
+      "expected": {
+        "detail": "a",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "a",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_a",
+      "instance": {
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "b",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_b",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "counts",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_counts",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "deltas",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_deltas",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "identical",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_identical",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "tool_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_tool_version",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "extra": 1,
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "other",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_number",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": 1,
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/tool_version"
+      },
+      "id": "tool_version_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": 1
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/identical"
+      },
+      "id": "identical_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": 1,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_type",
+      "instance": {
+        "a": [],
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/b"
+      },
+      "id": "b_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": [],
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "event_count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_missing_event_count",
+      "instance": {
+        "a": {
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "format",
+        "keyword": "required",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_missing_format",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_missing_path",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_additional_property",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl",
+          "z": 1
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a/event_count"
+      },
+      "id": "a_event_count_string",
+      "instance": {
+        "a": {
+          "event_count": "0",
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a/event_count"
+      },
+      "id": "a_event_count_bool",
+      "instance": {
+        "a": {
+          "event_count": true,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/a/event_count"
+      },
+      "id": "a_event_count_negative",
+      "instance": {
+        "a": {
+          "event_count": -1,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a/event_count"
+      },
+      "id": "a_event_count_fraction",
+      "instance": {
+        "a": {
+          "event_count": 1.5,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a/path"
+      },
+      "id": "a_path_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": 1
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/a/format"
+      },
+      "id": "a_format_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": 1,
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/a"
+      },
+      "id": "a_extra_and_bad_count",
+      "instance": {
+        "a": {
+          "event_count": "bad",
+          "format": "canonical",
+          "path": "a.jsonl",
+          "z": 1
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/b"
+      },
+      "id": "b_missing_path",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": [],
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "added",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_added",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "content-changed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_content_changed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "kind-changed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_kind_changed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "parent-relinked",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_parent_relinked",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "removed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_removed",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "seq-reordered",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_seq_reordered",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_additional",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0,
+          "z": 1
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/added"
+      },
+      "id": "counts_added_string",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": "0",
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/added"
+      },
+      "id": "counts_added_bool",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": true,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/added"
+      },
+      "id": "counts_added_negative",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": -1,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas"
+      },
+      "id": "deltas_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": {},
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0"
+      },
+      "id": "deltas_item_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          "x"
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/1"
+      },
+      "id": "deltas_second_item_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "added"
+          },
+          "x"
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "category",
+        "keyword": "required",
+        "ok": false,
+        "path": "/deltas/0"
+      },
+      "id": "delta_missing_category",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "z": 1
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/deltas/0"
+      },
+      "id": "delta_additional",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "added",
+            "z": 1
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/deltas/0/category"
+      },
+      "id": "delta_category_enum",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "nope"
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/deltas/0/category"
+      },
+      "id": "delta_category_number",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": 1
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/event_id"
+      },
+      "id": "event_id_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "added",
+            "event_id": 1
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/a_index"
+      },
+      "id": "a_index_string",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "a_index": "0",
+            "category": "removed"
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/deltas/0/a_index"
+      },
+      "id": "a_index_negative",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "a_index": -1,
+            "category": "removed"
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/a_index"
+      },
+      "id": "a_index_bool",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "a_index": true,
+            "category": "removed"
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/b_index"
+      },
+      "id": "b_index_fraction",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "b_index": 0.5,
+            "category": "added"
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail"
+      },
+      "id": "detail_type",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": []
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail/k"
+      },
+      "id": "detail_number",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "k": 1
+            }
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail/k"
+      },
+      "id": "detail_bool",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "k": true
+            }
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail/k"
+      },
+      "id": "detail_null",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "k": null
+            }
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail/a~1b"
+      },
+      "id": "detail_slash_number",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "a/b": 1
+            }
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/deltas/0/detail/a~0b"
+      },
+      "id": "detail_tilde_number",
+      "instance": {
+        "a": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "a.jsonl"
+        },
+        "b": {
+          "event_count": 0,
+          "format": "canonical",
+          "path": "b.jsonl"
+        },
+        "counts": {
+          "added": 0,
+          "content-changed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "removed": 0,
+          "seq-reordered": 0
+        },
+        "deltas": [
+          {
+            "category": "content-changed",
+            "detail": {
+              "a~b": 1
+            }
+          }
+        ],
+        "identical": true,
+        "schema_version": "sesslint.diff/v1",
+        "tool_version": "0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/added"
+      },
+      "id": "raw_added_fraction",
+      "raw": "{\"a\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"a.jsonl\"},\"b\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"b.jsonl\"},\"counts\":{\"added\":1.5,\"content-changed\":0,\"kind-changed\":0,\"parent-relinked\":0,\"removed\":0,\"seq-reordered\":0},\"deltas\":[],\"identical\":true,\"schema_version\":\"sesslint.diff/v1\",\"tool_version\":\"0\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/added"
+      },
+      "id": "raw_added_exponent_fraction",
+      "raw": "{\"a\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"a.jsonl\"},\"b\":{\"event_count\":0,\"format\":\"canonical\",\"path\":\"b.jsonl\"},\"counts\":{\"added\":1e-1,\"content-changed\":0,\"kind-changed\":0,\"parent-relinked\":0,\"removed\":0,\"seq-reordered\":0},\"deltas\":[],\"identical\":true,\"schema_version\":\"sesslint.diff/v1\",\"tool_version\":\"0\"}"
+    }
+  ]
+}

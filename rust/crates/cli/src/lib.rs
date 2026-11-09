@@ -23,6 +23,8 @@ pub mod triage;
 pub mod bundle;
 pub mod completion;
 pub mod diff;
+#[path = "schema/sesslint.diff.v1.rs"]
+pub mod diff_schema;
 pub mod doctor;
 pub mod export;
 pub mod hook;
