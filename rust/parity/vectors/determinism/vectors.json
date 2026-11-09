@@ -1,0 +1,225 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.determinism",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "determinism_py_sha256": "29738711c24991243a7bd38de59665f9e1bb85b5aa38c4dbb1c62901ae153a08",
+  "known_parity_gaps": [
+    "NaN, Infinity: canonical_json_bytes rejects non-finite floats; Rust codec error text may differ from Python json module errors - do not assert message parity for these cases.",
+    "Lone surrogate in a JSON string: Python json may accept invalid Unicode; Rust canonical codec behavior may differ - not asserted here.",
+    "stable_sort_findings with a non-Finding item: Python raises TypeError; Rust only accepts Finding and does not model mixed lists.",
+    "JSON integers outside i64: Rust Value uses i64; very large integers are not represented in the Rust parity harness."
+  ],
+  "vectors": [
+    {
+      "id": "determinism_canonical_json_bytes_newline_true",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "zz": 1,
+          "aa": "café"
+        },
+        "newline": true
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJhYSI6ImNhZsOpIiwienoiOjF9Cg=="
+      }
+    },
+    {
+      "id": "determinism_canonical_json_bytes_newline_false",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "zz": 1,
+          "aa": "café"
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJhYSI6ImNhZsOpIiwienoiOjF9"
+      }
+    },
+    {
+      "id": "determinism_finding_sort_key_path_order",
+      "construct": {
+        "type": "finding_sort_key",
+        "left": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "synthetic marker",
+          "source": {
+            "path": "parity/b/syn.jsonl",
+            "line": 1,
+            "record_id": null
+          },
+          "related_ids": [],
+          "fingerprint": "0123456789abcdef",
+          "message_template": null
+        },
+        "right": {
+          "schema_version": "sesslint.finding/v1",
+          "code": "SL001",
+          "severity": "error",
+          "repairability": "manual",
+          "message": "synthetic marker",
+          "source": {
+            "path": "parity/a/syn.jsonl",
+            "line": 1,
+            "record_id": null
+          },
+          "related_ids": [],
+          "fingerprint": "0123456789abcdef",
+          "message_template": null
+        }
+      },
+      "expected": {
+        "left_key": [
+          "parity/b/syn.jsonl",
+          1,
+          -1,
+          1,
+          "SL001",
+          "",
+          "0123456789abcdef",
+          [],
+          "synthetic marker",
+          "manual"
+        ],
+        "right_key": [
+          "parity/a/syn.jsonl",
+          1,
+          -1,
+          1,
+          "SL001",
+          "",
+          "0123456789abcdef",
+          [],
+          "synthetic marker",
+          "manual"
+        ],
+        "cmp": "left_gt_right"
+      }
+    },
+    {
+      "id": "determinism_repeat_hash_bytes",
+      "construct": {
+        "type": "repeat_hash",
+        "shape": "bytes",
+        "data_b64": "//4A"
+      },
+      "expected": {
+        "digest": "ba778c0261008c8f71ae4061ad0162ffcbe63b52c91f89f236738131d1217ec7"
+      }
+    },
+    {
+      "id": "determinism_repeat_hash_text",
+      "construct": {
+        "type": "repeat_hash",
+        "shape": "text",
+        "text": "café"
+      },
+      "expected": {
+        "digest": "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e"
+      }
+    },
+    {
+      "id": "determinism_repeat_hash_json_object",
+      "construct": {
+        "type": "repeat_hash",
+        "shape": "json",
+        "value": {
+          "z": 1,
+          "a": "synthetic"
+        }
+      },
+      "expected": {
+        "digest": "11c28aa4664b1972fc6aa285383e67a99535c4318a7b602a55e4fad8a3cfdaa6"
+      }
+    },
+    {
+      "id": "determinism_stable_sort_paths_and_stability",
+      "construct": {
+        "type": "stable_sort_findings",
+        "findings": [
+          {
+            "schema_version": "sesslint.finding/v1",
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message": "synthetic marker",
+            "source": {
+              "path": "parity/stab/b.jsonl",
+              "line": 1,
+              "record_id": null
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "message_template": null
+          },
+          {
+            "schema_version": "sesslint.finding/v1",
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message": "synthetic marker",
+            "source": {
+              "path": "parity/stab/a.jsonl",
+              "line": 1,
+              "record_id": null
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "message_template": "synthetic second"
+          },
+          {
+            "schema_version": "sesslint.finding/v1",
+            "code": "SL001",
+            "severity": "error",
+            "repairability": "manual",
+            "message": "synthetic marker",
+            "source": {
+              "path": "parity/stab/a.jsonl",
+              "line": 1,
+              "record_id": null
+            },
+            "related_ids": [],
+            "fingerprint": "0123456789abcdef",
+            "message_template": "synthetic first"
+          }
+        ]
+      },
+      "expected": {
+        "ordered_paths": [
+          "parity/stab/a.jsonl",
+          "parity/stab/a.jsonl",
+          "parity/stab/b.jsonl"
+        ],
+        "ordered_message_templates": [
+          "synthetic second",
+          "synthetic first",
+          null
+        ]
+      }
+    },
+    {
+      "id": "determinism_module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "result": "ok",
+        "names": [
+          "canonical_json_bytes",
+          "finding_sort_key",
+          "repeat_hash",
+          "stable_sort_findings"
+        ]
+      }
+    }
+  ]
+}

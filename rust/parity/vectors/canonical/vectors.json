@@ -1,0 +1,389 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.canonical",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "canonical_rs_sha256": "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb",
+  "known_parity_gaps": [
+    "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call — parity not required here.",
+    "get_session_schema_path and load_session_schema: Rust does not read schemas/ — parity not required here.",
+    "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on detail tail is not required.",
+    "FileNotFoundError versus SchemaError for a missing file: parity on exception type is not required; a missing-file vector may compare message text only.",
+    "Unicode Nd timestamp digits, a non-str timestamp, an int outside i64, a non-string object key, frozenset iteration order, and a set used as a payload container: parity not required here."
+  ],
+  "vectors": [
+    {
+      "id": "header_minimal_parsed_fields",
+      "construct": {
+        "type": "parse_session_header",
+        "value": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z"
+        }
+      },
+      "expected": {
+        "schema_version": "sesslint.session/v1",
+        "session_id": "sess-parity-synthetic",
+        "created_at": "2020-01-01T00:00:00Z",
+        "title": null,
+        "metadata": {},
+        "source": null,
+        "version": null,
+        "extra_fields": {}
+      }
+    },
+    {
+      "id": "header_bad_schema_version_sl301_suffix",
+      "construct": {
+        "type": "parse_session_header_error",
+        "value": {
+          "schema_version": "sesslint.session/v0",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z"
+        }
+      },
+      "expected": {
+        "error": "Unsupported schema version 'sesslint.session/v0', expected 'sesslint.session/v1' (code: VERSION / SL301)"
+      }
+    },
+    {
+      "id": "event_minimal",
+      "construct": {
+        "type": "parse_session_event",
+        "value": {
+          "id": "evt-1",
+          "parent_id": null,
+          "seq": 0,
+          "ts": "2020-01-01T00:00:00Z",
+          "actor": "user",
+          "kind": "message",
+          "payload": {}
+        }
+      },
+      "expected": {
+        "id": "evt-1",
+        "parent_id": null,
+        "seq": 0,
+        "ts": "2020-01-01T00:00:00Z",
+        "actor": "user",
+        "kind": "message",
+        "payload": {},
+        "content_hash": null,
+        "correlation_id": null,
+        "branch_id": null,
+        "interaction_id": null,
+        "agent_id": null,
+        "execution_state": null,
+        "source_line": null,
+        "source_record_hash": null,
+        "original_id": null,
+        "source_adapter": null,
+        "source_location": null,
+        "side_effects": null,
+        "extra_fields": {}
+      }
+    },
+    {
+      "id": "event_duplicate_id",
+      "construct": {
+        "type": "parse_session_event_error",
+        "value": {
+          "id": "evt-1",
+          "parent_id": null,
+          "seq": 0,
+          "ts": "2020-01-01T00:00:00Z",
+          "actor": "user",
+          "kind": "message",
+          "payload": {}
+        },
+        "seen_ids_before": [
+          "evt-1"
+        ]
+      },
+      "expected": {
+        "error": "Duplicate event ID detected: 'evt-1'"
+      }
+    },
+    {
+      "id": "event_self_parent",
+      "construct": {
+        "type": "parse_session_event_error",
+        "value": {
+          "id": "evt-self",
+          "parent_id": "evt-self",
+          "seq": 0,
+          "ts": "2020-01-01T00:00:00Z",
+          "actor": "user",
+          "kind": "message",
+          "payload": {}
+        }
+      },
+      "expected": {
+        "error": "Event 'evt-self' has self-referencing parent_id"
+      }
+    },
+    {
+      "id": "event_bad_actor_sorted_expected_actors",
+      "construct": {
+        "type": "parse_session_event_error",
+        "value": {
+          "id": "evt-bad-actor",
+          "parent_id": null,
+          "seq": 0,
+          "ts": "2020-01-01T00:00:00Z",
+          "actor": "nope",
+          "kind": "message",
+          "payload": {}
+        }
+      },
+      "expected": {
+        "error": "Invalid actor 'nope', expected one of ['assistant', 'system', 'tool', 'user']"
+      }
+    },
+    {
+      "id": "session_framed_experimental_fields",
+      "construct": {
+        "type": "parse_session",
+        "value": {
+          "header": {
+            "schema_version": "sesslint.session/v1",
+            "session_id": "sess-parity-synthetic",
+            "created_at": "2020-01-01T00:00:00Z",
+            "experimental_h": "in-header-framed"
+          },
+          "experimental_s": "session-level-framed",
+          "events": [
+            {
+              "id": "evt-1",
+              "parent_id": null,
+              "seq": 0,
+              "ts": "2020-01-01T00:00:00Z",
+              "actor": "user",
+              "kind": "message",
+              "payload": {}
+            }
+          ]
+        }
+      },
+      "expected": {
+        "header": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z",
+          "title": null,
+          "metadata": {},
+          "source": null,
+          "version": null,
+          "extra_fields": {
+            "experimental_h": "in-header-framed"
+          }
+        },
+        "events": [
+          {
+            "id": "evt-1",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2020-01-01T00:00:00Z",
+            "actor": "user",
+            "kind": "message",
+            "payload": {},
+            "content_hash": null,
+            "correlation_id": null,
+            "branch_id": null,
+            "interaction_id": null,
+            "agent_id": null,
+            "execution_state": null,
+            "source_line": null,
+            "source_record_hash": null,
+            "original_id": null,
+            "source_adapter": null,
+            "source_location": null,
+            "side_effects": null,
+            "extra_fields": {}
+          }
+        ],
+        "extra_fields": {
+          "experimental_s": "session-level-framed"
+        }
+      }
+    },
+    {
+      "id": "session_flat_experimental_fields",
+      "construct": {
+        "type": "parse_session",
+        "value": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z",
+          "experimental_h": "in-header-flat",
+          "events": [
+            {
+              "id": "evt-1",
+              "parent_id": null,
+              "seq": 0,
+              "ts": "2020-01-01T00:00:00Z",
+              "actor": "user",
+              "kind": "message",
+              "payload": {}
+            }
+          ]
+        }
+      },
+      "expected": {
+        "header": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z",
+          "title": null,
+          "metadata": {},
+          "source": null,
+          "version": null,
+          "extra_fields": {
+            "experimental_h": "in-header-flat"
+          }
+        },
+        "events": [
+          {
+            "id": "evt-1",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2020-01-01T00:00:00Z",
+            "actor": "user",
+            "kind": "message",
+            "payload": {},
+            "content_hash": null,
+            "correlation_id": null,
+            "branch_id": null,
+            "interaction_id": null,
+            "agent_id": null,
+            "execution_state": null,
+            "source_line": null,
+            "source_record_hash": null,
+            "original_id": null,
+            "source_adapter": null,
+            "source_location": null,
+            "side_effects": null,
+            "extra_fields": {}
+          }
+        ],
+        "extra_fields": {}
+      }
+    },
+    {
+      "id": "parse_session_lines_blank_line_one_event",
+      "construct": {
+        "type": "parse_session_lines",
+        "lines": [
+          "{\"created_at\":\"2020-01-01T00:00:00Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"sess-parity-synthetic\"}",
+          "",
+          "{\"actor\":\"user\",\"id\":\"evt-1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{},\"seq\":0,\"ts\":\"2020-01-01T00:00:00Z\"}",
+          ""
+        ]
+      },
+      "expected": {
+        "header": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z",
+          "title": null,
+          "metadata": {},
+          "source": null,
+          "version": null,
+          "extra_fields": {}
+        },
+        "events": [
+          {
+            "id": "evt-1",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2020-01-01T00:00:00Z",
+            "actor": "user",
+            "kind": "message",
+            "payload": {},
+            "content_hash": null,
+            "correlation_id": null,
+            "branch_id": null,
+            "interaction_id": null,
+            "agent_id": null,
+            "execution_state": null,
+            "source_line": null,
+            "source_record_hash": null,
+            "original_id": null,
+            "source_adapter": null,
+            "source_location": null,
+            "side_effects": null,
+            "extra_fields": {}
+          }
+        ],
+        "extra_fields": {}
+      }
+    },
+    {
+      "id": "load_session_file_small_jsonl",
+      "construct": {
+        "type": "load_session_file_bytes",
+        "file_bytes_b64": "eyJjcmVhdGVkX2F0IjoiMjAyMC0wMS0wMVQwMDowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoic2Vzcy1wYXJpdHktc3ludGhldGljIn0KCnsiYWN0b3IiOiJ1c2VyIiwiaWQiOiJldnQtMSIsImtpbmQiOiJtZXNzYWdlIiwicGFyZW50X2lkIjpudWxsLCJwYXlsb2FkIjp7fSwic2VxIjowLCJ0cyI6IjIwMjAtMDEtMDFUMDA6MDA6MDBaIn0K"
+      },
+      "expected": {
+        "header": {
+          "schema_version": "sesslint.session/v1",
+          "session_id": "sess-parity-synthetic",
+          "created_at": "2020-01-01T00:00:00Z",
+          "title": null,
+          "metadata": {},
+          "source": null,
+          "version": null,
+          "extra_fields": {}
+        },
+        "events": [
+          {
+            "id": "evt-1",
+            "parent_id": null,
+            "seq": 0,
+            "ts": "2020-01-01T00:00:00Z",
+            "actor": "user",
+            "kind": "message",
+            "payload": {},
+            "content_hash": null,
+            "correlation_id": null,
+            "branch_id": null,
+            "interaction_id": null,
+            "agent_id": null,
+            "execution_state": null,
+            "source_line": null,
+            "source_record_hash": null,
+            "original_id": null,
+            "source_adapter": null,
+            "source_location": null,
+            "side_effects": null,
+            "extra_fields": {}
+          }
+        ],
+        "extra_fields": {}
+      }
+    },
+    {
+      "id": "validate_rfc3339_utc_ok_leap_day",
+      "construct": {
+        "type": "validate_rfc3339_direct",
+        "ts": "2024-02-29T00:00:00Z",
+        "field": "created_at"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "validate_rfc3339_utc_calendar_fail_original_ts_in_message",
+      "construct": {
+        "type": "validate_rfc3339_direct",
+        "ts": "2021-02-29T00:00:00Z",
+        "field": "created_at"
+      },
+      "expected": {
+        "ok": false,
+        "error": "Field 'created_at' contains invalid calendar date/time: '2021-02-29T00:00:00Z'"
+      }
+    }
+  ]
+}

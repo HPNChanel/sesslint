@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.safe_value parity (safe_type_value and safe_discriminator only).",
+  "generator": "rust/parity/vectors/adapters.safe_value/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "str_subclass_type_name: a str subclass keeps its own __name__ in Python safe_type_value; Rust PyValue::Str always reports as str — no required vector.",
+    "lone_surrogate_discriminator: a lone UTF-16 surrogate cannot be stored in Rust str — no required vector."
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.size parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.size/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "Seven 1s and one 262145: Python emits one SL011 finding, ratio round(262145/1, 3) = 262145.0, record_index 7. Rust check_size_anomaly returns FINGERPRINT_CODEC_UNAVAILABLE because the fingerprint codec is not ported. Evidence uses PyValue with ratio None because PyValue has no float.",
+    "Integers that do not fit i64, and median * 20 overflow, are PYTHON_INT_UNBOUNDED in Rust. Python keeps the unbounded int.",
+    "i64 as f64 is inexact above 2^53. Do not add vectors in that range."
+  ]
+}

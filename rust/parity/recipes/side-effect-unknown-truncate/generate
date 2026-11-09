@@ -1,0 +1,1116 @@
+#!/usr/bin/env python3
+"""Generate side-effect-unknown-truncate parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+Expected messages are the pin's results. Fixture output, fingerprints, and
+planner results are not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "side-effect-unknown-truncate"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_salvage"
+RECIPE = "side-effect-unknown-truncate"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_recipes_salvage.py"
+DOCS = "docs/recipes/side-effect-unknown-truncate.md"
+FIXTURE = "fixtures/repair/salvage_truncate.json"
+GENERATOR = "rust/parity/recipes/side-effect-unknown-truncate/generate"
+PINNED_TEST_COUNT = 24
+KNOWN_PY_SHA = "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166"
+COVERED_TEST = "test_truncate_direct_apply_validation"
+COVERED_VECTOR = "truncate_direct_apply_validation"
+FN = "apply_side_effect_unknown_truncate"
+FN_LOSS = "apply_side_effect_unknown_truncate_with_loss"
+SLICE_MESSAGE = "slice indices must be integers or None or have an __index__ method"
+TS = "2026-09-05T12:00:00Z"
+
+GAP_CANONICAL = "GAP-side-effect-unknown-truncate-canonical"
+GAP_COPY = "GAP-side-effect-unknown-truncate-session-copy"
+GAP_PAYLOAD = "GAP-side-effect-unknown-truncate-payload"
+GAP_BOOL = "GAP-side-effect-unknown-truncate-bool"
+GAP_FLOAT = "GAP-side-effect-unknown-truncate-float"
+GAP_SWEEP = "GAP-side-effect-unknown-truncate-sweep"
+
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+SEAM_CODEC = "sesslint._canonical_codec.canonical_json_bytes is not available"
+SEAM_NORMALIZE = "sesslint._canonical_codec.normalize_canonical is not available"
+SEAM_FLOAT = "Python str(float) is not representable"
+SEAM_PYSTR = "Python str() of this event field is not representable"
+
+KNOWN_PARITY_GAPS: tuple[str, ...] = (
+    f"{GAP_CANONICAL}: planner.plan is not run. A missing canonical codec call "
+    "is not a successful plan. "
+    f"{TEST_FILE}::test_conservative_default_blocks_salvage checks a "
+    "fingerprint for three fixtures. One fixture inside a sweep is not the "
+    "whole test. "
+    f"{TEST_FILE}::test_salvage_opt_in compares a plan dict for three recipes. "
+    "One recipe inside a sweep is not the whole test. "
+    f"{TEST_FILE}::test_acknowledgement compares plan dicts. "
+    f"{TEST_FILE}::test_salvage_recipe_applications plans and then applies. "
+    f"{TEST_FILE}::test_interacting_multi_fault_session plans two recipes. "
+    "No fingerprint is hashed and no fixture diff is stored. No output bytes "
+    "are stored.",
+    f"{GAP_COPY}: a SessionEvent prefix copies in the pin. This crate stops on "
+    "that value. A rust seam while the pin succeeds is not coverage. That "
+    "success is not replayed. "
+    f"{TEST_FILE}::test_salvage_recipe_applications uses SessionEvent records "
+    "from the fixture. One recipe inside a sweep is not the whole test.",
+    f"{GAP_PAYLOAD}: {TEST_FILE}::test_salvage_recipe_applications and "
+    f"{TEST_FILE}::test_interacting_multi_fault_session carry payload on the "
+    "events. This set does not store payload content. A payload-free result "
+    "is not that test. "
+    f"{TEST_FILE}::test_salvage_opt_in, {TEST_FILE}::test_acknowledgement, and "
+    f"{TEST_FILE}::test_conservative_default_blocks_salvage load the same "
+    "fixture.",
+    f"{GAP_BOOL}: a True cut slices in the pin when the session length is "
+    "greater than one. The published function returns a different error. This "
+    "set does not claim that success. A rust seam while the pin succeeds is "
+    "not coverage. That success is not replayed.",
+    f"{GAP_FLOAT}: a non-positive float cut and a float past the end are "
+    "rendered with str in the pin. The published function returns a different "
+    "error. This set does not claim that refusal. An in-range float raises "
+    "TypeError before a slice. That TypeError is an extra vector and is not a "
+    "whole pinned test.",
+    f"{GAP_SWEEP}: {TEST_FILE}::test_salvage_recipe_applications applies three "
+    "recipes and checks loss. One recipe inside a sweep is not the whole "
+    "test. A successful truncate that also checks loss, plan, or canonical "
+    "bytes is not covered by the event list alone. "
+    f"{TEST_FILE}::test_truncate_direct_apply_validation is three refusals of "
+    "one function. The covered vector contains every refusal in that test.",
+)
+
+CONSERVATIVE_NOTE = (
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful "
+    "plan. One fixture inside a sweep is not the whole test. No fingerprint "
+    "is hashed and no fixture diff is stored."
+)
+OPT_NOTE = (
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful "
+    "plan. One recipe inside a sweep is not the whole test. No fingerprint "
+    "is hashed and no fixture diff is stored. No output bytes are stored."
+)
+ACK_NOTE = (
+    f"{GAP_CANONICAL} blocks the plan. It is not a successful plan. No "
+    "fingerprint is hashed and no fixture diff is stored. different function "
+    f"from {FN}."
+)
+APPLICATIONS_NOTE = (
+    f"{GAP_CANONICAL} blocks the plan. It is not a successful plan. "
+    f"{GAP_COPY} blocks the SessionEvent prefix. The pin succeeds. A rust "
+    "seam while the pin succeeds is not coverage. That success is not "
+    f"replayed. {GAP_PAYLOAD} blocks the fixture events. They carry a "
+    "payload. A payload-free result is not this test. "
+    f"{GAP_SWEEP} blocks the loss check. A successful truncate that also "
+    "checks loss, plan, or canonical bytes is not covered by the event list "
+    "alone. One recipe inside a sweep is not the whole test. No fingerprint "
+    "is hashed and no fixture diff is stored. No output bytes are stored."
+)
+MULTI_NOTE = (
+    f"{GAP_CANONICAL} blocks the plan. It is not a successful plan. "
+    f"{GAP_PAYLOAD} blocks the events. They carry a payload. A payload-free "
+    "result is not this test. One recipe inside the test is not the whole "
+    "test. No fingerprint is hashed and no fixture diff is stored."
+)
+DIFFERENT_NOTE = f"different function from {FN}"
+
+NOTES: dict[str, str] = {
+    "test_conservative_default_blocks_salvage": CONSERVATIVE_NOTE,
+    "test_salvage_opt_in": OPT_NOTE,
+    "test_acknowledgement": ACK_NOTE,
+    "test_no_shorthand": DIFFERENT_NOTE,
+    "test_assurance_lattice": DIFFERENT_NOTE,
+    "test_fingerprint_differs_by_policy": DIFFERENT_NOTE,
+    "test_component_too_large": DIFFERENT_NOTE,
+    "test_loss_sums": DIFFERENT_NOTE,
+    "test_sl203_refusal_beats_salvage": DIFFERENT_NOTE,
+    "test_empty_events_salvage_policy": DIFFERENT_NOTE,
+    "test_loss_key_injection_rejected": DIFFERENT_NOTE,
+    "test_invalid_policy_string_rejected": DIFFERENT_NOTE,
+    "test_amputate_direct_apply_validation": DIFFERENT_NOTE,
+    "test_torn_compaction_direct_apply_validation": DIFFERENT_NOTE,
+    "test_salvage_vendor_free": DIFFERENT_NOTE,
+    "test_salvage_recipe_applications": APPLICATIONS_NOTE,
+    "test_amputate_resolves_index_from_root_id": DIFFERENT_NOTE,
+    "test_dual_policy_plan_merge_attempt": DIFFERENT_NOTE,
+    "test_interacting_multi_fault_session": MULTI_NOTE,
+    "test_orphan_result_drop_plans_and_applies": DIFFERENT_NOTE,
+    "test_orphan_result_drop_conservative_blocks": DIFFERENT_NOTE,
+    "test_orphan_result_drop_resolves_by_params": DIFFERENT_NOTE,
+    "test_orphan_result_drop_direct_apply_refusals": DIFFERENT_NOTE,
+}
+
+MENTION_FILES: tuple[str, ...] = (
+    "tests/test_coverage_matrix.py",
+    "tests/test_registry_docs.py",
+    "tests/repair/test_release_matrix.py",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+    "repair/recipes_salvage.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+_SEAMS = (
+    SEAM_REGION,
+    SEAM_DETERMINISM,
+    SEAM_CODEC,
+    SEAM_NORMALIZE,
+    SEAM_FLOAT,
+    SEAM_PYSTR,
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_salvage.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_salvage.py")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_side_effect_unknown_truncate.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    if mod.apply_side_effect_unknown_truncate_with_loss.__module__ != MODULE:
+        raise SystemExit("with_loss function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        return {"t": "bool", "v": value}
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def function_named(text: str, name: str) -> ast.FunctionDef:
+    for node in test_functions(text):
+        if node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def string_constants(fn: ast.FunctionDef) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+    return found
+
+
+def raises_matches(fn: ast.FunctionDef) -> list[str]:
+    found: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.With):
+            continue
+        for item in node.items:
+            call = item.context_expr
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            if not isinstance(func, ast.Attribute) or func.attr != "raises":
+                continue
+            for keyword in call.keywords:
+                if keyword.arg == "match":
+                    value = ast.literal_eval(keyword.value)
+                    if not isinstance(value, str):
+                        raise SystemExit(f"{fn.name} match is not a string")
+                    found.append(value)
+    return found
+
+
+def payload_strings(node: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "payload":
+                found.extend(collect_strings(value))
+            else:
+                found.extend(payload_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(payload_strings(item))
+    return found
+
+
+def collect_strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node else []
+    if isinstance(node, dict):
+        found: list[str] = []
+        for value in node.values():
+            found.extend(collect_strings(value))
+        return found
+    if isinstance(node, list):
+        found = []
+        for item in node:
+            found.extend(collect_strings(item))
+        return found
+    return []
+
+
+def const_strings(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value] if node.value else []
+    if isinstance(node, ast.JoinedStr):
+        found: list[str] = []
+        for value in node.values:
+            found.extend(const_strings(value))
+        return found
+    if isinstance(node, ast.Dict):
+        found = []
+        for value in node.values:
+            if value is not None:
+                found.extend(const_strings(value))
+        return found
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        found = []
+        for value in node.elts:
+            found.extend(const_strings(value))
+        return found
+    return []
+
+
+def payload_literals(text: str) -> list[str]:
+    found: list[str] = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.keyword) and node.arg == "payload":
+            found.extend(const_strings(node.value))
+    return found
+
+
+def reject_payload(events: list[dict[str, Any]]) -> None:
+    for item in events:
+        if "payload" in item:
+            raise SystemExit("refusing payload content in a stored vector")
+
+
+def bare(event_id: str, seq: int) -> dict[str, Any]:
+    return {"id": event_id, "kind": "message", "seq": seq}
+
+
+def validation_event() -> dict[str, Any]:
+    return {
+        "id": "m0",
+        "parent_id": None,
+        "seq": 0,
+        "ts": TS,
+        "actor": "user",
+        "kind": "message",
+    }
+
+
+def make_step(planner: Any, target_index: Any, params: Any) -> Any:
+    return planner.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="fp",
+        target_index=target_index,
+        params=params,
+        lossy=True,
+    )
+
+
+def run_pair(
+    mod: Any, events: list[Any], step: Any
+) -> tuple[str, str] | tuple[list[Any], dict[str, int]]:
+    try:
+        listed = mod.apply_side_effect_unknown_truncate(events, step)
+        with_loss = mod.apply_side_effect_unknown_truncate_with_loss(events, step)
+    except mod.PreconditionFailed as exc:
+        message = str(exc)
+        try:
+            mod.apply_side_effect_unknown_truncate_with_loss(events, step)
+        except mod.PreconditionFailed as other:
+            if str(other) != message:
+                raise SystemExit("with_loss message drifted") from other
+        else:
+            raise SystemExit("with_loss returned Ok for a refusal")
+        return ("PreconditionFailed", message)
+    except TypeError as exc:
+        message = str(exc)
+        try:
+            mod.apply_side_effect_unknown_truncate_with_loss(events, step)
+        except TypeError as other:
+            if str(other) != message:
+                raise SystemExit("with_loss type message drifted") from other
+        else:
+            raise SystemExit("with_loss returned Ok for a type error")
+        return ("TypeError", message)
+    if not isinstance(listed, list) or not isinstance(with_loss, tuple):
+        raise SystemExit("pin success shape drifted")
+    out, loss = with_loss
+    if listed != out:
+        raise SystemExit("wrapper list drifted from with_loss")
+    if not isinstance(loss, dict):
+        raise SystemExit("pin loss is not a dict")
+    return (out, loss)
+
+
+def is_error(result: tuple[Any, ...] | list[Any]) -> bool:
+    return (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[0], str)
+        and result[0] in {"PreconditionFailed", "TypeError"}
+    )
+
+
+def require_refusal(result: tuple[Any, ...] | list[Any], label: str) -> tuple[str, str]:
+    if not is_error(result):
+        raise SystemExit(f"{label} did not refuse")
+    error_type, message = result
+    if not isinstance(error_type, str) or not isinstance(message, str) or not message:
+        raise SystemExit(f"{label} message drifted")
+    if any(seam in message for seam in _SEAMS):
+        raise SystemExit(f"{label} message is a seam")
+    return error_type, message
+
+
+def require_ok(
+    result: tuple[Any, ...] | list[Any],
+    label: str,
+    *,
+    allow_payload: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    if is_error(result):
+        raise SystemExit(f"{label} refused")
+    if not isinstance(result, tuple) or len(result) != 2:
+        raise SystemExit(f"{label} success shape drifted")
+    out, loss = result
+    if not isinstance(out, list) or not isinstance(loss, dict):
+        raise SystemExit(f"{label} success types drifted")
+    rows: list[dict[str, Any]] = []
+    for item in out:
+        if not isinstance(item, dict):
+            raise SystemExit(f"{label} event is not a dict")
+        rows.append(item)
+    if not allow_payload:
+        reject_payload(rows)
+    counts: dict[str, int] = {}
+    for key, value in loss.items():
+        if type(value) is not int:
+            raise SystemExit(f"{label} loss count is not an int")
+        counts[str(key)] = value
+    return rows, counts
+
+
+def step_doc(target_index: Any, params: Any) -> dict[str, Any]:
+    return {"target_index": tagged(target_index), "params": tagged(params)}
+
+
+def refusal_vector(
+    vector_id: str,
+    events: list[dict[str, Any]],
+    target_index: Any,
+    params: Any,
+    error_type: str,
+    message: str,
+) -> dict[str, Any]:
+    reject_payload(events)
+    if "." in message:
+        raise SystemExit(f"{vector_id} message looks rendered")
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_refusal",
+            "fn": FN,
+            "entire_test": False,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": step_doc(target_index, params),
+        },
+        "expected": {
+            "mode": "refusal",
+            "error_type": error_type,
+            "message": message,
+        },
+    }
+
+
+def ok_vector(
+    vector_id: str,
+    events: list[dict[str, Any]],
+    target_index: Any,
+    params: Any,
+    out: list[dict[str, Any]],
+    loss: dict[str, int],
+) -> dict[str, Any]:
+    reject_payload(events)
+    reject_payload(out)
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_ok",
+            "fn": FN,
+            "entire_test": False,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": step_doc(target_index, params),
+        },
+        "expected": {
+            "mode": "ok",
+            "events_out": [tagged(event) for event in out],
+            "loss": tagged(loss),
+        },
+    }
+
+
+def recipe_vector(mod: Any) -> dict[str, Any]:
+    recipe = mod.RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    if recipe.apply is not mod.apply_side_effect_unknown_truncate:
+        raise SystemExit("pin apply is not the recipe apply")
+    if recipe.affected_region is not None:
+        raise SystemExit("pin truncate region is present")
+    handles = [item for item in recipe.handles]
+    preconditions = [item for item in recipe.preconditions]
+    if any(type(item) is not str for item in handles):
+        raise SystemExit("pin handle is not a str")
+    if any(type(item) is not str for item in preconditions):
+        raise SystemExit("pin precondition is not a str")
+    if handles != ["SL102"]:
+        raise SystemExit("pin handles drifted")
+    if preconditions != ["salvage_policy", "acknowledge_side_effects"]:
+        raise SystemExit("pin preconditions drifted")
+    if recipe.min_policy != "salvage" or recipe.version != "1.0.0":
+        raise SystemExit("pin recipe policy drifted")
+    return {
+        "id": "recipe_side_effect_unknown_truncate",
+        "construct": {
+            "type": "recipe_constant",
+            "fn": "RECIPE_SIDE_EFFECT_UNKNOWN_TRUNCATE",
+            "entire_test": False,
+        },
+        "expected": {
+            "mode": "recipe",
+            "name": recipe.name,
+            "handles": handles,
+            "preconditions": preconditions,
+            "lossy": require_bool("lossy", recipe.lossy),
+            "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+            "min_policy": recipe.min_policy,
+            "version": recipe.version,
+            "excludes_execution_dependence": require_bool(
+                "excludes_execution_dependence",
+                recipe.excludes_execution_dependence,
+            ),
+            "apply_present": require_bool("apply_present", recipe.apply is not None),
+            "affected_region_present": False,
+        },
+    }
+
+
+def require_validation_shape(fn: ast.FunctionDef) -> None:
+    names = call_names(fn)
+    if names.count(FN) != 3 or FN_LOSS in names or "plan" in names:
+        raise SystemExit("validation test is not three apply calls")
+    if "canonical_json_bytes" in names:
+        raise SystemExit("validation test calls canonical_json_bytes")
+    if any(isinstance(node, ast.Assert) for node in ast.walk(fn)):
+        raise SystemExit("validation test has an assert outside pytest.raises")
+    if raises_matches(fn) != ["empty session", "index 0", "out of bounds"]:
+        raise SystemExit("validation matches drifted")
+    constants = string_constants(fn)
+    for needle in (RECIPE, "m0", TS, "user", "message", "fp"):
+        if needle not in constants:
+            raise SystemExit(f"validation test missing {needle}")
+
+
+def validation_vector(mod: Any, canon: Any, planner: Any) -> dict[str, Any]:
+    step = make_step(planner, 0, {})
+    bad = make_step(planner, 5, {})
+    session = canon.SessionEvent(
+        id="m0",
+        parent_id=None,
+        seq=0,
+        ts=TS,
+        actor="user",
+        kind="message",
+    )
+    mapping = validation_event()
+    reject_payload([mapping])
+    session_cases = (
+        ([], step),
+        ([session], step),
+        ([session], bad),
+    )
+    mapping_cases = (
+        ([], 0, {}),
+        ([mapping], 0, {}),
+        ([mapping], 5, {}),
+    )
+    calls: list[dict[str, Any]] = []
+    for (session_events, session_step), (events, index, params) in zip(
+        session_cases,
+        mapping_cases,
+        strict=True,
+    ):
+        session_result = require_refusal(
+            run_pair(mod, session_events, session_step),
+            "validation session",
+        )
+        mapping_result = require_refusal(
+            run_pair(mod, events, make_step(planner, index, params)),
+            "validation mapping",
+        )
+        if session_result != mapping_result:
+            raise SystemExit("mapping refusal drifted from the SessionEvent call")
+        error_type, message = mapping_result
+        if error_type != "PreconditionFailed":
+            raise SystemExit("validation test is not a precondition refusal")
+        calls.append(
+            {
+                "events": [tagged(event) for event in events],
+                "step": step_doc(index, params),
+                "error_type": error_type,
+                "message": message,
+            }
+        )
+    if len({item["message"] for item in calls}) != 3:
+        raise SystemExit("validation sweep collapsed")
+    if "empty session" not in calls[0]["message"]:
+        raise SystemExit("empty-session message drifted")
+    if "index 0" not in calls[1]["message"] or "length 1" in calls[1]["message"]:
+        raise SystemExit("index-zero message drifted")
+    if "out of bounds" not in calls[2]["message"] or "length 1" not in calls[2]["message"]:
+        raise SystemExit("bounds message drifted")
+    return {
+        "id": COVERED_VECTOR,
+        "construct": {
+            "type": "apply_refusals",
+            "fn": FN,
+            "entire_test": True,
+            "assert_count": 3,
+            "calls": calls,
+        },
+        "expected": {
+            "mode": "refusals",
+            "error_type": "PreconditionFailed",
+            "fn": FN,
+        },
+    }
+
+
+def quartet() -> list[dict[str, Any]]:
+    return [bare(f"evt-{index}", index) for index in range(4)]
+
+
+def stored_edges(mod: Any, planner: Any) -> list[dict[str, Any]]:
+    events = quartet()
+    one = events[:1]
+    cases: list[tuple[str, list[dict[str, Any]], Any, Any]] = [
+        ("truncate_refusal_missing_index", events, None, {}),
+        ("truncate_refusal_negative_index", events, -2, {}),
+        ("truncate_refusal_zero_cut_param", events, None, {"cut_index": 0}),
+        ("truncate_refusal_param_cut_out_of_bounds", events, None, {"cut_index": 9}),
+        ("truncate_refusal_false_index", events, False, {}),
+        ("truncate_refusal_true_index_len_one", one, True, {}),
+        ("truncate_type_string_cut", events, None, {"cut_index": "not-an-index"}),
+        ("truncate_type_list_cut", events, None, {"cut_index": [1]}),
+        ("truncate_type_dict_cut", events, None, {"cut_index": {"k": 1}}),
+        ("truncate_type_in_range_float", events, 1.0, {}),
+    ]
+    vectors: list[dict[str, Any]] = []
+    for vector_id, rows, index, params in cases:
+        error_type, message = require_refusal(
+            run_pair(mod, rows, make_step(planner, index, params)),
+            vector_id,
+        )
+        if vector_id == "truncate_type_in_range_float" and message != SLICE_MESSAGE:
+            raise SystemExit("in-range float message drifted")
+        if vector_id.endswith("_float") and error_type != "TypeError":
+            raise SystemExit("in-range float was not TypeError")
+        if "type_" in vector_id and error_type != "TypeError":
+            raise SystemExit(f"{vector_id} was not TypeError")
+        if "refusal_" in vector_id and error_type != "PreconditionFailed":
+            raise SystemExit(f"{vector_id} was not PreconditionFailed")
+        vectors.append(refusal_vector(vector_id, rows, index, params, error_type, message))
+    return vectors
+
+
+def stored_successes(mod: Any, planner: Any) -> list[dict[str, Any]]:
+    events = quartet()
+    cases: list[tuple[str, Any, Any]] = [
+        ("truncate_ok_prefix", 2, {}),
+        (
+            "truncate_ok_falsy_zero_falls_through",
+            None,
+            {"first_unsafe_index": 0, "cut_index": 2},
+        ),
+        (
+            "truncate_ok_falsy_false_falls_through",
+            None,
+            {"first_unsafe_index": False, "cut_index": 2},
+        ),
+        (
+            "truncate_ok_falsy_empty_string_falls_through",
+            None,
+            {"first_unsafe_index": "", "cut_index": 2},
+        ),
+    ]
+    vectors: list[dict[str, Any]] = []
+    for vector_id, index, params in cases:
+        out, loss = require_ok(
+            run_pair(mod, events, make_step(planner, index, params)),
+            vector_id,
+        )
+        if out != events[:2] or loss != {"truncated-side-effects": 2}:
+            raise SystemExit(f"{vector_id} prefix drifted")
+        vectors.append(ok_vector(vector_id, events, index, params, out, loss))
+    return vectors
+
+
+def prove_unclaimed(mod: Any, canon: Any, planner: Any) -> None:
+    events = quartet()
+    true_cut = require_ok(
+        run_pair(mod, events, make_step(planner, True, {})),
+        "true cut",
+    )
+    if len(true_cut[0]) != 1:
+        raise SystemExit("pin True cut did not slice")
+    del true_cut
+    for label, index in (("neg-float", -1.5), ("zero-float", 0.0), ("oob-float", 9.0)):
+        error_type, message = require_refusal(
+            run_pair(mod, events, make_step(planner, index, {})),
+            label,
+        )
+        if error_type != "PreconditionFailed" or "." not in message:
+            raise SystemExit(f"{label} was not a rendered refusal")
+        del message
+    session = canon.SessionEvent(
+        id="evt-session",
+        parent_id=None,
+        seq=0,
+        ts=TS,
+        actor="user",
+        kind="message",
+    )
+    copied, loss = require_ok(
+        run_pair(mod, [session, bare("evt-tail", 1)], make_step(planner, 1, {})),
+        "session copy",
+        allow_payload=True,
+    )
+    if len(copied) != 1 or "payload" not in copied[0]:
+        raise SystemExit("session prefix did not copy")
+    del copied, loss
+
+
+def prove_fixture(mod: Any, canon: Any, planner: Any, fixture: dict[str, Any]) -> None:
+    raw_events = fixture["events"]
+    if not isinstance(raw_events, list) or len(raw_events) != 4:
+        raise SystemExit("fixture event count drifted")
+    if not any(isinstance(item, dict) and "payload" in item for item in raw_events):
+        raise SystemExit("fixture lost payload")
+    step_raw = fixture["expected_plan"]["steps"][0]
+    if step_raw["recipe"] != RECIPE or step_raw["target_index"] != 2:
+        raise SystemExit("fixture step drifted")
+    fingerprint = fixture["expected_plan"]["fingerprint"]
+    if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+        raise SystemExit("fixture fingerprint shape drifted")
+    del fingerprint
+    step = planner.PlanStep(
+        seq=step_raw["seq"],
+        recipe=step_raw["recipe"],
+        target_finding_fp=step_raw["target_finding_fp"],
+        target_index=step_raw["target_index"],
+        params=dict(step_raw.get("params") or {}),
+        lossy=True,
+        min_policy=step_raw["min_policy"],
+        recipe_version=step_raw["recipe_version"],
+    )
+    events = [canon.SessionEvent(**item) for item in raw_events]
+    out, loss = require_ok(run_pair(mod, events, step), "fixture", allow_payload=True)
+    if [item["id"] for item in out] != ["m0", "m1"]:
+        raise SystemExit("fixture ids drifted")
+    if loss != {"truncated-side-effects": 2}:
+        raise SystemExit("fixture loss drifted")
+    if not any("payload" in item for item in out):
+        raise SystemExit("fixture output lost payload")
+    del out
+    stripped: list[dict[str, Any]] = []
+    for item in raw_events:
+        if not isinstance(item, dict) or "payload" not in item:
+            raise SystemExit("fixture event has no payload")
+        stripped.append({key: value for key, value in item.items() if key != "payload"})
+    stripped_events = [canon.SessionEvent(**item) for item in stripped]
+    stripped_out, _stripped_loss = require_ok(
+        run_pair(mod, stripped_events, step),
+        "stripped fixture",
+        allow_payload=True,
+    )
+    del stripped_out
+
+
+def prove_shapes(text: str) -> None:
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    if [fn.name for fn in functions] != list(NOTES)[:14] + [COVERED_TEST] + list(NOTES)[14:]:
+        expected = list(NOTES)[:14] + [COVERED_TEST] + list(NOTES)[14:]
+        raise SystemExit(f"test order drifted {expected}")
+    for fn in functions:
+        names = call_names(fn)
+        wrapper = names.count(FN)
+        with_loss = names.count(FN_LOSS)
+        if fn.name == COVERED_TEST:
+            require_validation_shape(fn)
+            continue
+        if wrapper or (with_loss and fn.name != "test_salvage_recipe_applications"):
+            raise SystemExit(f"unexpected truncate call in {fn.name}")
+        if fn.name not in NOTES:
+            raise SystemExit(f"unclassified test {fn.name}")
+    applications = function_named(text, "test_salvage_recipe_applications")
+    app_names = call_names(applications)
+    if "plan" not in app_names or app_names.count(FN_LOSS) != 1:
+        raise SystemExit("applications test shape drifted")
+    if "apply_unresolvable_branch_amputate_with_loss" not in app_names:
+        raise SystemExit("applications test lost the other recipes")
+    if "salvage_truncate.json" not in string_constants(applications):
+        raise SystemExit("applications test lost the fixture")
+    acknowledgement = function_named(text, "test_acknowledgement")
+    if "plan" not in call_names(acknowledgement) or FN in call_names(acknowledgement):
+        raise SystemExit("acknowledgement test shape drifted")
+    multi = function_named(text, "test_interacting_multi_fault_session")
+    if "plan" not in call_names(multi) or RECIPE not in string_constants(multi):
+        raise SystemExit("multi-fault test shape drifted")
+    if "payload" not in string_constants(multi) and not any(
+        isinstance(node, ast.keyword) and node.arg == "payload" for node in ast.walk(multi)
+    ):
+        raise SystemExit("multi-fault test lost payload")
+
+
+def confirm_docs_and_mentions() -> None:
+    docs = git_show_bytes(f"{PYTHON_COMMIT}:{DOCS}").decode("utf-8")
+    if RECIPE not in docs or "SL102" not in docs:
+        raise SystemExit("pin recipe doc drifted")
+    if "fixtures/repair/salvage_truncate.json" not in docs:
+        raise SystemExit("pin recipe doc lost the fixture")
+    for rel in MENTION_FILES:
+        text = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+        if FN in text or FN_LOSS in text:
+            raise SystemExit(f"{rel} calls the truncate function")
+
+
+def discover_coverage(text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for fn in test_functions(text):
+        covered = fn.name == COVERED_TEST
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": "covered" if covered else "not_applicable",
+                "vector_id": COVERED_VECTOR if covered else None,
+                "note": "" if covered else NOTES[fn.name],
+            }
+        )
+    covered_count = sum(row["status"] == "covered" for row in rows)
+    if covered_count != 1 or len(rows) != PINNED_TEST_COUNT:
+        raise SystemExit("coverage counts drifted")
+    return rows
+
+
+def leaks_payload(text: str, item: str) -> bool:
+    if f'"{item}"' in text:
+        return True
+    if len(item) >= 8 and item in text:
+        return True
+    distinctive = any(ch.isspace() or not ch.isalnum() for ch in item)
+    return bool(distinctive and item in text)
+
+
+def dump(doc: Any, banned_payload: list[str]) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text:
+        raise SystemExit("refusing the wrong pin in JSON")
+    if "0 diff" in text:
+        raise SystemExit("refusing a zero-diff claim in JSON")
+    for seam in _SEAMS:
+        if seam in text:
+            raise SystemExit("refusing a seam sentence in JSON")
+    if '"payload"' in text:
+        raise SystemExit("refusing a payload field in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit("refusing a path fragment in JSON")
+    for item in banned_payload:
+        if item and leaks_payload(text, item):
+            digest = hashlib.sha256(item.encode("utf-8")).hexdigest()
+            raise SystemExit(f"refusing payload content length {len(item)} sha {digest}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    confirm_docs_and_mentions()
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    prove_shapes(test_text)
+    fixture = json.loads(git_show_bytes(f"{PYTHON_COMMIT}:{FIXTURE}").decode("utf-8"))
+    banned_payload = payload_strings(fixture) + payload_literals(test_text)
+    if len(banned_payload) < 5:
+        raise SystemExit("payload strings missing")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_salvage.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    if py_sha != KNOWN_PY_SHA:
+        raise SystemExit("recipes_salvage.py sha drifted")
+    mod = load_mod()
+    canon = sys.modules["sesslint.canonical"]
+    planner = sys.modules["sesslint.repair.planner"]
+    prove_unclaimed(mod, canon, planner)
+    prove_fixture(mod, canon, planner, fixture)
+    recipe = recipe_vector(mod)
+    covered = validation_vector(mod, canon, planner)
+    edges = stored_edges(mod, planner)
+    successes = stored_successes(mod, planner)
+    vectors = [recipe, covered, *edges, *successes]
+    entire = [item for item in vectors if item["construct"]["entire_test"] is True]
+    if [item["id"] for item in entire] != [COVERED_VECTOR]:
+        raise SystemExit("entire_test drifted")
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc, banned_payload)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text)
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": TEST_FILE,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    if coverage["covered_count"] != 1 or coverage["not_applicable_count"] != 23:
+        raise SystemExit("coverage counts drifted")
+    write_text(OUT / "coverage.json", dump(coverage, banned_payload))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic side-effect-unknown-truncate parity. Refusal messages "
+            "come from the pinned blob. Plan results, fixture payload, and "
+            "SessionEvent copies stay uncovered. No fixture diff is stored."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance, banned_payload))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_salvage_py_sha256": py_sha,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest, banned_payload))
+    print(
+        f"{len(vectors)} {digest} covered={coverage['covered_count']} "
+        f"not_applicable={coverage['not_applicable_count']} py={py_sha}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,705 @@
+#!/usr/bin/env python3
+"""Generate sesslint.io module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+IO_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+IO_RS_SHA256 = (
+    "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b"
+)
+MODULE = "sesslint.io"
+
+HEADER_JSON = (
+    '{"schema_version":"sesslint.session/v1","session_id":"sess-synthetic",'
+    '"created_at":"2024-02-29T00:00:00Z"}'
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "SL001, SL002, SL303, and SL009 findings: Python yields Finding objects; "
+    "Rust stops with FINGERPRINT_CODEC_UNAVAILABLE. Do not expect codec text as "
+    "if Python raised it.",
+    "read_header and iter_events with a non-empty dup_sink when duplicate keys "
+    "match critical keys: Rust returns FINGERPRINT_CODEC_UNAVAILABLE; vectors omit "
+    "dup_sink hit paths.",
+    "SecretScanTracker::into_findings with hits: Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE. Clean streams with an empty tracker are compared.",
+    "mmap fast path (_open_byte_source / _MMapLineSource): not ported; no mmap vectors.",
+    "Header JSON non-object type labels: Rust uses object/array/string/number/bool/null; "
+    "Python uses dict/list/str/int/float/NoneType. Vectors use Rust labels only.",
+    "JSON integers outside i64: ReadHeaderError::IntegerRange, not a schema finding.",
+    "Python ReaderLimits rejects bool subclasses for limit fields; Rust has no bool on i64.",
+    "truth is SKIP_BAD (-2) for skip_scalar; trueth is accepted as true prefix.",
+    "Live/test API key-shaped tokens: synthetic parity only; secret hit paths are gaps.",
+)
+
+_BANNED_LIVE_TEST = re.compile(rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_io_py_blob() -> None:
+    pin = git_show_blob(f"{IO_PY_PIN}:src/sesslint/io.py")
+    head = git_show_blob("HEAD:src/sesslint/io.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/io.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_io_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "scan" / "src" / "io.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != IO_RS_SHA256:
+        raise SystemExit(
+            f"scan/src/io.rs sha256 mismatch: expected {IO_RS_SHA256}, got {digest}"
+        )
+
+
+def load_io_module() -> types.ModuleType:
+    verify_io_py_blob()
+    verify_io_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    return importlib.import_module("sesslint.io")
+
+
+def bytes_hex(data: bytes) -> dict[str, Any]:
+    return {"kind": "bytes_hex", "hex": data.hex()}
+
+
+def limits_obj(
+    max_line: int,
+    max_depth: int,
+    max_file: int,
+    max_records: int | None = None,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "max_line_bytes": max_line,
+        "max_depth": max_depth,
+        "max_file_bytes": max_file,
+    }
+    if max_records is not None:
+        out["max_records"] = max_records
+    return out
+
+
+def event_json(event_id: str, seq: int) -> str:
+    return (
+        f'{{"id":"{event_id}","parent_id":null,"seq":{seq},'
+        f'"ts":"2024-02-29T00:00:00Z","actor":"user","kind":"message","payload":{{}}}}'
+    )
+
+
+def scan_committed_text(text: str) -> None:
+    if _BANNED_LIVE_TEST.search(text.encode("utf-8")):
+        raise SystemExit("committed output matches banned live/test secret shape")
+
+
+def append_case(out: list[dict[str, Any]], case: dict[str, Any]) -> None:
+    out.append(case)
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    append_case(
+        out,
+        {
+            "id": "constants_default",
+            "construct": {"type": "io_constants"},
+            "expected": {
+                "DEFAULT_MAX_LINE_BYTES": mod.DEFAULT_MAX_LINE_BYTES,
+                "DEFAULT_MAX_DEPTH": mod.DEFAULT_MAX_DEPTH,
+                "DEFAULT_MAX_FILE_BYTES": mod.DEFAULT_MAX_FILE_BYTES,
+                "PROBE_CHUNK_BYTES": mod._PROBE_CHUNK_BYTES,
+                "CHUNK_DRAIN_SIZE": mod._CHUNK_DRAIN_SIZE,
+                "MMAP_MIN_BYTES": mod._MMAP_MIN_BYTES,
+                "MMAP_MIN_LINE_BYTES": mod._MMAP_MIN_LINE_BYTES,
+                "MMAP_SNIFF_BYTES": mod._MMAP_SNIFF_BYTES,
+                "DEFAULT_READER_LIMITS": {
+                    "max_line_bytes": mod.DEFAULT_READER_LIMITS.max_line_bytes,
+                    "max_depth": mod.DEFAULT_READER_LIMITS.max_depth,
+                    "max_file_bytes": mod.DEFAULT_READER_LIMITS.max_file_bytes,
+                    "max_records": mod.DEFAULT_READER_LIMITS.max_records,
+                },
+            },
+        },
+    )
+
+    limit_errors = [
+        ("line_zero", (0, 1, 1, None), "max_line_bytes must be a positive integer, got 0"),
+        (
+            "records_zero",
+            (1, 1, 1, 0),
+            "max_records must be a positive integer or None, got 0",
+        ),
+    ]
+    for case_id, args, message in limit_errors:
+        try:
+            mod.ReaderLimits(*args)
+            raise SystemExit(f"{case_id}: expected ValueError")
+        except ValueError as err:
+            append_case(
+                out,
+                {
+                    "id": f"reader_limits_{case_id}",
+                    "construct": {
+                        "type": "io_reader_limits",
+                        "limits": limits_obj(*args[:3], args[3] if len(args) > 3 else None),
+                    },
+                    "expected": {"outcome": "error", "message": str(err)},
+                },
+            )
+
+    skip_cases = [
+        ("true", 0, 4),
+        ("truth", 0, -2),
+        ("trueth", 0, 4),
+        ("1,", 0, 1),
+        ("tru", 0, -1),
+    ]
+    for text, pos, want in skip_cases:
+        got = mod._skip_scalar(text, pos)
+        if got != want:
+            raise SystemExit(f"skip_scalar {text!r}@{pos}: py={got} want={want}")
+        append_case(
+            out,
+            {
+                "id": f"skip_scalar_{text.replace(',', 'comma')}_{pos}",
+                "construct": {
+                    "type": "io_skip_scalar",
+                    "text": text,
+                    "pos": pos,
+                },
+                "expected": {"pos_after": want},
+            },
+        )
+
+    cut_cases = [
+        ("{}", False),
+        (r'{"a":1,"', True),
+        (r'{"a":truth}', False),
+    ]
+    for text, want in cut_cases:
+        got = mod._is_cut_json_object(text)
+        if got != want:
+            raise SystemExit(f"is_cut {text!r}: py={got}")
+        append_case(
+            out,
+            {
+                "id": f"is_cut_{hashlib.sha256(text.encode()).hexdigest()[:8]}",
+                "construct": {"type": "io_is_cut_json_object", "text": text},
+                "expected": {"value": want},
+            },
+        )
+
+    torn_cases: list[tuple[bytes, bool, bool]] = [
+        (b'{"id": "e2", "payl', True, False),
+        (b'{"id": "e2"}', False, False),
+        (b"\xef\xbb\xbf{\"id\": \"e2\"", True, True),
+    ]
+    for raw, want, strip_bom in torn_cases:
+        got = mod.is_torn_append(raw, strip_bom=strip_bom)
+        if got != want:
+            raise SystemExit(f"is_torn_append: mismatch")
+        append_case(
+            out,
+            {
+                "id": f"torn_{raw.hex()[:12]}_{strip_bom}",
+                "construct": {
+                    "type": "io_is_torn_append",
+                    "line": bytes_hex(raw),
+                    "strip_bom": strip_bom,
+                },
+                "expected": {"value": want},
+            },
+        )
+
+    _obj, dups, truncated = mod.decode_json_dupaware(
+        r'{"a": 1, "b": {"c": 2}}', critical_keys=None
+    )
+    if dups:
+        raise SystemExit("decode clean had dups")
+    append_case(
+        out,
+        {
+            "id": "decode_json_clean",
+            "construct": {
+                "type": "io_decode_json_dupaware",
+                "text": r'{"a": 1, "b": {"c": 2}}',
+            },
+            "expected": {
+                "dup_count": 0,
+                "truncated": truncated,
+            },
+        },
+    )
+
+    assert mod.check_nesting_depth({"a": {"b": 1}}, 2)
+    assert not mod.check_nesting_depth({"a": {"b": 1}}, 1)
+    append_case(
+        out,
+        {
+            "id": "nesting_depth_shallow",
+            "construct": {
+                "type": "io_check_nesting_depth",
+                "max_depth": 1,
+                "json_text": r'{"a":{"b":1}}',
+            },
+            "expected": {"within": False},
+        },
+    )
+    append_case(
+        out,
+        {
+            "id": "nesting_depth_ok",
+            "construct": {
+                "type": "io_check_nesting_depth",
+                "max_depth": 2,
+                "json_text": r'{"a":{"b":1}}',
+            },
+            "expected": {"within": True},
+        },
+    )
+
+    wide = mod.ReaderLimits()
+
+    def probe_header_bytes(data: bytes, name: str | None, limits: Any) -> tuple[str, str | None]:
+        stream = io.BytesIO(data)
+        try:
+            header = mod.read_header(stream, limits=limits)
+            return (
+                "ok",
+                json.dumps(
+                    {
+                        "session_id": header.session_id,
+                        "schema_version": header.schema_version,
+                        "created_at": header.created_at,
+                    },
+                    sort_keys=True,
+                ),
+            )
+        except Exception as err:
+            return ("error", str(err))
+
+    empty_msg = probe_header_bytes(b"", None, wide)
+    append_case(
+        out,
+        {
+            "id": "read_header_stream_empty",
+            "construct": {
+                "type": "io_read_header_stream",
+                "stream": bytes_hex(b""),
+                "limits": limits_obj(
+                    wide.max_line_bytes, wide.max_depth, wide.max_file_bytes
+                ),
+            },
+            "expected": {"outcome": empty_msg[0], "message": empty_msg[1]},
+        },
+    )
+
+    header_ok = probe_header_bytes(
+        (HEADER_JSON + "\n").encode(), None, wide
+    )
+    append_case(
+        out,
+        {
+            "id": "read_header_stream_ok",
+            "construct": {
+                "type": "io_read_header_stream",
+                "stream": bytes_hex((HEADER_JSON + "\n").encode()),
+                "limits": limits_obj(
+                    wide.max_line_bytes, wide.max_depth, wide.max_file_bytes
+                ),
+            },
+            "expected": {"outcome": "ok", "header_json": header_ok[1]},
+        },
+    )
+
+    lim8 = mod.ReaderLimits(max_line_bytes=8, max_depth=10, max_file_bytes=1000)
+    long_line = probe_header_bytes(b"0123456789\n", None, lim8)
+    append_case(
+        out,
+        {
+            "id": "read_header_line_limit",
+            "construct": {
+                "type": "io_read_header_stream",
+                "stream": bytes_hex(b"0123456789\n"),
+                "limits": limits_obj(8, 10, 1000),
+            },
+            "expected": {"outcome": "error", "message": long_line[1]},
+        },
+    )
+
+    neither = (
+        '{"created_at":"2024-02-29T00:00:00Z"}\n'
+    )
+    miss = probe_header_bytes(neither.encode(), None, wide)
+    append_case(
+        out,
+        {
+            "id": "read_header_missing_identity",
+            "construct": {
+                "type": "io_read_header_stream",
+                "stream": bytes_hex(neither.encode()),
+                "limits": limits_obj(
+                    wide.max_line_bytes, wide.max_depth, wide.max_file_bytes
+                ),
+            },
+            "expected": {"outcome": "error", "message": miss[1]},
+        },
+    )
+
+    def drive_iter(data: bytes, name: str | None, limits: Any | None) -> dict[str, Any]:
+        stream = io.BytesIO(data)
+        if name is not None:
+            stream.name = name
+        events: list[dict[str, Any]] = []
+        error: str | None = None
+        try:
+            for item in mod.iter_events(stream, limits=limits, critical_keys=None):
+                if hasattr(item, "code"):
+                    error = "unexpected_finding"
+                    break
+                events.append(
+                    {
+                        "id": item.id,
+                        "seq": item.seq,
+                        "actor": item.actor,
+                        "kind": item.kind,
+                        "parent_id": item.parent_id,
+                    }
+                )
+        except Exception as err:
+            error = str(err)
+        return {"events": events, "error": error}
+
+    session = (
+        HEADER_JSON
+        + "\n"
+        + event_json("evt-one", 1)
+        + "\n"
+        + event_json("evt-two", 2)
+        + "\n"
+    ).encode()
+
+    clean = drive_iter(session, None, None)
+    append_case(
+        out,
+        {
+            "id": "iter_events_two_events",
+            "construct": {
+                "type": "io_iter_events_stream",
+                "stream": bytes_hex(session),
+            },
+            "expected": {
+                "event_count": len(clean["events"]),
+                "events": clean["events"],
+                "error": clean["error"],
+            },
+        },
+    )
+
+    no_rec = drive_iter(b"", None, None)
+    append_case(
+        out,
+        {
+            "id": "iter_events_no_records",
+            "construct": {"type": "io_iter_events_stream", "stream": bytes_hex(b"")},
+            "expected": {
+                "event_count": 0,
+                "error": no_rec["error"],
+            },
+        },
+    )
+
+    lim2 = mod.ReaderLimits(max_records=2)
+    limited = drive_iter(session, None, lim2)
+    append_case(
+        out,
+        {
+            "id": "iter_events_max_records",
+            "construct": {
+                "type": "io_iter_events_stream",
+                "stream": bytes_hex(session),
+                "limits": limits_obj(
+                    lim2.max_line_bytes,
+                    lim2.max_depth,
+                    lim2.max_file_bytes,
+                    2,
+                ),
+            },
+            "expected": {
+                "event_count": len(limited["events"]),
+                "first_id": limited["events"][0]["id"] if limited["events"] else None,
+                "error": limited["error"],
+            },
+        },
+    )
+
+    blank_bytes = bytearray(b"\n")
+    blank_bytes.extend((HEADER_JSON + "\n").encode())
+    blank_bytes.extend(b"\x0b\x0c\n \t\n")
+    blank_bytes.extend((event_json("evt-one", 1) + "\n").encode())
+    append_case(
+        out,
+        {
+            "id": "iter_events_blank_ordinals",
+            "construct": {
+                "type": "io_iter_events_stream",
+                "stream": bytes_hex(bytes(blank_bytes)),
+                "limits": limits_obj(
+                    mod.DEFAULT_MAX_LINE_BYTES,
+                    mod.DEFAULT_MAX_DEPTH,
+                    mod.DEFAULT_MAX_FILE_BYTES,
+                    2,
+                ),
+                "collect_raw": True,
+            },
+            "expected": {
+                "record_count": 2,
+                "first_ordinal": 1,
+                "second_ordinal": 2,
+                "event_count": 1,
+                "first_event_id": "evt-one",
+            },
+        },
+    )
+
+    wide_line = mod.ReaderLimits(max_line_bytes=4, max_depth=100, max_file_bytes=100)
+    append_case(
+        out,
+        {
+            "id": "iter_events_drain_tail",
+            "construct": {
+                "type": "io_iter_events_stream",
+                "stream": bytes_hex(b"01234WXYZ\n"),
+                "limits": limits_obj(4, 100, 100),
+                "collect_raw": True,
+            },
+            "expected": {
+                "raw_record_hex": "3031323334",
+                "byte_end": 10,
+                "no_wxyz_in_record": True,
+            },
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "read_header_path_missing",
+            "construct": {
+                "type": "io_read_header_path",
+                "path": "synthetic/missing-session.jsonl",
+                "write_bytes": None,
+            },
+            "expected": {
+                "message": "Session file not found: synthetic/missing-session.jsonl",
+            },
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "read_header_path_directory",
+            "construct": {"type": "io_read_header_path", "mode": "directory"},
+            "expected": {"prefix": "Expected session file, got directory: "},
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "read_header_file_size",
+            "construct": {
+                "type": "io_read_header_path",
+                "mode": "file",
+                "filename": "big.jsonl",
+                "file_bytes": bytes_hex(b"hello"),
+                "limits": limits_obj(100, 10, 4),
+            },
+            "expected": {
+                "message": (
+                    "File size 5 bytes exceeds maximum limit "
+                    "(4 bytes); split file into smaller sessions"
+                ),
+            },
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "read_header_path_empty",
+            "construct": {
+                "type": "io_read_header_path",
+                "mode": "file",
+                "filename": "empty.jsonl",
+                "file_bytes": bytes_hex(b""),
+            },
+            "expected": {"suffix": "Session file is empty or contains no header: "},
+        },
+    )
+
+    stream_lim = mod.ReaderLimits(max_line_bytes=100, max_depth=10, max_file_bytes=4)
+    try:
+        mod.read_header(io.BytesIO(b" \n \n\n"), limits=stream_lim)
+        raise SystemExit("stream size: expected error")
+    except mod.FileTooLargeError as err:
+        stream_lim_msg = str(err)
+    append_case(
+        out,
+        {
+            "id": "read_header_stream_byte_limit",
+            "construct": {
+                "type": "io_read_header_stream",
+                "stream": bytes_hex(b" \n \n\n"),
+                "limits": limits_obj(100, 10, 4),
+            },
+            "expected": {"outcome": "error", "message": stream_lim_msg},
+        },
+    )
+
+    blanks_named = drive_iter(b" \n\t\n", "dir\\file.jsonl", None)
+    append_case(
+        out,
+        {
+            "id": "iter_events_blanks_named",
+            "construct": {
+                "type": "io_iter_events_stream",
+                "stream": bytes_hex(b" \n\t\n"),
+                "name": "dir\\file.jsonl",
+            },
+            "expected": {
+                "event_count": 0,
+                "error": blanks_named["error"],
+            },
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "iter_events_path_missing",
+            "construct": {
+                "type": "io_iter_events_path",
+                "path": "synthetic/missing-session.jsonl",
+            },
+            "expected": {
+                "message": "Session file not found: synthetic/missing-session.jsonl",
+            },
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "iter_events_path_directory",
+            "construct": {"type": "io_iter_events_path", "mode": "directory"},
+            "expected": {"prefix": "Expected session file, got directory: "},
+        },
+    )
+
+    append_case(
+        out,
+        {
+            "id": "iter_events_path_file_size",
+            "construct": {
+                "type": "io_iter_events_path",
+                "mode": "file",
+                "filename": "stat-big.jsonl",
+                "file_bytes": bytes_hex(b"hello"),
+                "limits": limits_obj(100, 10, 4),
+            },
+            "expected": {
+                "message": (
+                    "File size 5 bytes exceeds maximum limit "
+                    "(4 bytes); split file into smaller sessions"
+                ),
+            },
+        },
+    )
+
+    return out
+
+
+def main() -> int:
+    mod = load_io_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vectors_from_module(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "scan_io_rs_sha256": IO_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "scan_io_rs_sha256": IO_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/io/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    manifest_text = json.dumps(manifest, indent=2) + "\n"
+    scan_committed_text(manifest_text)
+    (out_dir / "manifest.json").write_text(manifest_text, encoding="utf-8", newline="\n")
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.io parity (stdlib-only vectors; no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/io/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,567 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.tool_pairing_1",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_tool_pairing_1_rs_sha256": "220c027221d3dcf8a6e932fb536359726e49e0940337651ebc21617950f4c5fe",
+  "python_all": [
+    "CALL_KINDS",
+    "MAX_INDEX_SAMPLE_SIZE",
+    "MAX_PAIRING_FINDINGS",
+    "MAX_PAIRING_SAMPLE_SIZE",
+    "RESULT_KINDS",
+    "cap_pairing_findings",
+    "check_dangling",
+    "check_dangling_calls",
+    "check_multi_results",
+    "check_multiple_results",
+    "check_orphan_results",
+    "check_orphans",
+    "check_reused",
+    "check_reused_ids",
+    "check_sl101",
+    "check_sl102",
+    "check_sl103",
+    "check_sl104",
+    "check_tool_pairing_1",
+    "compute_pairing_fingerprint"
+  ],
+  "known_parity_gaps": [
+    "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",
+    "A mapping tool_result payload calls compute_content_hash. Rust returns sesslint._canonical_codec.payload_content_hash is not available and does not hash. Python hashes the payload.",
+    "Empty input with max_findings -1 takes the overflow path. Rust returns the codec error. Python emits an overflow finding.",
+    "Float and list ids or payloads are typed errors in Rust. Python uses str().",
+    "Null tool_call correlation is still dangling on codex-rollout (SL102 finding). That case belongs in known_parity_gaps, not silent vectors."
+  ],
+  "vectors": [
+    {
+      "id": "empty_input_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "check_orphans_len": 0,
+        "check_dangling_len": 0,
+        "check_reused_len": 0,
+        "check_multi_results_len": 0,
+        "check_tool_pairing_1_len": 0
+      }
+    },
+    {
+      "id": "paired_call_and_result_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-pair-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-pair-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_orphans_len": 0,
+        "check_dangling_len": 0,
+        "check_reused_len": 0,
+        "check_multi_results_len": 0,
+        "check_sl104_len": 0,
+        "check_tool_pairing_1_len": 0
+      }
+    },
+    {
+      "id": "one_result_multi_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-one-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-one-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_multi_results_len": 0,
+        "check_sl104_len": 0
+      }
+    },
+    {
+      "id": "message_ignored_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "msg-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "call-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-msg-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-a-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "str",
+                  "v": "corr-msg-synth"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_orphans_len": 0,
+        "check_dangling_len": 0,
+        "check_reused_len": 0,
+        "check_multi_results_len": 0,
+        "check_tool_pairing_1_len": 0
+      }
+    },
+    {
+      "id": "null_result_on_codex_rollout_orphans_silent",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "context": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter_id",
+              {
+                "t": "str",
+                "v": "codex-rollout"
+              }
+            ],
+            [
+              "adapter_version",
+              {
+                "t": "str",
+                "v": "unknown"
+              }
+            ],
+            [
+              "profile_id",
+              {
+                "t": "str",
+                "v": "unknown"
+              }
+            ],
+            [
+              "profile_version",
+              {
+                "t": "str",
+                "v": "unknown"
+              }
+            ],
+            [
+              "source_metadata",
+              {
+                "t": "map",
+                "entries": []
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ]
+          ]
+        },
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "res-null-synth"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_orphans_len": 0
+      }
+    },
+    {
+      "id": "constants_and_all",
+      "construct": {
+        "type": "tool_pairing_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "MAX_PAIRING_FINDINGS": 500,
+        "MAX_INDEX_SAMPLE_SIZE": 32,
+        "MAX_PAIRING_SAMPLE_SIZE": 32,
+        "call_kinds": [
+          "tool_call",
+          "tool_use"
+        ],
+        "result_kinds": [
+          "tool_result"
+        ],
+        "check_orphans_len": 0
+      }
+    },
+    {
+      "id": "fingerprint_sl103_ab",
+      "construct": {
+        "type": "pairing_fingerprint",
+        "code": "SL103",
+        "items": [
+          "b",
+          "a",
+          "a"
+        ]
+      },
+      "expected": {
+        "fingerprint": "ca1fec8c15a52b35"
+      }
+    }
+  ]
+}

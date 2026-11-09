@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._scan_args parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from argparse import Namespace
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCAN_ARGS_PY_SHA256 = (
+    "e1bd634c6cda534ffbe90e494e9b02843ec4dcfb26cb401848fb6b766272448a"
+)
+COMMON_PY_SHA256 = (
+    "6a4a70e39c95c69817642fe322de72a52c49783be57e47d318d7e6e0097eae2a"
+)
+CONTEXT_PY_SHA256 = (
+    "333e2b5cc857a22387ed5f67e22806491ebdfdabaef970f006d97aff32253667"
+)
+ERRORS_PY_SHA256 = (
+    "224dfa54c2259ed53c51adb261faf404ed5d8b9790a671e9b80e40a863fc8c1b"
+)
+PROGRESS_PY_SHA256 = (
+    "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572"
+)
+CLI_PROGRESS_PY_SHA256 = (
+    "59a2ce2f34ec951d9404867a333a990eb646ba61dd9d5baa7defc0e6a2a7f1c3"
+)
+MODULE = "sesslint.cli._scan_args"
+
+SYNTHETIC_SELECT = "SL001\u001c, SL002"
+SYNTHETIC_IGNORE = " SL009 ,, "
+SYNTHETIC_BASELINE_A = "synthetic-baseline-a"
+SYNTHETIC_BASELINE_B = "synthetic-baseline-b"
+SYNTHETIC_PROFILE = "synthetic-profile"
+SYNTHETIC_ADAPTER = "synthetic-adapter"
+SYNTHETIC_EXCLUDE = "synthetic-exclude"
+SYNTHETIC_CACHE = "synthetic-cache-dir"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-scan-args-cpu-count: jobs 'auto' or '0' (after strip and lower) use "
+        "os.cpu_count() or 1 in Python; Rust uses thread::available_parallelism "
+        "— job counts are not pinned."
+    ),
+    (
+        "GAP-scan-args-jobs-i64: a positive integer jobs token that does not fit "
+        "in i64 is refused as jobs value does not fit in i64 in Rust, not Python "
+        "arbitrary int semantics."
+    ),
+]
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_module_from_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__version__ = "0.5.0+synthetic-parity"
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    errors_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_errors.py")
+    verify_digest(errors_blob, ERRORS_PY_SHA256, "_errors.py")
+    errors = exec_module_from_blob(errors_blob, "sesslint.cli._errors")
+    cli_pkg._errors = errors
+
+    progress_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/progress.py")
+    verify_digest(progress_blob, PROGRESS_PY_SHA256, "progress.py")
+    progress = exec_module_from_blob(progress_blob, "sesslint.progress")
+    sys.modules["sesslint.progress"] = progress
+    pkg.progress = progress
+
+    cli_progress_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_progress.py")
+    verify_digest(cli_progress_blob, CLI_PROGRESS_PY_SHA256, "cli/_progress.py")
+    cli_progress = exec_module_from_blob(cli_progress_blob, "sesslint.cli._progress")
+    cli_pkg._progress = cli_progress
+
+    api = types.ModuleType("sesslint.api")
+
+    def build_internal_error_envelope(
+        err: BaseException,
+        error_id: str | None = None,
+    ) -> dict[str, str]:
+        eid = error_id if error_id is not None else "ERR-00000000"
+        return {
+            "code": "INTERNAL_ERROR",
+            "error_id": eid,
+            "message": str(err),
+            "verdict": "error",
+        }
+
+    api.build_internal_error_envelope = build_internal_error_envelope
+    sys.modules["sesslint.api"] = api
+    pkg.api = api
+
+    finding = types.ModuleType("sesslint.finding")
+
+    class Finding:  # noqa: D101
+        pass
+
+    finding.Finding = Finding
+    sys.modules["sesslint.finding"] = finding
+    pkg.finding = finding
+
+    io_mod = types.ModuleType("sesslint.io")
+    io_mod.DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
+    sys.modules["sesslint.io"] = io_mod
+    pkg.io = io_mod
+
+    common_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_common.py")
+    verify_digest(common_blob, COMMON_PY_SHA256, "_common.py")
+    common = exec_module_from_blob(common_blob, "sesslint.cli._common")
+    cli_pkg._common = common
+
+    context_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_context.py")
+    verify_digest(context_blob, CONTEXT_PY_SHA256, "_context.py")
+    context = exec_module_from_blob(context_blob, "sesslint.cli._context")
+    cli_pkg._context = context
+
+
+def load_scan_args_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_scan_args.py")
+    verify_digest(blob, SCAN_ARGS_PY_SHA256, "_scan_args.py")
+    scan_args = exec_module_from_blob(blob, "sesslint.cli._scan_args")
+    sys.modules["sesslint.cli"]._scan_args = scan_args
+    return scan_args
+
+
+def required_args_dict() -> dict[str, Any]:
+    return {
+        "max_file_bytes": 100,
+        "timestamp_skew_ms": 2000,
+        "max_findings_per_code": 20,
+    }
+
+
+def namespace_from_mapping(values: dict[str, Any]) -> Namespace:
+    return Namespace(**values)
+
+
+def ctx_from_spec(spec: dict[str, Any]) -> Any:
+    quiet = bool(spec.get("quiet", True))
+    verbose = bool(spec.get("verbose", False))
+    isatty = bool(spec.get("isatty", False))
+    buf = io.StringIO()
+    buf.isatty = lambda: isatty  # type: ignore[attr-defined]
+    context = sys.modules["sesslint.cli._context"]
+    return context.CliContext(
+        quiet=quiet,
+        verbose=verbose,
+        config_path=None,
+        settings={},
+        stderr=buf,
+    )
+
+
+def encode_scalar(value: object) -> dict[str, Any]:
+    if value is None:
+        return {"kind": "none"}
+    if isinstance(value, bool):
+        return {"kind": "bool", "value": value}
+    if isinstance(value, int):
+        return {"kind": "int", "value": value}
+    if isinstance(value, str):
+        return {"kind": "str", "value": value}
+    raise TypeError(f"unsupported scalar {value!r}")
+
+
+def encode_progress_cb(cb: Any) -> dict[str, str]:
+    if cb is None:
+        return {"kind": "none"}
+    name = cb.__class__.__name__
+    if name == "TtyProgress":
+        return {"kind": "tty"}
+    return {"kind": "ndjson"}
+
+
+def encode_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "recursive": kwargs["recursive"],
+        "follow_symlinks": encode_scalar(kwargs["follow_symlinks"]),
+        "max_files": encode_scalar(kwargs["max_files"]),
+        "max_bytes": encode_scalar(kwargs["max_bytes"]),
+        "max_file_bytes": encode_scalar(kwargs["max_file_bytes"]),
+        "timestamp_skew_ms": encode_scalar(kwargs["timestamp_skew_ms"]),
+        "max_findings_per_code": encode_scalar(kwargs["max_findings_per_code"]),
+        "newest": encode_scalar(kwargs["newest"]) if kwargs["newest"] is not None else None,
+        "since": encode_scalar(kwargs["since"]) if kwargs["since"] is not None else None,
+        "format": encode_scalar(kwargs["format"]),
+        "profile": encode_scalar(kwargs["profile"]),
+        "confidence_min": (
+            encode_scalar(kwargs["confidence_min"])
+            if kwargs["confidence_min"] is not None
+            else None
+        ),
+        "margin_min": (
+            encode_scalar(kwargs["margin_min"])
+            if kwargs["margin_min"] is not None
+            else None
+        ),
+        "progress_cb": encode_progress_cb(kwargs["progress_cb"]),
+        "skip_undetected": encode_scalar(kwargs["skip_undetected"]),
+        "select": kwargs["select"],
+        "ignore": kwargs["ignore"],
+        "baseline": kwargs["baseline"],
+        "exclude": encode_scalar(kwargs["exclude"]) if kwargs["exclude"] is not None else None,
+        "ext": encode_scalar(kwargs["ext"]) if kwargs["ext"] is not None else None,
+        "incremental": encode_scalar(kwargs["incremental"]),
+        "cache_dir": (
+            encode_scalar(str(kwargs["cache_dir"]))
+            if kwargs["cache_dir"] is not None
+            else None
+        ),
+        "jobs": kwargs["jobs"],
+    }
+    return out
+
+
+def build_expected(scan_args: types.ModuleType, row: dict[str, Any]) -> dict[str, Any]:
+    construct = row["construct"]
+    if construct.get("gap_id"):
+        return {"result": "gap", "gap_id": construct["gap_id"]}
+
+    ctx = ctx_from_spec(construct.get("ctx", {}))
+    args_values = dict(required_args_dict())
+    args_values.update(construct.get("args") or {})
+    args = namespace_from_mapping(args_values)
+    baseline = construct.get("baseline")
+    progress_cb = construct.get("progress_cb_provided")
+
+    try:
+        kwargs = scan_args.build_scan_kwargs(ctx, args, baseline=baseline, progress_cb=progress_cb)
+    except ValueError as err:
+        return {
+            "result": "error",
+            "exception": "ValueError",
+            "message": str(err),
+        }
+
+    encoded = encode_kwargs(kwargs)
+    if construct.get("omit_jobs_from_kwargs"):
+        encoded.pop("jobs", None)
+    return {"result": "ok", "kwargs": encoded}
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    huge_jobs = "9" * 40
+    return [
+        {
+            "id": "omitted_fields_pin_defaults",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": required_args_dict(),
+            },
+        },
+        {
+            "id": "recursive_always_true",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "recursive": False},
+            },
+        },
+        {
+            "id": "jobs_positive_integer",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": "4"},
+            },
+        },
+        {
+            "id": "jobs_non_integer_token",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": "  Nope  "},
+            },
+        },
+        {
+            "id": "jobs_below_one",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": "-1"},
+            },
+        },
+        {
+            "id": "explicit_fields_and_rule_codes",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {
+                    **required_args_dict(),
+                    "follow_symlinks": True,
+                    "max_files": 3,
+                    "max_bytes": 9,
+                    "adapter": SYNTHETIC_ADAPTER,
+                    "profile": SYNTHETIC_PROFILE,
+                    "select": SYNTHETIC_SELECT,
+                    "ignore": SYNTHETIC_IGNORE,
+                    "exclude": SYNTHETIC_EXCLUDE,
+                    "ext": ".jsonl",
+                    "incremental": True,
+                    "cache_dir": SYNTHETIC_CACHE,
+                    "jobs": "2",
+                },
+                "baseline": [
+                    SYNTHETIC_BASELINE_B,
+                    SYNTHETIC_BASELINE_A,
+                    SYNTHETIC_BASELINE_B,
+                ],
+            },
+        },
+        {
+            "id": "gap_jobs_auto_cpu_count",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "gap_id": "GAP-scan-args-cpu-count",
+                "omit_jobs_from_kwargs": True,
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": "auto"},
+            },
+        },
+        {
+            "id": "gap_jobs_zero_cpu_count",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "gap_id": "GAP-scan-args-cpu-count",
+                "omit_jobs_from_kwargs": True,
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": "0"},
+            },
+        },
+        {
+            "id": "gap_jobs_positive_i64_overflow",
+            "construct": {
+                "type": "build_scan_kwargs",
+                "gap_id": "GAP-scan-args-jobs-i64",
+                "ctx": {"quiet": True, "verbose": False, "isatty": False},
+                "args": {**required_args_dict(), "jobs": huge_jobs},
+            },
+        },
+    ]
+
+
+def assert_no_banned_patterns(payload: bytes) -> None:
+    if _BANNED_SUPABASE_PAT.search(payload):
+        raise SystemExit("vectors payload matches banned sbp_ pattern")
+
+
+def main() -> int:
+    scan_args = load_scan_args_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(scan_args, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "scan_args_py_sha256": SCAN_ARGS_PY_SHA256,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    assert_no_banned_patterns(payload.encode("utf-8"))
+    if b"\r" in payload.encode("utf-8"):
+        raise SystemExit("vectors payload must be LF-only")
+
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic argparse fixtures for sesslint.cli._scan_args build_scan_kwargs parity."
+        ),
+        "generator": "rust/parity/vectors/cli._scan_args/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": [text for text in KNOWN_PARITY_GAPS],
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

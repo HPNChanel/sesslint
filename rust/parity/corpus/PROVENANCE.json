@@ -1,0 +1,7 @@
+{
+  "contains_real_data": false,
+  "description": "Parity corpus manifest over pinned synthetic fixtures. Paths and hashes only; no session payloads.",
+  "generator": "rust/parity/corpus/build",
+  "origin": "synthetic",
+  "seed": 42
+}

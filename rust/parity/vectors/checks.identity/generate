@@ -1,0 +1,528 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.identity module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Final, Mapping, Sequence
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+IDENTITY_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+IDENTITY_RS_SHA256 = (
+    "9483d3285a2e5409125653814c1b81ea7c4cdf491dc62ee6b896ab11e04e8ccc"
+)
+MODULE = "sesslint.checks.identity"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "A duplicate SessionEvent calls to_canonical_dict and Rust returns "
+    "NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
+    "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. "
+    "Do not build the provenance dict and do not hash.",
+    "Overflow cap_findings calls make_finding with the fingerprint omitted. "
+    "Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python appends an overflow finding.",
+    "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. "
+    "Python returns field names. Do not invent names.",
+    "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
+    "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",
+    "A bool is not an int. True becomes the text True only as an id coercion.",
+    "EvidenceLookup::Borrowed is a failed borrow, not a missing key.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_identity_py_blob() -> None:
+    pin = git_show_blob(f"{IDENTITY_PY_PIN}:src/sesslint/checks/identity.py")
+    head = git_show_blob("HEAD:src/sesslint/checks/identity.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/identity.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_identity_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "identity.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != IDENTITY_RS_SHA256:
+        raise SystemExit(
+            "checks/src/identity.rs sha256 mismatch: "
+            f"expected {IDENTITY_RS_SHA256}, got {digest}"
+        )
+
+
+def load_identity_module() -> types.ModuleType:
+    verify_identity_py_blob()
+    verify_identity_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{IDENTITY_PY_PIN}:src/sesslint/checks/identity.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_identity.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("_sesslint_checks_identity_parity", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned identity.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="assistant",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, tuple):
+        return {"t": "tuple", "items": [tagged(item) for item in value]}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event_session(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"format": "session", "entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def encode_construct_identity_events(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "identity_events",
+        "events": [encode_event_session(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def encode_mapping_id(id_value: Any) -> dict[str, Any]:
+    return {
+        "format": "mapping",
+        "entries": [["id", tagged(id_value)]],
+    }
+
+
+def rust_like_identity_groups(events: Sequence[Any]) -> list[dict[str, Any]]:
+    """Mirror Rust identity_groups for Python SessionEvent and Mapping-like events."""
+
+    def resolved_session(raw_id: Any) -> tuple[str, bool] | None:
+        if raw_id is None:
+            return None
+        if isinstance(raw_id, str):
+            if not raw_id.strip():
+                return None
+            return (raw_id, False)
+        id_str = str(raw_id)
+        if not id_str.strip():
+            return None
+        return (id_str, True)
+
+    def resolved_mapping(event: Mapping[Any, Any]) -> tuple[str, bool] | None:
+        raw_id = event.get("id")
+        if raw_id is None:
+            return None
+        if isinstance(raw_id, str):
+            if not raw_id.strip():
+                return None
+            return (raw_id, False)
+        if raw_id is True:
+            return ("True", True)
+        if raw_id is False:
+            return ("False", True)
+        if isinstance(raw_id, bool):
+            return (str(raw_id), True)
+        if isinstance(raw_id, int) and not isinstance(raw_id, bool):
+            return (str(raw_id), True)
+        if isinstance(raw_id, float):
+            raise RuntimeError("float id not in silent vectors")
+        if isinstance(raw_id, (list, dict)):
+            raise RuntimeError("container id not in silent vectors")
+        id_str = str(raw_id)
+        if not id_str.strip():
+            return None
+        return (id_str, True)
+
+    occurrences: dict[str, list[int]] = defaultdict(list)
+    coerced_ids: set[str] = set()
+
+    for idx, event in enumerate(events):
+        from sesslint.canonical import SessionEvent
+
+        if type(event) is SessionEvent:
+            raw = event.id
+            got = resolved_session(raw)
+        elif isinstance(event, Mapping):
+            got = resolved_mapping(event)
+        else:
+            got = None
+        if got is None:
+            continue
+        id_str, coerced = got
+        if coerced:
+            coerced_ids.add(id_str)
+        occurrences[id_str].append(idx)
+
+    cap = 32
+    groups: list[dict[str, Any]] = []
+    for id_str in sorted(occurrences.keys()):
+        indexes = occurrences[id_str]
+        if len(indexes) < 2:
+            continue
+        truncated = len(indexes) > cap
+        coerced = id_str in coerced_ids
+        groups.append(
+            {
+                "id": id_str,
+                "indexes": indexes[:cap],
+                "first_index": indexes[0],
+                "coerced": coerced,
+                "truncated": truncated,
+            }
+        )
+    return groups
+
+
+def assert_silent(mod: Any, events: Sequence[Any], case_id: str) -> list[dict[str, Any]]:
+    out = mod.check_identities(events)
+    if out:
+        raise SystemExit(f"vector {case_id!r}: expected silent Python check_identities; got {out!r}")
+    return rust_like_identity_groups(events)
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    from sesslint.canonical import SessionEvent
+
+    out: list[dict[str, Any]] = []
+
+    # 1) Empty list
+    empty: list[Any] = []
+    g0 = assert_silent(mod, empty, "empty_list_silent")
+    if g0:
+        raise SystemExit("empty_list_silent: expected empty identity_groups")
+    if mod.cap_findings([]):
+        raise SystemExit("empty_list_silent: cap_findings([]) must be empty on Python")
+    out.append(
+        {
+            "id": "empty_list_silent",
+            "construct": {"type": "identity_events", "events": []},
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+                "cap_findings_len": 0,
+            },
+        }
+    )
+
+    # 2) Two different string ids
+    ev_two = [
+        session_event("evt-par-id-a", 0, "message", {}),
+        session_event("evt-par-id-b", 1, "message", {}),
+    ]
+    g1 = assert_silent(mod, ev_two, "two_distinct_string_ids_silent")
+    if g1:
+        raise SystemExit("two_distinct_string_ids_silent: expected no groups")
+    out.append(
+        {
+            "id": "two_distinct_string_ids_silent",
+            "construct": encode_construct_identity_events(ev_two),
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 3) Empty and whitespace ignored
+    ev_ws = [
+        session_event("", 0, "message", {}),
+        session_event("   ", 1, "message", {}),
+        session_event("\t", 2, "message", {}),
+        {"id": ""},
+        {"id": " \n "},
+        {"id": None},
+        {},
+        session_event("evt-par-id-only", 3, "message", {}),
+    ]
+    g2 = assert_silent(mod, ev_ws, "empty_and_whitespace_ids_ignored")
+    if g2:
+        raise SystemExit("empty_and_whitespace_ids_ignored: expected no groups")
+    mixed: list[dict[str, Any]] = []
+    for ev in ev_ws:
+        if isinstance(ev, SessionEvent):
+            mixed.append(encode_event_session(event_to_construct_dict(ev)))
+        elif isinstance(ev, dict) and not ev:
+            mixed.append({"format": "mapping", "entries": []})
+        else:
+            rid = ev.get("id")
+            mixed.append(
+                {
+                    "format": "mapping",
+                    "entries": [["id", tagged(rid)]],
+                }
+            )
+    out.append(
+        {
+            "id": "empty_and_whitespace_ids_ignored",
+            "construct": {"type": "identity_events", "events": mixed},
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 4) " a " vs "a"
+    ev_spaced = [
+        session_event(" a ", 0, "message", {}),
+        session_event("a", 1, "message", {}),
+    ]
+    assert_silent(mod, ev_spaced, "spaced_and_trimmed_distinct_silent")
+    out.append(
+        {
+            "id": "spaced_and_trimmed_distinct_silent",
+            "construct": encode_construct_identity_events(ev_spaced),
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 5) Mapping id True once
+    ev_true_one: list[Any] = [{"id": True}]
+    assert_silent(mod, ev_true_one, "mapping_bool_true_single_silent")
+    out.append(
+        {
+            "id": "mapping_bool_true_single_silent",
+            "construct": {
+                "type": "identity_events",
+                "events": [encode_mapping_id(True)],
+            },
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 6) Mapping id -7 once
+    ev_neg_one: list[Any] = [{"id": -7}]
+    assert_silent(mod, ev_neg_one, "mapping_int_neg7_single_silent")
+    out.append(
+        {
+            "id": "mapping_int_neg7_single_silent",
+            "construct": {
+                "type": "identity_events",
+                "events": [encode_mapping_id(-7)],
+            },
+            "expected": {
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 7–8) Fingerprints
+    fp_ba = mod.compute_identity_fingerprint("evt", ["b", "a"])
+    if fp_ba != "74556ae4dabbb1fa":
+        raise SystemExit(f"fingerprint b,a mismatch: {fp_ba!r}")
+    out.append(
+        {
+            "id": "fingerprint_evt_sorted_hashes_ba",
+            "construct": {
+                "type": "identity_fingerprint",
+                "id": "evt",
+                "payload_hashes": ["b", "a"],
+            },
+            "expected": {"fingerprint": fp_ba},
+        }
+    )
+    fp_empty = mod.compute_identity_fingerprint("evt", [])
+    if fp_empty != "d4fa9909a0dcc505":
+        raise SystemExit(f"fingerprint no hashes mismatch: {fp_empty!r}")
+    out.append(
+        {
+            "id": "fingerprint_evt_no_payload_hashes",
+            "construct": {
+                "type": "identity_fingerprint",
+                "id": "evt",
+                "payload_hashes": [],
+            },
+            "expected": {"fingerprint": fp_empty},
+        }
+    )
+
+    # 9–10) diff_field_names
+    if mod.diff_field_names([]):
+        raise SystemExit("diff_field_names([]) must be empty")
+    one_ev = [session_event("evt-par-diff-one", 0, "message", {})]
+    if mod.diff_field_names(one_ev):
+        raise SystemExit("diff_field_names(one) must be empty")
+    out.append(
+        {
+            "id": "diff_field_names_zero_session_events",
+            "construct": {"type": "identity_diff_field_names", "events": []},
+            "expected": {"field_names_len": 0},
+        }
+    )
+    out.append(
+        {
+            "id": "diff_field_names_one_session_event",
+            "construct": encode_construct_identity_events(one_ev),
+            "expected": {
+                "field_names_len": 0,
+                "check_findings_len": 0,
+                "identity_groups_len": 0,
+            },
+        }
+    )
+
+    # 11) cap_findings empty (non-overflow path)
+    if mod.cap_findings([]) != []:
+        raise SystemExit("cap_findings must return empty list")
+
+    return out
+
+
+def main() -> int:
+    mod = load_identity_module()
+    out_dir = Path(__file__).resolve().parent
+
+    expected_all = [
+        "MAX_IDENTITY_FINDINGS",
+        "MAX_RECORD_INDEXES_IN_EVIDENCE",
+        "cap_findings",
+        "check_identities",
+        "compute_identity_fingerprint",
+        "diff_field_names",
+    ]
+    if list(mod.__all__) != expected_all:
+        raise SystemExit(f"identity __all__ mismatch: {mod.__all__!r}")
+
+    raw_vectors = vectors_from_module(mod)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        fc = spec["expected"].get("check_findings_len")
+        if fc is not None and fc != 0:
+            raise SystemExit(f'vector {spec["id"]!r} expected silent; check_findings_len={fc}')
+        ig = spec["expected"].get("identity_groups_len")
+        if ig is not None and ig != 0:
+            raise SystemExit(f'vector {spec["id"]!r} expected no groups; identity_groups_len={ig}')
+        vectors.append(spec)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_identity_rs_sha256": IDENTITY_RS_SHA256,
+        "python_all": expected_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_identity_rs_sha256": IDENTITY_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.identity/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.identity parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.identity/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

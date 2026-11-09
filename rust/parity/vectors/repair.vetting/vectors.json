@@ -1,0 +1,531 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.vetting",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "vetting_py_sha256": "401497d2da95769599ed736fbbde1e90b6cb898a623661d3f8babdae95bdc609",
+  "vetting_rs_sha256": "e64b6535612bcb2cca3e2d183e4aa5fa17d57d61987e358d6b6cf3e3c46a1938",
+  "known_parity_gaps": [
+    "GAP-vetting-json-dumps: _plan_step_identity calls json.dumps(sort_keys=True, separators=(',', ':')). Rust returns json.dumps is not available and does not emit canonical JSON text.",
+    "GAP-vetting-register-all: vet_plan calls planner_plan, which imports sesslint.repair.recipes_conservative.register_all. Rust stops at that seam and does not compare supplied steps to the derived plan.",
+    "GAP-vetting-step-comparison: after planner_plan returns, Python compares each supplied step via _plan_step_identity and may raise RepairRefused. Rust never reaches step comparison because register_all is unavailable."
+  ],
+  "vectors": [
+    {
+      "id": "plan_step_identity_seq_one",
+      "construct": {
+        "type": "plan_step_identity",
+        "step": {
+          "seq": 1,
+          "recipe": "synthetic-recipe",
+          "target_finding_fp": "0123456789abcdef",
+          "target_index": 0,
+          "min_policy": "conservative",
+          "recipe_version": "1.0.0",
+          "params": {},
+          "lossy": false,
+          "loss": {}
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "json.dumps is not available",
+        "pin": {
+          "mode": "identity",
+          "identity": "{\"min_policy\":\"conservative\",\"params\":{},\"recipe\":\"synthetic-recipe\",\"recipe_version\":\"1.0.0\",\"target_finding_fp\":\"0123456789abcdef\",\"target_index\":0}"
+        }
+      }
+    },
+    {
+      "id": "plan_step_identity_seq_other",
+      "construct": {
+        "type": "plan_step_identity",
+        "step": {
+          "seq": 99,
+          "recipe": "synthetic-recipe",
+          "target_finding_fp": "0123456789abcdef",
+          "target_index": 0,
+          "min_policy": "conservative",
+          "recipe_version": "1.0.0",
+          "params": {},
+          "lossy": false,
+          "loss": {}
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "json.dumps is not available",
+        "pin": {
+          "mode": "identity",
+          "identity": "{\"min_policy\":\"conservative\",\"params\":{},\"recipe\":\"synthetic-recipe\",\"recipe_version\":\"1.0.0\",\"target_finding_fp\":\"0123456789abcdef\",\"target_index\":0}"
+        }
+      }
+    },
+    {
+      "id": "plan_step_identity_lossy",
+      "construct": {
+        "type": "plan_step_identity",
+        "step": {
+          "seq": 41,
+          "recipe": "synthetic-recipe",
+          "target_finding_fp": "0123456789abcdef",
+          "target_index": 0,
+          "min_policy": "conservative",
+          "recipe_version": "1.0.0",
+          "params": {},
+          "lossy": true,
+          "loss": {
+            "discarded-suffix": 2
+          }
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "json.dumps is not available",
+        "pin": {
+          "mode": "identity",
+          "identity": "{\"loss\":{\"discarded-suffix\":2},\"lossy\":true,\"min_policy\":\"conservative\",\"params\":{},\"recipe\":\"synthetic-recipe\",\"recipe_version\":\"1.0.0\",\"target_finding_fp\":\"0123456789abcdef\",\"target_index\":0}"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_source_hash_mismatch_plan_synthetic_vs_caller",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "plan-synthetic-hash",
+        "profile": "neutral",
+        "policy": "Aggressive",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "not-a-format"
+      },
+      "expected": {
+        "mode": "comparable",
+        "error_type": "PlanSourceMismatch",
+        "message": "Plan source_hash mismatch: plan 'plan-synthetic-hash' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+      }
+    },
+    {
+      "id": "vet_plan_source_hash_mismatch_abc_vs_ab",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "abc",
+        "profile": "neutral",
+        "policy": "Aggressive",
+        "caller_hash": "ab",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "not-a-format"
+      },
+      "expected": {
+        "mode": "comparable",
+        "error_type": "PlanSourceMismatch",
+        "message": "Plan source_hash mismatch: plan 'abc' matches neither source file SHA-256 ('ab') nor the source events hash"
+      }
+    },
+    {
+      "id": "vet_plan_source_hash_mismatch_abc_vs_zzabczz",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "abc",
+        "profile": "neutral",
+        "policy": "Aggressive",
+        "caller_hash": "zzabczz",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "not-a-format"
+      },
+      "expected": {
+        "mode": "comparable",
+        "error_type": "PlanSourceMismatch",
+        "message": "Plan source_hash mismatch: plan 'abc' matches neither source file SHA-256 ('zzabczz') nor the source events hash"
+      }
+    },
+    {
+      "id": "vet_plan_source_hash_mismatch_empty_vs_caller",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "",
+        "profile": "neutral",
+        "policy": "Aggressive",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "not-a-format"
+      },
+      "expected": {
+        "mode": "comparable",
+        "error_type": "PlanSourceMismatch",
+        "message": "Plan source_hash mismatch: plan '' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+      }
+    },
+    {
+      "id": "vet_plan_matching_caller_hash",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "caller-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "register_all"
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint.repair.recipes_conservative.register_all is not available",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_matching_caller_empty_hash",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "",
+        "profile": "neutral",
+        "policy": "conservative",
+        "caller_hash": "",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": false,
+        "input_format": "canonical",
+        "gap": "register_all"
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint.repair.recipes_conservative.register_all is not available",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_matching_events_hash",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "profile": "neutral",
+        "policy": "salvage",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": false,
+        "input_format": "not-a-format",
+        "gap": "register_all"
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint.repair.recipes_conservative.register_all is not available",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_matching_events_and_caller_hash",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "profile": "neutral",
+        "policy": "conservative",
+        "caller_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "register_all"
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint.repair.recipes_conservative.register_all is not available",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_invalid_policy",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "caller-synthetic-hash",
+        "profile": "neutral",
+        "policy": "nope",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "empty"
+          }
+        ],
+        "acknowledge_side_effects": false,
+        "input_format": "canonical"
+      },
+      "expected": {
+        "mode": "comparable",
+        "error_type": "PlanPolicy",
+        "message": "Invalid repair policy: 'nope'. Must be 'conservative' or 'salvage'"
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_rendered_same",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "same-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "same-synthetic-hash",
+        "events": [
+          {
+            "kind": "rendered",
+            "texts": [
+              "echo-me",
+              "later-synthetic"
+            ]
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_rendered_split",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "plan-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "rendered",
+            "texts": [
+              "echo-me",
+              "later-synthetic"
+            ]
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "PlanSourceMismatch",
+          "message": "Plan source_hash mismatch: plan 'plan-synthetic-hash' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_unrenderable_same",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "same-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "same-synthetic-hash",
+        "events": [
+          {
+            "kind": "unrenderable"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_unrenderable_split",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "plan-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "unrenderable"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "PlanSourceMismatch",
+          "message": "Plan source_hash mismatch: plan 'plan-synthetic-hash' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_session_same",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "same-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "same-synthetic-hash",
+        "events": [
+          {
+            "kind": "session",
+            "id": "evt-synthetic",
+            "parent_id": null,
+            "seq": 0
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_session_split",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "plan-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "session",
+            "id": "evt-synthetic",
+            "parent_id": null,
+            "seq": 0
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "PlanSourceMismatch",
+          "message": "Plan source_hash mismatch: plan 'plan-synthetic-hash' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_mapping_same",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "same-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "same-synthetic-hash",
+        "events": [
+          {
+            "kind": "mapping_placeholder"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "RepairRefused",
+          "message": "Plan step 41 (recipe 'synthetic-recipe') is not a repair sesslint derives for this source now; export the plan from this exact file (same name and bytes) with this sesslint version"
+        }
+      }
+    },
+    {
+      "id": "vet_plan_events_hash_mapping_split",
+      "construct": {
+        "type": "vet_plan",
+        "plan_hash": "plan-synthetic-hash",
+        "profile": "strict",
+        "policy": "conservative",
+        "caller_hash": "caller-synthetic-hash",
+        "events": [
+          {
+            "kind": "mapping_placeholder"
+          }
+        ],
+        "acknowledge_side_effects": true,
+        "input_format": "canonical",
+        "gap": "source_hash_rust_only"
+      },
+      "expected": {
+        "mode": "rust_source_hash",
+        "pin": {
+          "outcome": "error",
+          "error_type": "PlanSourceMismatch",
+          "message": "Plan source_hash mismatch: plan 'plan-synthetic-hash' matches neither source file SHA-256 ('caller-synthetic-hash') nor the source events hash"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.completion subcommand parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+COMPLETION_PY_SHA256 = (
+    "13d8a4f2022107c0af23dbae937d5dbf524ff02b90a4769d93da470def1f7a54"
+)
+COMPLETION_RS_SHA256 = (
+    "30264a5643e6510498d778e05648031b4535fabc11333fcba7f999758bf60a8a"
+)
+MODULE = "sesslint.cli.completion"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-cli-completion-run: Python run() calls sesslint.completion.generate_completion "
+        "and prints a script; Rust run() is a seam (generate_completion unavailable) and "
+        "does not print script bytes (not byte-compared here)."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_completion_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/completion.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != COMPLETION_PY_SHA256:
+        raise SystemExit(
+            f"cli/completion.py pin sha256 mismatch: expected {COMPLETION_PY_SHA256}, got {digest}"
+        )
+
+
+def load_completion_module() -> Any:
+    blob = pinned_completion_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "completion.py"
+    if module_path.read_bytes() != blob:
+        raise SystemExit("worktree cli/completion.py does not match pinned blob")
+    src = root / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    import importlib
+
+    return importlib.import_module("sesslint.cli.completion")
+
+
+def configure_expected(completion: Any) -> dict[str, Any]:
+    parser = argparse.ArgumentParser(prog="sesslint")
+    subparsers = parser.add_subparsers()
+    sub = completion.configure(subparsers)
+
+    subcommand_help = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == completion.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if subcommand_help is None:
+        raise SystemExit("failed to introspect subcommand help from configure()")
+
+    shell_name = None
+    shell_help = None
+    shell_choices: list[str] | None = None
+    shell_positional = None
+    for action in sub._actions:
+        if action.dest == "shell":
+            shell_name = action.dest
+            shell_help = action.help
+            shell_choices = list(action.choices) if action.choices is not None else []
+            shell_positional = not action.option_strings
+            break
+    if shell_name is None:
+        raise SystemExit("failed to introspect shell positional from configure()")
+
+    return {
+        "name": completion.NAME,
+        "help": subcommand_help,
+        "description": sub.description,
+        "shell_name": shell_name,
+        "shell_positional": shell_positional,
+        "shell_choices": shell_choices,
+        "shell_help": shell_help,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "configure_subcommand_metadata",
+            "construct": {"type": "configure"},
+        },
+    ]
+
+
+def build_vectors(completion: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = (
+            configure_expected(completion)
+            if row["construct"]["type"] == "configure"
+            else None
+        )
+        if expected is None:
+            raise SystemExit(f"unknown construct for {row['id']}")
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "completion_py_sha256": COMPLETION_PY_SHA256,
+        "completion_rs_sha256": COMPLETION_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "completion_py_sha256": COMPLETION_PY_SHA256,
+        "completion_rs_sha256": COMPLETION_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli.completion/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic cli.completion subcommand configure() metadata from pinned "
+            "src/sesslint/cli/completion.py (subcommand only; run() is a documented gap)."
+        ),
+        "generator": "rust/parity/vectors/cli.completion/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    completion = load_completion_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = build_vectors(completion)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

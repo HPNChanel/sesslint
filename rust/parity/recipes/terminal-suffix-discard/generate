@@ -1,0 +1,1105 @@
+#!/usr/bin/env python3
+"""Generate terminal-suffix-discard parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+Expected messages are the pin's ``PreconditionFailed`` text. Fixture output,
+fingerprints, and planner results are not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "terminal-suffix-discard"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_conservative"
+RECIPE = "terminal-suffix-discard"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_recipes_conservative.py"
+ABSTENTION_FILE = "tests/repair/test_scoped_abstention.py"
+EXECUTOR_FILE = "tests/repair/test_executor.py"
+RELEASE_FILE = "tests/repair/test_release_matrix.py"
+FIXTURE = "fixtures/repair/recipe_suffix_discard.json"
+DOCS = "docs/recipes/terminal-suffix-discard.md"
+GENERATOR = "rust/parity/recipes/terminal-suffix-discard/generate"
+PINNED_TEST_COUNT = 35
+KNOWN_PY_SHA = "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0"
+INVALID = "terminal-suffix-discard: missing or invalid cut index"
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+SEAM_CODEC = "sesslint._canonical_codec.canonical_json_bytes is not available"
+SEAM_FLOAT = "Python str(float) is not representable"
+SEAM_PYSTR = "Python str() of this event field is not representable"
+
+GAP_REGION = "GAP-terminal-suffix-discard-affected-region"
+GAP_CANONICAL = "GAP-terminal-suffix-discard-canonical"
+GAP_PAYLOAD = "GAP-terminal-suffix-discard-payload"
+GAP_KIND = "GAP-terminal-suffix-discard-kind"
+
+KNOWN_PARITY_GAPS: tuple[str, ...] = (
+    f"{GAP_REGION}: RECIPE_TERMINAL_SUFFIX_DISCARD in the pin leaves "
+    "affected_region unset. The pin has no "
+    "affected_region_terminal_suffix_discard. This set records that absence "
+    "and does not cover a region row. "
+    "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz "
+    "parametrizes other region functions. This recipe is not one of those "
+    "calls. One function inside the sweep is not the whole test.",
+    f"{GAP_CANONICAL}: planner.plan and execute are not run. A missing "
+    "canonical codec call is not a successful plan. The fixture apply succeeds "
+    "in the pin. That success is not replayed. "
+    "tests/repair/test_recipes_conservative.py::test_terminal_suffix_discard_fixture "
+    "compares canonical_json_bytes. "
+    "tests/repair/test_recipes_conservative.py::"
+    "test_terminal_suffix_discard_sl005_entry_index calls planner.plan and "
+    "then apply. The apply on the asserted cut succeeds in the pin. A rust "
+    "seam while the pin succeeds is not coverage. That success is not "
+    "replayed. "
+    "tests/repair/test_recipes_conservative.py::test_no_synthetic_success_multiset_proof "
+    "hashes tool results with canonical_json_bytes. One fixture inside a sweep "
+    "is not the whole test. "
+    "tests/repair/test_executor.py::test_tampered_plan and "
+    "tests/repair/test_executor.py::test_cli_dry_run_with_tampered_plan_refuses "
+    "name the recipe inside execute. One recipe name inside that test is not "
+    "the whole test. "
+    "tests/repair/test_release_matrix.py::test_public_repair_matrix runs a "
+    "scenario sweep. One scenario inside that sweep is not the whole test. "
+    "Those results are not replayed. No fingerprint is hashed and no fixture "
+    "diff is stored. No output bytes are stored.",
+    f"{GAP_PAYLOAD}: tests/repair/test_recipes_conservative.py::"
+    "test_terminal_suffix_discard_fixture carries payload on the input and on "
+    "the expected events. "
+    "tests/repair/test_recipes_conservative.py::"
+    "test_suffix_discard_refusal_checkpoint_in_suffix carries payload on the "
+    "checkpoint event. This set does not store payload content. A payload-free "
+    "result is not that test. The checkpoint refusal also occurs with the "
+    "payload present, so a stripped vector is not a substitute for the whole test.",
+    f"{GAP_KIND}: a float, list, or mapping kind in the discarded suffix is "
+    "rendered with str in the pin and is not a checkpoint, so the pin copies "
+    "the prefix. The published function returns a different error. This set "
+    "does not claim that pin result. The pin succeeds. A rust seam while the "
+    "pin succeeds is not coverage. That success is not replayed. No output "
+    "bytes are stored.",
+)
+
+COVERED: dict[str, str] = {
+    "test_suffix_discard_refusal_empty_session": "suffix_discard_refusal_empty_session",
+    "test_suffix_discard_refusal_out_of_bounds": "suffix_discard_refusal_out_of_bounds",
+}
+
+TOUCHES: frozenset[str] = frozenset(
+    {
+        "test_conservative_recipes_registration_and_handles",
+        "test_terminal_suffix_discard_fixture",
+        "test_suffix_discard_refusal_empty_session",
+        "test_suffix_discard_refusal_out_of_bounds",
+        "test_suffix_discard_refusal_checkpoint_in_suffix",
+        "test_no_synthetic_success_multiset_proof",
+        "test_terminal_suffix_discard_sl005_entry_index",
+    }
+)
+
+FIXTURE_NOTE = (
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful plan. "
+    f"{GAP_PAYLOAD} blocks the fixture events. They carry a payload. A "
+    "payload-free result is not this test. The pin succeeds. That success is "
+    "not replayed. No fingerprint is hashed and no fixture diff is stored. "
+    "No output bytes are stored."
+)
+CHECKPOINT_NOTE = (
+    f"{GAP_PAYLOAD} blocks the checkpoint refusal. The events carry a payload. "
+    "This set does not store payload content. A payload-free refusal is not "
+    "this test."
+)
+ENTRY_NOTE = (
+    f"{GAP_CANONICAL} blocks planner.plan. It is not a successful plan. The "
+    "test calls plan and the apply on the asserted cut succeeds in the pin. "
+    "A rust seam while the pin succeeds is not coverage. That success is not "
+    "replayed. No fingerprint is hashed and no output bytes are stored."
+)
+MULTISET_NOTE = (
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful plan. "
+    "One fixture inside a sweep is not the whole test. No fingerprint is "
+    "hashed and no fixture diff is stored."
+)
+REGISTER_NOTE = (
+    "one recipe inside a registration sweep is not the whole test. "
+    "different function from apply_terminal_suffix_discard."
+)
+DIFFERENT_NOTE = "different function from apply_terminal_suffix_discard"
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+_SEAMS = (SEAM_REGION, SEAM_DETERMINISM, SEAM_CODEC, SEAM_FLOAT, SEAM_PYSTR)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_terminal_suffix_discard.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    if mod.terminal_suffix_discard is not mod.apply_terminal_suffix_discard:
+        raise SystemExit("pin alias is not the apply function")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        raise SystemExit("refusing a tagged bool")
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        raise SystemExit("float is not a pinned scalar in this set")
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def function_named(text: str, name: str) -> ast.FunctionDef:
+    for node in test_functions(text):
+        if node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def string_constants(fn: ast.FunctionDef) -> set[str]:
+    docstring = None
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and isinstance(fn.body[0].value.value, str)
+    ):
+        docstring = fn.body[0]
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if node is docstring:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+    return found
+
+
+def touches_recipe(fn: ast.FunctionDef) -> bool:
+    names = set(call_names(fn))
+    constants = string_constants(fn)
+    if "apply_terminal_suffix_discard" in names:
+        return True
+    if RECIPE in constants:
+        return True
+    return any("recipe_suffix_discard" in item for item in constants)
+
+
+def assigned(fn: ast.FunctionDef, name: str) -> ast.AST:
+    for stmt in fn.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if isinstance(target, ast.Name) and target.id == name:
+            return stmt.value
+    raise SystemExit(f"{fn.name} missing {name}")
+
+
+def raises_match(fn: ast.FunctionDef) -> str:
+    found: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "raises":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "match":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, str):
+                    raise SystemExit(f"{fn.name} match is not a string")
+                found.append(value)
+    if len(found) != 1:
+        raise SystemExit(f"{fn.name} match count")
+    return found[0]
+
+
+def assert_whole_refusal(fn: ast.FunctionDef) -> None:
+    names = call_names(fn)
+    if names.count("apply_terminal_suffix_discard") != 1:
+        raise SystemExit(f"{fn.name} is not one apply call")
+    if "plan" in names or "repair" in names or "canonical_json_bytes" in names:
+        raise SystemExit(f"{fn.name} is not only the refusal")
+    if names.count("raises") != 1:
+        raise SystemExit(f"{fn.name} raises count")
+    if any(isinstance(node, ast.Assert) for node in ast.walk(fn)):
+        raise SystemExit(f"{fn.name} has another assert")
+    kinds: list[str] = []
+    for stmt in fn.body:
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            continue
+        kinds.append(type(stmt).__name__)
+    if kinds != ["Assign", "Assign", "With"]:
+        raise SystemExit(f"{fn.name} shape {kinds}")
+
+
+def step_from_test(fn: ast.FunctionDef) -> dict[str, Any]:
+    value = assigned(fn, "step")
+    if not isinstance(value, ast.Call):
+        raise SystemExit(f"{fn.name} step is not a call")
+    found: dict[str, Any] = {}
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            raise SystemExit(f"{fn.name} step keyword must be explicit")
+        found[keyword.arg] = ast.literal_eval(keyword.value)
+    for key in ("seq", "recipe", "target_finding_fp", "target_index", "params"):
+        if key not in found:
+            raise SystemExit(f"{fn.name} step missing {key}")
+    if not isinstance(found["params"], dict):
+        raise SystemExit(f"{fn.name} params are not a dict")
+    return found
+
+
+def raw_events(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    raw = ast.literal_eval(assigned(fn, "events"))
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit(f"{fn.name} events are empty")
+    events: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise SystemExit(f"{fn.name} event is not a dict")
+        events.append(item)
+    return events
+
+
+def events_from_test(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    events = raw_events(fn)
+    for item in events:
+        if "payload" in item:
+            raise SystemExit(f"{fn.name} event stores payload content")
+    return events
+
+
+def finding_evidence(fn: ast.FunctionDef) -> dict[str, Any]:
+    found: list[dict[str, Any]] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Name) or func.id != "_make_test_finding":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "evidence":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, dict):
+                    raise SystemExit(f"{fn.name} evidence is not a dict")
+                found.append(value)
+    if len(found) != 1:
+        raise SystemExit(f"{fn.name} evidence count")
+    return found[0]
+
+
+def plan_policy(fn: ast.FunctionDef) -> str:
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Name) or func.id != "plan":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "policy":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, str):
+                    raise SystemExit(f"{fn.name} policy is not a string")
+                return value
+    raise SystemExit(f"{fn.name} plan policy missing")
+
+
+def reject_payload(events: list[dict[str, Any]]) -> None:
+    for item in events:
+        if "payload" in item:
+            raise SystemExit("refusing payload content in a stored vector")
+
+
+def make_step(mod: Any, *, target_index: Any, params: Any) -> Any:
+    return mod.PlanStep(
+        seq=0,
+        recipe=RECIPE,
+        target_finding_fp="f0",
+        target_index=target_index,
+        params=params,
+    )
+
+
+def run_apply(mod: Any, events: list[Any], *, target_index: Any, params: Any) -> str:
+    try:
+        mod.apply_terminal_suffix_discard(
+            events,
+            make_step(mod, target_index=target_index, params=params),
+        )
+    except mod.PreconditionFailed as exc:
+        return str(exc)
+    raise SystemExit("pin apply returned Ok for a refusal proof")
+
+
+def run_ok(mod: Any, events: list[Any], *, target_index: Any, params: Any) -> list[Any]:
+    try:
+        out = mod.apply_terminal_suffix_discard(
+            events,
+            make_step(mod, target_index=target_index, params=params),
+        )
+    except mod.PreconditionFailed:
+        raise SystemExit("pin success apply refused") from None
+    if not isinstance(out, list):
+        raise SystemExit("pin success apply did not return a list")
+    return out
+
+
+def note(event_id: str, seq: int = 0) -> dict[str, Any]:
+    return {"id": event_id, "kind": "message", "seq": seq}
+
+
+def refusal_vector(
+    vector_id: str,
+    *,
+    entire_test: bool,
+    events: list[dict[str, Any]],
+    target_index: Any,
+    params: Any,
+    message: str,
+) -> dict[str, Any]:
+    if type(entire_test) is not bool:
+        raise SystemExit("entire_test is not a bool")
+    if type(target_index) is bool:
+        raise SystemExit("refusing a bool target_index in a stored vector")
+    reject_payload(events)
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_refusal",
+            "fn": "apply_terminal_suffix_discard",
+            "entire_test": entire_test,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": {
+                "target_index": tagged(target_index),
+                "params": tagged(params),
+            },
+        },
+        "expected": {
+            "mode": "refusal",
+            "error_type": "PreconditionFailed",
+            "message": message,
+        },
+    }
+
+
+def recipe_vector(mod: Any) -> dict[str, Any]:
+    recipe = mod.RECIPE_TERMINAL_SUFFIX_DISCARD
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    if recipe.apply is not mod.apply_terminal_suffix_discard:
+        raise SystemExit("pin apply is not the recipe apply")
+    if recipe.affected_region is not None:
+        raise SystemExit("pin recipe grew an affected region")
+    handles = list(recipe.handles)
+    preconditions = list(recipe.preconditions)
+    if handles != ["SL005"]:
+        raise SystemExit("pin handles drifted")
+    if preconditions != ["no_prior_safe_tool_after_cut"]:
+        raise SystemExit("pin preconditions drifted")
+    if recipe.min_policy != "salvage":
+        raise SystemExit("pin min_policy drifted")
+    return {
+        "id": "recipe_terminal_suffix_discard",
+        "construct": {
+            "type": "recipe_constant",
+            "fn": "RECIPE_TERMINAL_SUFFIX_DISCARD",
+            "entire_test": False,
+        },
+        "expected": {
+            "mode": "recipe",
+            "name": recipe.name,
+            "handles": handles,
+            "preconditions": preconditions,
+            "lossy": require_bool("lossy", recipe.lossy),
+            "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+            "min_policy": recipe.min_policy,
+            "version": recipe.version,
+            "excludes_execution_dependence": require_bool(
+                "excludes_execution_dependence",
+                recipe.excludes_execution_dependence,
+            ),
+            "apply_present": require_bool("apply_present", recipe.apply is not None),
+            "affected_region_present": require_bool(
+                "affected_region_present",
+                recipe.affected_region is not None,
+            ),
+        },
+    }
+
+
+def covered_vectors(mod: Any, text: str) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for name, vector_id in COVERED.items():
+        fn = function_named(text, name)
+        assert_whole_refusal(fn)
+        events = events_from_test(fn)
+        fields = step_from_test(fn)
+        if fields["recipe"] != RECIPE:
+            raise SystemExit(f"{name} recipe drifted")
+        message = run_apply(
+            mod,
+            events,
+            target_index=fields["target_index"],
+            params=fields["params"],
+        )
+        pattern = raises_match(fn)
+        if re.search(pattern, message) is None:
+            raise SystemExit(f"{name} pin message does not match the test")
+        if message in seen:
+            raise SystemExit(f"{name} message is not distinct")
+        seen.add(message)
+        vectors.append(
+            refusal_vector(
+                vector_id,
+                entire_test=True,
+                events=events,
+                target_index=fields["target_index"],
+                params=fields["params"],
+                message=message,
+            )
+        )
+    return vectors
+
+
+def extra_refusals(mod: Any, covered_messages: set[str]) -> list[dict[str, Any]]:
+    one = [note("evt-only")]
+    pair = [note("evt-a", 0), note("evt-b", 1)]
+    marked = [
+        note("evt-keep", 0),
+        note("evt-next", 1),
+        {"id": "evt-mark", "kind": "checkpoint", "seq": 2},
+    ]
+    cases: list[tuple[str, list[dict[str, Any]], Any, Any]] = [
+        ("suffix_refusal_missing_cut", one, None, {}),
+        ("suffix_refusal_negative_cut", one, -1, {}),
+        ("suffix_refusal_cut_equals_length", pair, 2, {}),
+        ("suffix_refusal_empty_events_past_end", [], 1, {}),
+        ("suffix_refusal_param_cut_past_end", pair, None, {"cut_index": 9}),
+        ("suffix_refusal_checkpoint", marked, 1, {}),
+    ]
+    vectors: list[dict[str, Any]] = []
+    seen = set(covered_messages)
+    for vector_id, events, target_index, params in cases:
+        message = run_apply(mod, events, target_index=target_index, params=params)
+        if message in seen:
+            raise SystemExit(f"{vector_id} message is not distinct")
+        seen.add(message)
+        if vector_id == "suffix_refusal_missing_cut" and message != INVALID:
+            raise SystemExit("missing cut message drifted")
+        if vector_id == "suffix_refusal_checkpoint" and (
+            "checkpoint at index 2 cannot be discarded" not in message
+        ):
+            raise SystemExit("checkpoint message drifted")
+        vectors.append(
+            refusal_vector(
+                vector_id,
+                entire_test=False,
+                events=events,
+                target_index=target_index,
+                params=params,
+                message=message,
+            )
+        )
+    return vectors
+
+
+def prove_same_message(
+    mod: Any,
+    message: str,
+    events: list[Any],
+    *,
+    target_index: Any,
+    params: Any,
+    label: str,
+) -> None:
+    got = run_apply(mod, events, target_index=target_index, params=params)
+    if got != message:
+        raise SystemExit(f"{label} pin message drifted")
+
+
+def prove_invalid_and_aliases(mod: Any, covered: list[dict[str, Any]]) -> None:
+    by_id = {item["id"]: item["expected"]["message"] for item in covered}
+    empty = by_id["suffix_discard_refusal_empty_session"]
+    bounds = by_id["suffix_discard_refusal_out_of_bounds"]
+    one = [note("evt-only")]
+    probes: tuple[tuple[Any, Any], ...] = (
+        (True, {}),
+        (False, {}),
+        ("bad", {}),
+        (1.5, {}),
+        (None, {"cut_index": True}),
+        (None, {"cut_index": False}),
+        (None, {"cut_index": 1.5}),
+        (None, {"cut_index": "skip"}),
+        (None, {"cut_index": [1]}),
+        (None, None),
+        (None, "nope"),
+    )
+    for target_index, params in probes:
+        got = run_apply(mod, one, target_index=target_index, params=params)
+        if got != INVALID:
+            raise SystemExit("invalid cut probe drifted")
+    prove_same_message(mod, empty, [], target_index=0, params={}, label="empty list cut")
+    prove_same_message(
+        mod,
+        empty,
+        one,
+        target_index=None,
+        params={"cut_index": 0},
+        label="param cut zero",
+    )
+    prove_same_message(
+        mod,
+        bounds,
+        one,
+        target_index=None,
+        params={"cut_index": 5},
+        label="param cut five",
+    )
+    kept = run_ok(
+        mod,
+        [note("evt-a", 0), note("evt-b", 1), note("evt-c", 2)],
+        target_index=2,
+        params={"cut_index": True},
+    )
+    if [item["id"] for item in kept] != ["evt-a", "evt-b"]:
+        raise SystemExit("target index did not win over a bool param")
+    del kept
+
+
+def prove_kind_gap(mod: Any) -> None:
+    prefix = note("evt-keep")
+    for label, kind in (
+        ("float", 1.5),
+        ("list", [1]),
+        ("map", {"k": 1}),
+    ):
+        events = [prefix, {"id": "evt-tail", "kind": kind, "seq": 1}]
+        out = run_ok(mod, events, target_index=1, params={})
+        if [item["id"] for item in out] != ["evt-keep"]:
+            raise SystemExit(f"{label} kind did not keep the prefix")
+        del out
+    for label, kind in (("bool-true", True), ("bool-false", False), ("int", 1)):
+        events = [prefix, {"id": "evt-tail", "kind": kind, "seq": 1}]
+        out = run_ok(mod, events, target_index=1, params={})
+        if len(out) != 1:
+            raise SystemExit(f"{label} kind did not keep the prefix")
+        del out
+
+
+def prove_checkpoint_test(mod: Any, text: str) -> None:
+    fn = function_named(text, "test_suffix_discard_refusal_checkpoint_in_suffix")
+    assert_whole_refusal(fn)
+    events = raw_events(fn)
+    if not any("payload" in item for item in events):
+        raise SystemExit("checkpoint test lost payload")
+    fields = step_from_test(fn)
+    message = run_apply(
+        mod,
+        events,
+        target_index=fields["target_index"],
+        params=fields["params"],
+    )
+    if re.search(raises_match(fn), message) is None:
+        raise SystemExit("checkpoint test pin match drifted")
+    stripped = [
+        {key: value for key, value in item.items() if key != "payload"} for item in events
+    ]
+    reject_payload(stripped)
+    stripped_message = run_apply(
+        mod,
+        stripped,
+        target_index=fields["target_index"],
+        params=fields["params"],
+    )
+    if stripped_message != message:
+        raise SystemExit("checkpoint refusal changed when payload was removed")
+    del events, stripped
+
+
+def prove_fixture(mod: Any, text: str, fixture: dict[str, Any]) -> None:
+    fn = function_named(text, "test_terminal_suffix_discard_fixture")
+    names = call_names(fn)
+    if names.count("apply_terminal_suffix_discard") != 1:
+        raise SystemExit("fixture apply count")
+    if names.count("canonical_json_bytes") != 2:
+        raise SystemExit("fixture canonical count")
+    if "plan" in names:
+        raise SystemExit("fixture test grew a plan")
+    step = fixture["step"]
+    out = mod.apply_terminal_suffix_discard(
+        fixture["input_events"],
+        mod.PlanStep(
+            seq=step["seq"],
+            recipe=step["recipe"],
+            target_finding_fp=step["target_finding_fp"],
+            target_index=step["target_index"],
+            params=step["params"],
+        ),
+    )
+    if out != fixture["expected_events"]:
+        raise SystemExit("pin fixture apply did not match expected events")
+    if len(fixture["input_events"]) - len(out) != fixture["expected_loss_count"]:
+        raise SystemExit("pin fixture loss count drifted")
+    if not isinstance(fixture.get("expected_loss_class"), str) or not fixture["expected_loss_class"]:
+        raise SystemExit("pin fixture loss class drifted")
+    if not any(isinstance(item, dict) and "payload" in item for item in fixture["input_events"]):
+        raise SystemExit("fixture input lost payload")
+    if not any(isinstance(item, dict) and "payload" in item for item in out):
+        raise SystemExit("fixture output lost payload")
+    del out
+
+
+def compared_literals(fn: ast.FunctionDef) -> list[Any]:
+    found: list[Any] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        if not isinstance(node.ops[0], ast.Eq):
+            continue
+        try:
+            found.append(ast.literal_eval(node.comparators[0]))
+        except (ValueError, TypeError):
+            continue
+    return found
+
+
+def prove_entry(mod: Any, text: str) -> None:
+    fn = function_named(text, "test_terminal_suffix_discard_sl005_entry_index")
+    names = call_names(fn)
+    if names.count("plan") != 1 or names.count("apply_terminal_suffix_discard") != 1:
+        raise SystemExit("entry test shape drifted")
+    if "canonical_json_bytes" in names:
+        raise SystemExit("entry test grew a canonical compare")
+    if plan_policy(fn) != "salvage":
+        raise SystemExit("entry policy drifted")
+    evidence = finding_evidence(fn)
+    if evidence.get("entry_index") != 2:
+        raise SystemExit("entry index drifted")
+    literals = compared_literals(fn)
+    if RECIPE not in literals or 1 not in literals or ["e0", "e1"] not in literals:
+        raise SystemExit("entry asserts drifted")
+    events = events_from_test(fn)
+    out = run_ok(mod, events, target_index=2, params={})
+    if len(out) != 2 or [item["id"] for item in out] != ["e0", "e1"]:
+        raise SystemExit("pin entry apply drifted")
+    del out
+
+
+def coverage_note(fn: ast.FunctionDef) -> str:
+    if fn.name == "test_terminal_suffix_discard_fixture":
+        return FIXTURE_NOTE
+    if fn.name == "test_suffix_discard_refusal_checkpoint_in_suffix":
+        return CHECKPOINT_NOTE
+    if fn.name == "test_terminal_suffix_discard_sl005_entry_index":
+        return ENTRY_NOTE
+    if fn.name == "test_no_synthetic_success_multiset_proof":
+        return MULTISET_NOTE
+    if fn.name == "test_conservative_recipes_registration_and_handles":
+        return REGISTER_NOTE
+    if touches_recipe(fn):
+        raise SystemExit(f"unclassified suffix-discard test {fn.name}")
+    return DIFFERENT_NOTE
+
+
+def discover_coverage(text: str) -> list[dict[str, Any]]:
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    touched = {fn.name for fn in functions if touches_recipe(fn)}
+    if touched != set(TOUCHES):
+        raise SystemExit(f"suffix-discard test set drifted {sorted(touched)}")
+    rows: list[dict[str, Any]] = []
+    for fn in functions:
+        covered = fn.name in COVERED
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": "covered" if covered else "not_applicable",
+                "vector_id": COVERED[fn.name] if covered else None,
+                "note": "" if covered else coverage_note(fn),
+            }
+        )
+    covered_count = sum(row["status"] == "covered" for row in rows)
+    if covered_count != len(COVERED):
+        raise SystemExit("covered count drifted")
+    return rows
+
+
+def payload_strings(node: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "payload":
+                found.extend(collect_strings(value))
+            else:
+                found.extend(payload_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(payload_strings(item))
+    return found
+
+
+def collect_strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node else []
+    if isinstance(node, dict):
+        found: list[str] = []
+        for value in node.values():
+            found.extend(collect_strings(value))
+        return found
+    if isinstance(node, list):
+        found = []
+        for item in node:
+            found.extend(collect_strings(item))
+        return found
+    return []
+
+
+def dump(doc: Any, banned_payload: list[str]) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text:
+        raise SystemExit("refusing the wrong pin in JSON")
+    for seam in _SEAMS:
+        if seam in text:
+            raise SystemExit("refusing a seam sentence in JSON")
+    if '"t": "bool"' in text:
+        raise SystemExit("refusing a tagged bool in JSON")
+    if '"payload"' in text:
+        raise SystemExit("refusing a payload field in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit("refusing a path fragment in JSON")
+    for item in banned_payload:
+        if item and item in text:
+            digest = hashlib.sha256(item.encode("utf-8")).hexdigest()
+            raise SystemExit(f"refusing fixture payload content length {len(item)} sha {digest}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def require_function(text: str, name: str) -> None:
+    if f"def {name}" not in text:
+        raise SystemExit(f"pin test missing {name}")
+
+
+def confirm_docs_and_callers(py_blob: bytes) -> None:
+    source = py_blob.decode("utf-8")
+    if "def apply_terminal_suffix_discard" not in source:
+        raise SystemExit("pin apply function missing")
+    if "def affected_region_terminal_suffix_discard" in source:
+        raise SystemExit("pin grew a suffix-discard region function")
+    if "affected_region_torn_terminal_record_discard" not in source:
+        raise SystemExit("pin lost the torn-record region import")
+    docs = git_show_bytes(f"{PYTHON_COMMIT}:{DOCS}").decode("utf-8")
+    for needle in (
+        RECIPE,
+        "SL005",
+        "no_prior_safe_tool_after_cut",
+        "fixtures/repair/recipe_suffix_discard.json",
+    ):
+        if needle not in docs:
+            raise SystemExit(f"pin recipe doc lost {needle}")
+    abstention = git_show_bytes(f"{PYTHON_COMMIT}:{ABSTENTION_FILE}").decode("utf-8")
+    if "def test_region_functions_totality_fuzz" not in abstention:
+        raise SystemExit("pin totality test missing")
+    if "parametrize" not in abstention:
+        raise SystemExit("pin totality test is not a sweep")
+    if "affected_region_terminal_suffix_discard" in abstention:
+        raise SystemExit("pin totality test grew a suffix-discard region")
+    executor = git_show_bytes(f"{PYTHON_COMMIT}:{EXECUTOR_FILE}").decode("utf-8")
+    for name in ("test_tampered_plan", "test_cli_dry_run_with_tampered_plan_refuses"):
+        require_function(executor, name)
+    if "apply_terminal_suffix_discard" in executor:
+        raise SystemExit("pin executor file calls apply")
+    if executor.count(f'recipe="{RECIPE}"') < 1 and f'"{RECIPE}"' not in executor:
+        raise SystemExit("pin executor file lost the recipe name")
+    release = git_show_bytes(f"{PYTHON_COMMIT}:{RELEASE_FILE}").decode("utf-8")
+    require_function(release, "test_public_repair_matrix")
+    if '"recipe_suffix_discard"' not in release:
+        raise SystemExit("pin release matrix lost the scenario")
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    if py_sha != KNOWN_PY_SHA:
+        raise SystemExit("recipes_conservative.py sha drifted")
+    confirm_docs_and_callers(py_blob)
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    fixture = json.loads(git_show_bytes(f"{PYTHON_COMMIT}:{FIXTURE}").decode("utf-8"))
+    banned_payload = payload_strings(fixture)
+    if not banned_payload:
+        raise SystemExit("fixture payload strings missing")
+    mod = load_mod()
+    prove_fixture(mod, test_text, fixture)
+    prove_entry(mod, test_text)
+    prove_checkpoint_test(mod, test_text)
+    prove_kind_gap(mod)
+    recipe = recipe_vector(mod)
+    covered = covered_vectors(mod, test_text)
+    prove_invalid_and_aliases(mod, covered)
+    extras = extra_refusals(mod, {item["expected"]["message"] for item in covered})
+    vectors = [recipe, *extras, *covered]
+    for vector in vectors:
+        if vector["id"] in set(COVERED.values()):
+            if vector["construct"]["entire_test"] is not True:
+                raise SystemExit("covered vector lost entire_test")
+        elif vector["construct"]["entire_test"] is not False:
+            raise SystemExit("entire_test must stay false outside covered rows")
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc, banned_payload)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text)
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": TEST_FILE,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    if coverage["covered_count"] != 2 or coverage["not_applicable_count"] != 33:
+        raise SystemExit("coverage counts drifted")
+    write_text(OUT / "coverage.json", dump(coverage, banned_payload))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic terminal-suffix-discard parity. Refusal messages come "
+            "from the pinned blob. Fixture output, a planner result, and a "
+            "non-string suffix kind stay uncovered. No fixture diff is stored."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance, banned_payload))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest, banned_payload))
+    print(
+        f"{len(vectors)} {digest} covered={coverage['covered_count']} "
+        f"not_applicable={coverage['not_applicable_count']} py={py_sha}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

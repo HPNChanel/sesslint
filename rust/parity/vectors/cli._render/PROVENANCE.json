@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic cli._render scan human output and skip-undetected parity.",
+  "generator": "rust/parity/vectors/cli._render/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-render-write-baseline: _emit_check_report calls _write_baseline_arg before any renderer import; Rust write_baseline_arg is unavailable.",
+    "GAP-render-minimize-path: --skip-undetected json branch imports sesslint.report.minimize_path before emit_text.",
+    "GAP-render-build-repro-metadata: json report branch imports sesslint.report.build_repro_metadata before render_json.",
+    "GAP-render-render-json: json report branch imports sesslint.report.render_json.",
+    "GAP-render-render-human: default human report branch imports sesslint.report.render_human and should_color after render_human.",
+    "GAP-render-render-sarif: sarif report and skip-sarif branches import sesslint.sarif.render_sarif.",
+    "GAP-render-render-html: html report branch imports sesslint.html_report.render_html."
+  ]
+}

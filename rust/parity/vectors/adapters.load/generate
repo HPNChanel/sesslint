@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.load parity vectors (stdlib only; pinned git blobs)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+LOAD_PY_SHA256 = (
+    "7347f2916d1d76169b872825f25d4a4dceff7eccc30a9957ba39f13f7ae87e43"
+)
+LOAD_RS_SHA256 = (
+    "93405357d8b4d823c78ba01731b474e3a4ff2b37ed12f77bec2dddb7349cd2d2"
+)
+MODULE = "sesslint.adapters.load"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-load-claude-canonical-no-events: load_claude_code and load_canonical "
+    "success paths do not return EventList rows in Rust; load_events_for_format "
+    "for those format ids stops at the loader seam before events.",
+    "GAP-load-valueerror-repr: Unsupported and not-vendor ValueError messages "
+    "use Python repr, including None and quoted strings; Rust matches Display "
+    "text but vectors do not exhaust every format arm.",
+    "GAP-load-reader-limits: Python passes ReaderLimits into all loaders; Rust "
+    "LoadLimits forwards only fields each vendor loader accepts (see load.rs).",
+    "GAP-load-codex-secret-tracker: load_codex_rollout accepts an optional "
+    "SecretScanTracker; load.py passes None. Rust always passes None.",
+    "GAP-load-payload-content-hash: load_events_for_format on codex-rollout "
+    "stops at sesslint._canonical_codec.payload_content_hash before returning "
+    "events; Python test_codex_dispatch load_events row is not_applicable.",
+    "GAP-load-scan-cli-bundle: tests/test_codex_dispatch.py rows that call "
+    "scan_path, cli.main, export_to_canonical, api.build_bundle, or api.verify "
+    "are outside this adapters.load card.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/test_codex_dispatch.py",)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/test_codex_dispatch.py::test_profile_key_map_covers_all_formats": (
+        "format_profile_keys",
+        "profile_key_codex_rollout",
+        "profile_key_unknown_fmt",
+        "profile_key_none",
+    ),
+}
+
+NOT_THE_FUNCTION: Final[dict[str, str]] = {
+    "tests/test_codex_dispatch.py::test_load_events_for_format_preserves_source_metadata": (
+        "calls load_events_for_format; Rust stops at payload_content_hash"
+    ),
+    "tests/test_codex_dispatch.py::test_scan_classifies_healthy_codex_rollout": (
+        "calls scan_path"
+    ),
+    "tests/test_codex_dispatch.py::test_scan_detects_codex_corruption_findings": (
+        "calls scan_path"
+    ),
+    "tests/test_codex_dispatch.py::test_scan_codex_unsupported_version_bucket": (
+        "calls scan_path"
+    ),
+    "tests/test_codex_dispatch.py::test_scan_codex_profile_gate": "calls scan_path",
+    "tests/test_codex_dispatch.py::test_cli_scan_agent_codex_real_rollout": (
+        "calls cli main"
+    ),
+    "tests/test_codex_dispatch.py::test_export_codex_rollout": (
+        "calls export_to_canonical"
+    ),
+    "tests/test_codex_dispatch.py::test_bundle_codex_rollout_skeleton": (
+        "calls api.build_bundle"
+    ),
+    "tests/test_codex_dispatch.py::test_verify_codex_repair_roundtrip": (
+        "calls api.verify"
+    ),
+}
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/adapters/load.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != LOAD_PY_SHA256:
+        raise SystemExit(
+            f"load.py pin sha256 mismatch: expected {LOAD_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "adapters" / "src" / "load.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != LOAD_RS_SHA256:
+        raise SystemExit(
+            "load.rs sha256 mismatch: "
+            f"expected {LOAD_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "sesslint" or alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module == "sesslint" or node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.scan",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.determinism",
+        "sesslint.model",
+        "sesslint.canonical",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str, *, temp_main: bool = False) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    if temp_main and mod == "sesslint.adapters.load":
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".py", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(source)
+            path = handle.name
+        code = compile(source, path, "exec")
+    else:
+        code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_pinned_load() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    mods = [
+        m for m in closure("sesslint.adapters.load") if m != "sesslint.adapters.load"
+    ]
+    pending = list(mods)
+    for _ in range(200):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod, temp_main=False)
+                progress = True
+            except (ModuleNotFoundError, ImportError, SyntaxError, Exception):
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:12]}")
+    load_module("sesslint.adapters.load", temp_main=True)
+    return sys.modules["sesslint.adapters.load"]
+
+
+def vector_specs(mod: Any, _out_dir: Path) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    specs.append(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(mod.__all__)},
+        }
+    )
+    entries = [[key, value] for key, value in mod.FORMAT_PROFILE_KEYS.items()]
+    specs.append(
+        {
+            "id": "format_profile_keys",
+            "construct": {"type": "format_profile_keys"},
+            "expected": {"entries": entries},
+        }
+    )
+    for vector_id, fmt in (
+        ("profile_key_codex_rollout", "codex-rollout"),
+        ("profile_key_unknown_fmt", "unknown-fmt"),
+    ):
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "profile_key_for_format", "format": fmt},
+                "expected": {"result": mod.profile_key_for_format(fmt)},
+            }
+        )
+    specs.append(
+        {
+            "id": "profile_key_none",
+            "construct": {"type": "profile_key_for_format", "format": None},
+            "expected": {"result": None},
+        }
+    )
+    return specs
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+    out: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                reason = NOT_THE_FUNCTION.get(qual)
+                if reason is not None:
+                    row["reason"] = reason
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def main() -> int:
+    mod = load_pinned_load()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(mod, out_dir)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "load_py_sha256": LOAD_PY_SHA256,
+        "load_rs_sha256": LOAD_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.load parity: FORMAT_PROFILE_KEYS, "
+            "profile_key_for_format, and codex-rollout load_events_for_format "
+            "source metadata summary from the pin; no session payload text."
+        ),
+        "generator": "rust/parity/vectors/adapters.load/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "load_py_sha256": LOAD_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/adapters.load/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.writeback parity (emit_vendor_bytes refusals R1-R6, hashlib and canonical record-hash seams).",
+  "generator": "rust/parity/vectors/repair.writeback/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-writeback-hashlib: Python hashes emitted bytes with hashlib.sha256 for ProjectionSummary; Rust returns hashlib.sha256 is not available and does not construct ProjectionSummary.",
+    "GAP-writeback-canonical-record-hash: When source_record_hash is non-empty and the line parses, Python recomputes canonical_bytes and compares; Rust returns sesslint._canonical_codec.canonical_json_bytes is not available without hashing.",
+    "GAP-writeback-r4-record-drift: Python R4 after a successful re-parse compares recomputed sha256 to stored hash (record hash drift message); Rust does not perform that comparison after the canonical seam.",
+    "GAP-writeback-r3-with-record-hash: Python R3 on a later line while earlier lines carry source_record_hash; Rust stops at canonical_json_bytes on the first hashed line and does not reach line-level R3."
+    "GAP-writeback-api-integration: tests/repair/test_writeback.py api.repair and api.verify paths are outside repair::writeback."
+  ]
+}

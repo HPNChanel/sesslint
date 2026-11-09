@@ -1,0 +1,294 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._options",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "options_py_sha256": "4ca584f58db908f9aef026adb87cf51bee6960884699c79fbcd5a9dc29e2f0ea",
+  "known_parity_gaps": [
+    "GAP-options-positive-int-i64: _validate_positive_int accepts positive integers beyond i64::MAX in Python; Rust refuses with int value does not fit i64 (PositiveIntError::Magnitude), not pin int semantics."
+  ],
+  "vectors": [
+    {
+      "id": "positive_int_ok_42",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "42"
+      },
+      "expected": {
+        "result": "ok",
+        "value_kind": "int",
+        "value": 42
+      }
+    },
+    {
+      "id": "positive_int_ok_trimmed",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "  42  "
+      },
+      "expected": {
+        "result": "ok",
+        "value_kind": "int",
+        "value": 42
+      }
+    },
+    {
+      "id": "positive_int_ok_plus",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "+42"
+      },
+      "expected": {
+        "result": "ok",
+        "value_kind": "int",
+        "value": 42
+      }
+    },
+    {
+      "id": "positive_int_ok_underscores",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "1_000"
+      },
+      "expected": {
+        "result": "ok",
+        "value_kind": "int",
+        "value": 1000
+      }
+    },
+    {
+      "id": "positive_int_invalid_empty",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": ""
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid integer value: ''"
+      }
+    },
+    {
+      "id": "positive_int_invalid_one_dot_zero",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "1.0"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid integer value: '1.0'"
+      }
+    },
+    {
+      "id": "positive_int_invalid_hex",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "0x10"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid integer value: '0x10'"
+      }
+    },
+    {
+      "id": "positive_int_invalid_true",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "True"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid integer value: 'True'"
+      }
+    },
+    {
+      "id": "positive_int_not_positive_zero",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "0"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a positive integer (> 0), got 0"
+      }
+    },
+    {
+      "id": "positive_int_not_positive_neg_2",
+      "construct": {
+        "type": "validate_positive_int",
+        "input": "-2"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a positive integer (> 0), got -2"
+      }
+    },
+    {
+      "id": "gap_positive_int_i64_overflow",
+      "construct": {
+        "type": "validate_positive_int",
+        "gap_id": "GAP-options-positive-int-i64",
+        "input": "9223372036854775808"
+      },
+      "expected": {
+        "result": "gap",
+        "gap_id": "GAP-options-positive-int-i64",
+        "pin": {
+          "result": "ok",
+          "value_kind": "int",
+          "value": 9223372036854775808
+        }
+      }
+    },
+    {
+      "id": "unit_interval_ok_half",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "0.5"
+      },
+      "expected": {
+        "result": "ok",
+        "value_kind": "float",
+        "value": "0.5"
+      }
+    },
+    {
+      "id": "unit_interval_invalid_empty",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": ""
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid float value: ''"
+      }
+    },
+    {
+      "id": "unit_interval_invalid_true",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "True"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid float value: 'True'"
+      }
+    },
+    {
+      "id": "unit_interval_invalid_hex_float",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "0x1p-1"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Invalid float value: '0x1p-1'"
+      }
+    },
+    {
+      "id": "unit_interval_oob_one",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "1"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got 1.0"
+      }
+    },
+    {
+      "id": "unit_interval_oob_zero",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "0"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got 0.0"
+      }
+    },
+    {
+      "id": "unit_interval_oob_nan",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "nan"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got nan"
+      }
+    },
+    {
+      "id": "unit_interval_oob_inf",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "inf"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got inf"
+      }
+    },
+    {
+      "id": "unit_interval_oob_neg_inf",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "-inf"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got -inf"
+      }
+    },
+    {
+      "id": "unit_interval_oob_1e16",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "1e16"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got 1e+16"
+      }
+    },
+    {
+      "id": "unit_interval_oob_neg_1e_minus_5",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "-1e-5"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got -1e-05"
+      }
+    },
+    {
+      "id": "unit_interval_oob_neg_zero",
+      "construct": {
+        "type": "validate_unit_interval_float",
+        "input": "-0"
+      },
+      "expected": {
+        "result": "error",
+        "message": "Value must be a float strictly between 0.0 and 1.0 (0.0 < value < 1.0), got -0.0"
+      }
+    },
+    {
+      "id": "adapter_option_decl",
+      "construct": {
+        "type": "add_adapter_option"
+      },
+      "expected": {
+        "result": "ok",
+        "choices": [
+          "auto",
+          "canonical",
+          "claude-code-jsonl",
+          "codex-rollout",
+          "openai-agents"
+        ],
+        "default": "argparse.SUPPRESS",
+        "default_distinct_from_none": true,
+        "default_distinct_from_false": true
+      }
+    }
+  ]
+}

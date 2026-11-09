@@ -1,0 +1,1779 @@
+{
+  "module": "sesslint.repair.planner",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 1,
+  "not_applicable_count": 252,
+  "rows": [
+    {
+      "test": "tests/accept/test_kill.py::test_kill_mid_repair_never_publishes_valid_output",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_endpoint_at_candidate_seq",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_endpoint_at_child_seq",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_endpoint_at_both_candidate_and_child_seq",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_multiple_intervening_boundaries",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_negative_sequence_numbers",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_large_sequence_gaps",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_boundary_out_of_list_order",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_non_compaction_boundary_events_do_not_break_segment",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_none_vs_string",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_string_vs_none",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_both_none_is_same_group",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_empty_string_vs_none",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_both_empty_string",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_unicode_matching",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_unicode_mismatch",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_casing_sensitivity",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_whitespace_sensitivity",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_branch_non_string_types",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_prefix_collision_candidate_shorter_than_missing",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_prefix_collision_candidate_longer_than_missing",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_id_casing_sensitivity",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_id_whitespace_padding",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_hash_vs_id_mixup_rejected",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_hash_prefix_mixup_rejected",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_self_candidate_rejected",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_empty_or_none_candidate_id_rejected",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_special_characters_in_ids",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_multiple_identical_candidates_in_same_segment",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_duplicate_disambiguated_by_branch",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_duplicate_disambiguated_by_compaction_segment",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_duplicate_candidates_both_cross_branch",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_candidate_after_child_in_event_list",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_candidate_before_child_in_list_with_inverted_seq",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_apply_refuses_cross_branch_tampered_step",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_apply_refuses_cross_segment_tampered_step",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_apply_refuses_prefix_tampered_step",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_apply_refuses_ambiguous_tampered_step",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_apply_refuses_out_of_bounds_target_index",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_precondition_refuses_when_no_parent_id_in_evidence_or_child",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_e2e_executor_fails_closed_on_coercion_attempt",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_adversarial_confinement_challenge.py::test_hypothesis_candidate_qualification_oracle",
+      "column": "indented",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_same_compaction_segment_zero_boundaries",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_same_compaction_segment_strictly_between",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_same_compaction_segment_boundary_at_endpoints",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_same_compaction_segment_dict_events_and_indices",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_is_qualifying_parent_candidate_rules",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_prefix_collision",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_branch",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_segment",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_duplicate_candidates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/checks/test_sl004_hardened.py::test_exact_match_helper_plan_is_refused_when_source_finding_disagrees",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_json_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_human_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_repair_command",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_repair_human_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_verify_json_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_internal_error_verify_human_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_invalid_profile_repair_command_exits_2",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_internal_error.py::test_invalid_profile_check_command_exits_2",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_lists_delta_rows",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_cli_writes_nothing",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_json_shape",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_refused_lists_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_deterministic",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_conflicts_exit_2",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_privacy_no_payload",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_api_repair_preview_exported",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_unknown_recipe_fails_closed",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/fuzz/test_repair_invariants.py::test_conservative_torn_tail_preserves_every_unique_decodable_record",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/fuzz/test_repair_invariants.py::test_untargeted_malformed_line_refuses_or_salvage_loss_matches_physical_difference",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/fuzz/test_repair_invariants.py::test_resealed_tampered_plan_is_refused_at_every_public_execution_boundary",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/fuzz/test_repair_invariants.py::test_repair_keeps_source_plan_bundle_and_existing_artifact_aliases_immutable",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_basic_execute",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_self_output",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_existing_output",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_live_store",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_tampered_plan",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_plan_cap_overflow",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_policy_mismatch",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_sl203_toctou",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_output_invalid_synthetic_tool_result",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_kill_before_rename",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_dry_run",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_exit_codes_table",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_manifest_schema_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_only_mutator",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_direct_dict_raises_type_error",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_source_mutated_concurrently",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cross_device_replace_error_mapping",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_unicode_and_spaces_in_path",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_repair_without_plan_e2e",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_dry_run_with_tampered_plan_refuses",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_disk_full_enospc",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_read_only_target_directory",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_manifest_write_failure_cleans_output",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_cli_invalid_format",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_source_events_direct_parameter",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_plan_source_mismatch_cross_file",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_plan_source_mismatch_mutated_source",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_refuse_crafted_conservative_plan_with_salvage_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_executor_refuses_vendor_emit_on_canonical_source",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_compute_assurance_ceiling_matrix",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_preplanted_manifest_collision",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_mid_publish_crash_rollback",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_real_adapter_version_plumbing",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_salvage_e2e_manifest_ceiling",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_executor.py::test_executor_policy_gate_minimum_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_acknowledgement",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_no_shorthand",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_assurance_lattice",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_fingerprint_differs_by_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_component_too_large",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_sums",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_sl203_refusal_beats_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_empty_events_salvage_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_key_injection_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_invalid_policy_string_rejected",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "plan_policy_aggressive",
+      "note": "vector plan_policy_aggressive"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_torn_compaction_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_truncate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_dual_policy_plan_merge_attempt",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_plans_and_applies",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_conservative_blocks",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_resolves_by_params",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_direct_apply_refusals",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_every_code_has_recipe_or_documented_refusal",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_uncovered_codes_match_registry_exactly",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_registry_keys_are_known_codes",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusal_entries_are_well_formed",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusal_entries_are_content_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_pinned_citations_for_key_codes",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_sl101_salvage_path_is_explicit_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_sl001_salvage_path_is_explicit_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_surfaces_rationale",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_falls_back_without_entry",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_blocked_describe_includes_salvage_path",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_render_substitutes_path_placeholder",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_registry_validation_rejects_bad_entries",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_refusal_catalog.py::test_refusals_module_is_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_completed_mutating_call_not_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_dangling_tool_call_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_unknown_side_effects_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_unpaired_correlation_id_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_reused_tool_call_id_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_multiple_tool_results_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_oracle_sl203_subject_is_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_missing_region_function",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_forced_exception_in_region_function",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_doubt_rule_unproven_region_flag",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_2_dangling_call_in_truncated_region",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_3_unknown_side_effects_on_relink_target",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_scenario_5_sl203_anywhere_global_refusal_unchanged",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_positive_e2e_realistic_tool_session_repaired",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_parent_restore_disjoint_from_intermediate_mutating_tool",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_multistep_conservative_repair_no_index_drift_in_executor",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_recipe_without_affected_region_keeps_global_gating",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_reversed_tool_pairing_marked_ambiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_scoped_abstention.py::test_check_step_scope_syncs_ids_to_indices_for_side_effect_check",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_sl001_excisable_precondition",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_salvage_emits_excision_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_conservative_and_noack_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_dependents_and_size_limit_blocked",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_plan_sl001_multiple_torn_lines",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_apply_torn_record_excision_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_sl001_excision.py::test_repair_torn_record_end_to_end",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_snapshot_consistency.py::test_tail_completed_during_planning_is_refused",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_snapshot_consistency.py::test_write_back_keeps_line_the_current_bytes_no_longer_flag",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_every_duplicate_group_is_repaired_in_one_pass",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_group_of_three_is_dropped_not_collapsed",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_truncated_duplicate_group_is_refused",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_salvage_drop_before_duplicate_group",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_step_whose_target_an_earlier_step_removed_fails_closed",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_step_coordinates.py::test_relocation_refuses_an_already_removed_source_coordinate",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_nonadjacent_dup_plans_drop_plus_renumber",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_adjacent_dup_still_collapses",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_conflicting_dup_blocked_manual",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_removes_only_later_identicals",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_renumbered_seq_contiguous",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_without_drops",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_on_vendor_input",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_repair_output_idempotent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_step_idempotent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_conflicting_variant",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_content_drift",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_plan_determinism_with_synthetic_step",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_absent_when_no_steps",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_t04_recipes.py::test_planner_input_format_default_off",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_undecoded_records.py::test_unrepaired_bad_line_refuses_canonical_emission",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_undecoded_records.py::test_direct_executor_also_refuses_unrepaired_bad_line",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_undecoded_records.py::test_salvage_excision_accounts_for_bad_line",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/repair/test_undecoded_records.py::test_salvage_subset_cannot_omit_excision",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_cancel.py::test_cancel_check_human_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_cancel.py::test_cancel_check_json_mode",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_cancel.py::test_cancel_repair_cleans_up_and_leaves_no_target",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_nonexistent_parent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_prefix_collision",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_cross_branch_candidate",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_cross_segment_candidate",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_duplicate_candidate",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_self_reference",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_post_child_candidate_causal_inversion",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_invalid_target_index",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_forged_step_through_executor_lifecycle",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_events_mutated_in_memory_before_apply",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_disk_file_mutated_between_planning_and_execute",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_plan_tampered_detected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_multiple_independent_sl004_findings",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_mixed_deterministic_and_manual_sl004_no_crosstalk",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_multiple_children_sharing_same_parent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_chained_missing_parents_handling",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_corrupted_params_variations",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_challenger_stress.py::test_multi_finding_scale_and_order_preservation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_schema_loads_and_self_consistent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_conservative_plan_dict_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_refusal_path_plan_dict_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_salvage_plan_dict_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_dict_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_detection_failed_bundle_dict_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_json_round_trip_validates",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_missing_step_field_fails_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_wrong_version_fails_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_missing_section_fails_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_wrong_version_fails_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_sl001_sl002.py::test_sl002_repair_round_trip",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_nan",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_infinity",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_out_of_range_float",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_deep_nesting",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_oversized_line",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_nul_byte",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_invalid_utf8",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_rejects_oversized_file",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_tolerates_headerless_jsonl",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_parse_events_accepts_valid_jsonl",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_plan_roundtrip_preserves_safety_fields",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_plan_roundtrip_through_file",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_plan_from_dict_rejects_missing_required_step_field",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_plan_from_dict_unwraps_expected_plan",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_plan_from_dict_recomputes_missing_fingerprint",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_load_plan_rejects_plan_missing_safety_fields",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    },
+    {
+      "test": "tests/test_verify_parse_parity.py::test_verify_rejects_nan_in_output",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": ""
+    }
+  ]
+}

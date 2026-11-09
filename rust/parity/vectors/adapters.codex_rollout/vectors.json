@@ -1,0 +1,652 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.codex_rollout",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "codex_rollout_py_sha256": "b6c87bb5d5d761d24dbc4df2170dd05bfe73c4ba3b4ffffb553f1e9a5e462be7",
+  "codex_rollout_rs_sha256": "fe81e4d0074f7c78748567b36bbbbfbbda798d788f2595e722edbd2e78a6d614",
+  "known_parity_gaps": [
+    "GAP-codex-secret-scan-tracker: load_codex_rollout with a supplied SecretScanTracker stops at sesslint.checks.hygiene.SecretScanTracker. Rust returns that seam before path, size, or SQLite handling.",
+    "GAP-codex-session-envelope: load_codex_rollout_session on success would build sesslint.canonical.Session. Rust stops at Session and does not read events into an envelope.",
+    "GAP-codex-content-hash: _process_jsonl_line and successful envelope classification stop at sesslint._canonical_codec.payload_content_hash before appending events the pin would emit.",
+    "GAP-codex-finding-fingerprint: loader gates that call make_finding in the pin stop at sesslint.determinism.canonical_json_bytes when the fingerprint is omitted. Findings are not appended."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "CRITICAL_KEYS",
+          "CanonicalEvent",
+          "ENVELOPE_OPAQUE_TYPES",
+          "KNOWN_ENVELOPE_KEYS",
+          "KNOWN_PAYLOAD_KEYS",
+          "RESPONSE_ITEM_TYPE_MAP",
+          "SQLITE_MAGIC",
+          "SUPPORTED_CODEX_ROLLOUT_VERSIONS",
+          "detect_codex_rollout",
+          "load_codex_rollout",
+          "load_codex_rollout_session"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "supported_versions": [
+          "1",
+          "1.0",
+          "1.0.0",
+          "codex-rollout-v1"
+        ],
+        "sqlite_magic_hex": "53514c69746520666f726d6174203300",
+        "critical_keys": [
+          "call_id",
+          "parent_id",
+          "prev_id",
+          "tool_call_id",
+          "type",
+          "unknown_critical_field"
+        ],
+        "envelope_opaque_types": [
+          "event_msg",
+          "inter_agent_communication_metadata",
+          "retained_context",
+          "session_meta",
+          "token_usage_record",
+          "turn_context",
+          "world_state"
+        ],
+        "known_envelope_keys": [
+          "created_at",
+          "export_version",
+          "format_version",
+          "ordinal",
+          "payload",
+          "rollout_version",
+          "schema_version",
+          "timestamp",
+          "ts",
+          "type",
+          "version"
+        ],
+        "known_payload_keys": [
+          "agent_nickname",
+          "agent_path",
+          "agent_role",
+          "approval_policy",
+          "approvals_reviewer",
+          "args",
+          "arguments",
+          "author",
+          "base_instructions",
+          "call_id",
+          "cli_version",
+          "collaboration_mode",
+          "collaboration_mode_kind",
+          "comp_hash",
+          "completed_at",
+          "completed_at_ms",
+          "content",
+          "context_window",
+          "current_date",
+          "cwd",
+          "duration_ms",
+          "effort",
+          "encrypted_content",
+          "error",
+          "execution",
+          "export_version",
+          "first_window_id",
+          "forked_from_id",
+          "format_version",
+          "full",
+          "git",
+          "guardian_history",
+          "history_mode",
+          "id",
+          "info",
+          "input",
+          "internal_chat_message_metadata_passthrough",
+          "is_error",
+          "item",
+          "last_agent_message",
+          "message",
+          "metadata",
+          "model",
+          "model_context_window",
+          "model_provider",
+          "multi_agent_version",
+          "name",
+          "namespace",
+          "originator",
+          "output",
+          "parent_thread_id",
+          "permission_profile",
+          "personality",
+          "phase",
+          "previous_window_id",
+          "rate_limits",
+          "realtime_active",
+          "reason",
+          "recipient",
+          "replacement_history",
+          "response_id",
+          "result",
+          "role",
+          "rollout_version",
+          "root_turn_id",
+          "sandbox_policy",
+          "schema_version",
+          "session_id",
+          "source",
+          "started_at",
+          "started_at_ms",
+          "state",
+          "status",
+          "subagent_history_start_ordinal",
+          "summary",
+          "thread_id",
+          "thread_settings",
+          "thread_source",
+          "thread_token_usage",
+          "time_to_first_token_ms",
+          "timestamp",
+          "timezone",
+          "tool_call_id",
+          "tools",
+          "trigger_turn",
+          "turn_id",
+          "turn_token_usage",
+          "type",
+          "usage",
+          "version",
+          "window_id",
+          "window_number",
+          "workspace_roots"
+        ],
+        "guardian_snapshot_item_cap": 512,
+        "guardian_id_max": 256,
+        "response_item_type_map": [
+          {
+            "key": "message",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "agent_message",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "reasoning",
+            "actor": "assistant",
+            "kind": "opaque"
+          },
+          {
+            "key": "function_call",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "custom_tool_call",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "tool_search_call",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "function_call_output",
+            "actor": "tool",
+            "kind": "tool_result"
+          },
+          {
+            "key": "custom_tool_call_output",
+            "actor": "tool",
+            "kind": "tool_result"
+          },
+          {
+            "key": "tool_search_output",
+            "actor": "tool",
+            "kind": "tool_result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "detect_rollout_filename",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b22636c695f76657273696f6e223a2022302e34322e30227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a7b226f7264696e616c223a20312c20227061796c6f6164223a207b226964223a20226d31222c2022726f6c65223a202275736572222c202274797065223a20226d657373616765227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30313a30305a222c202274797065223a2022726573706f6e73655f6974656d227d0a",
+        "filename": "rollout-2026-09-17T10-00-00-abc.jsonl"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_session_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b22636c695f76657273696f6e223a2022302e34322e30227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a7b226f7264696e616c223a20312c20227061796c6f6164223a207b226964223a20226d31222c2022726f6c65223a202275736572222c202274797065223a20226d657373616765227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30313a30305a222c202274797065223a2022726573706f6e73655f6974656d227d0a",
+        "filename": "session.jsonl"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_session_txt",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b22636c695f76657273696f6e223a2022302e34322e30227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a7b226f7264696e616c223a20312c20227061796c6f6164223a207b226964223a20226d31222c2022726f6c65223a202275736572222c202274797065223a20226d657373616765227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30313a30305a222c202274797065223a2022726573706f6e73655f6974656d227d0a",
+        "filename": "session.txt"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_rollout_sqlite_name",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b22636c695f76657273696f6e223a2022302e34322e30227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a7b226f7264696e616c223a20312c20227061796c6f6164223a207b226964223a20226d31222c2022726f6c65223a202275736572222c202274797065223a20226d657373616765227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30313a30305a222c202274797065223a2022726573706f6e73655f6974656d227d0a",
+        "filename": "rollout-abc.sqlite"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_empty_rollout_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "",
+        "filename": "rollout-x.jsonl"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_sqlite_prefix_rollout_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "53514c69746520666f726d61742033000000000000000000000000000000000000000000000000000000000000000000",
+        "filename": "rollout-x.jsonl"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_weak_ordinal_payload",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b2261223a20317d7d0a",
+        "filename": "x.jsonl"
+      },
+      "expected": {
+        "score": 0.3
+      }
+    },
+    {
+      "id": "detect_session_meta_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "2273657373696f6e5f6d65746122",
+        "filename": "rollout-a.jsonl"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_session_meta_upper_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "2273657373696f6e5f6d65746122",
+        "filename": "a.JSONL"
+      },
+      "expected": {
+        "score": 0.8
+      }
+    },
+    {
+      "id": "detect_turn_context_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "227475726e5f636f6e7465787422",
+        "filename": "a.jsonl"
+      },
+      "expected": {
+        "score": 0.3
+      }
+    },
+    {
+      "id": "detect_event_msg_rollout_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "226576656e745f6d736722",
+        "filename": "rollout-a.jsonl"
+      },
+      "expected": {
+        "score": 0.8
+      }
+    },
+    {
+      "id": "detect_ordinal_only_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "226f7264696e616c22",
+        "filename": "a.jsonl"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_sqlite_text_rollout",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "53514c69746520666f726d61742033",
+        "filename": "rollout-x.jsonl"
+      },
+      "expected": {
+        "score": 0.3
+      }
+    },
+    {
+      "id": "detect_notes_bak_jsonl",
+      "construct": {
+        "type": "detect_codex_rollout",
+        "bytes_hex": "2273657373696f6e5f6d65746122",
+        "filename": "notes.jsonl.bak"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "safe_type_str",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "str",
+          "text": "abc"
+        }
+      },
+      "expected": {
+        "text": "<str:len=3>"
+      }
+    },
+    {
+      "id": "safe_type_none",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "null"
+        }
+      },
+      "expected": {
+        "text": "<NoneType>"
+      }
+    },
+    {
+      "id": "safe_type_list",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "<list:len=2>"
+      }
+    },
+    {
+      "id": "gap_load_envelope_line",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b2274797065223a226576656e745f6d7367222c227061796c6f6164223a7b7d7d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_content_hash"
+        }
+      }
+    },
+    {
+      "id": "gap_load_secret_tracker",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b2274797065223a226576656e745f6d7367222c227061796c6f6164223a7b7d7d0a"
+        },
+        "secret_tracker": true
+      },
+      "expected": {
+        "pin": {
+          "skipped": true
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_load_empty_bytes",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_tail_finalize"
+        }
+      }
+    },
+    {
+      "id": "gap_load_sqlite_bytes",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "53514c69746520666f726d617420330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint",
+          "gate": "sqlite"
+        }
+      }
+    },
+    {
+      "id": "gap_load_size_bytes",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "5858585858585858585858585858585858585858585858585858585858585858"
+        },
+        "max_file_bytes": 8
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint",
+          "gate": "size"
+        }
+      }
+    },
+    {
+      "id": "gap_load_non_dict_array",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "5b226e6f74222c2261222c2264696374225d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint",
+          "gate": "malformed"
+        }
+      }
+    },
+    {
+      "id": "load_not_found",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-missing-rollout.jsonl"
+        }
+      },
+      "expected": {
+        "pin": {
+          "error_type": "FileNotFoundError",
+          "message": "Session file not found: fixtures/syn-missing-rollout.jsonl"
+        },
+        "message": "Session file not found: fixtures/syn-missing-rollout.jsonl"
+      }
+    },
+    {
+      "id": "load_is_directory",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "path_rel",
+          "path": "fixtures/syn-dir-not-file"
+        }
+      },
+      "expected": {
+        "pin": {
+          "error_type": "IsADirectoryError",
+          "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
+        },
+        "message": "Expected session file, got directory: fixtures/syn-dir-not-file"
+      }
+    },
+    {
+      "id": "gap_load_torn_line",
+      "construct": {
+        "type": "load_codex_rollout",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_finding_fingerprint",
+          "gate": "line"
+        }
+      }
+    },
+    {
+      "id": "gap_session_min_meta",
+      "construct": {
+        "type": "load_codex_rollout_session",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b226964223a2022736573732d73796e2d706172697479227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": [],
+          "session_id": "codex-rollout-session"
+        },
+        "rust_assertion": {
+          "mode": "gap_session_envelope"
+        }
+      }
+    },
+    {
+      "id": "gap_session_secret_tracker",
+      "construct": {
+        "type": "load_codex_rollout_session",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226f7264696e616c223a20302c20227061796c6f6164223a207b226964223a2022736573732d73796e2d706172697479227d2c202274696d657374616d70223a2022323032362d30392d31375431303a30303a30305a222c202274797065223a202273657373696f6e5f6d657461227d0a"
+        },
+        "secret_tracker": true
+      },
+      "expected": {
+        "pin": {
+          "skipped": true
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker"
+        }
+      }
+    }
+  ]
+}

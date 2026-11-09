@@ -1,0 +1,725 @@
+#!/usr/bin/env python3
+"""Generate sesslint.seal-ledger.v1 schema parity from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The seal emitter is
+executed from that blob. Checkout ``sesslint`` imports are refused.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "schemas" / "sesslint.seal-ledger.v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_SHA = "30acd9dafb53e66867ae08bdcce92ecd867eff4ba6265c99af94e902503e805b"
+SEAL_PY_SHA = "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28"
+CODEC_PY_SHA = "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee"
+ERRORS_PY_SHA = "066ad209b5a8bbd6470a5bb30cde87b41b91e7d476348dc8c28f3d39bde97dc6"
+SCHEMA_BLOB = "schemas/sesslint.seal-ledger.v1.json"
+TEST_FILE = "tests/test_seal.py"
+SCHEMA_TEST = "test_seal_schema_self_consistent"
+MODULE = "sesslint.seal"
+SCHEMA_ID = "sesslint.parity-module-vectors/v1"
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
+SEALED_AT = "2026-01-01T00:00:00Z"
+EMIT_FIELDS = (
+    "schema",
+    "seq",
+    "prev_sha256",
+    "file_sha256",
+    "tool",
+    "verdict",
+    "codes",
+    "report_sha256",
+    "sealed_at",
+    "path",
+    "genesis_of",
+    "entry_sha256",
+)
+ROOT_KEYS = {
+    "$schema",
+    "$id",
+    "title",
+    "description",
+    "type",
+    "required",
+    "properties",
+    "additionalProperties",
+}
+PROP_KEYS = {
+    "const",
+    "type",
+    "minimum",
+    "pattern",
+    "minLength",
+    "description",
+    "enum",
+    "propertyNames",
+    "additionalProperties",
+}
+NAME_KEYS = {"type", "pattern"}
+VALUE_KEYS = {"type", "minimum"}
+GAPS = (
+    "GAP-seal-ledger-schema-load: load_seal_schema imports sesslint._resources "
+    "and json.loads the schema file. This card reads the pin blob in the "
+    "generator and does not call load_seal_schema. "
+    "tests/test_seal.py::test_seal_schema_self_consistent calls "
+    "load_seal_schema and _entry, so it is not covered.",
+    "GAP-seal-ledger-duplicate-key: duplicate JSON object keys are refused. "
+    "Python json.loads keeps the last key.",
+    "GAP-seal-ledger-json-number: a JSON number with a fraction, an exponent, "
+    "or a value outside i64 is refused. Draft 2020-12 treats 1.0 as an integer "
+    "and Python int is unbounded. Those values are not invented here.",
+    "GAP-seal-ledger-emit-refusal: build_entry raises SealError text. "
+    "emit_entry returns schema reasons and does not copy those sentences.",
+)
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+_BANNED = ("FOR_WORK", "sesslint-wt-")
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not reach the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def digest(blob: bytes) -> str:
+    return hashlib.sha256(blob).hexdigest()
+
+
+def require_sha(blob: bytes, expected: str, label: str) -> None:
+    got = digest(blob)
+    if got != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"spec failed {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except CheckoutImportRefused as err:
+        raise SystemExit(f"refusing sesslint import {err}") from err
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent, _, child = fullname.rpartition(".")
+    if parent:
+        setattr(sys.modules[parent], child, mod)
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def install_session_event_stub() -> None:
+    """Satisfy the codec's late SessionEvent import without loading canonical.py.
+
+    ``_normalize`` imports the class before the dict fast path and compares it
+    with ``is``. Ledger entries are plain dicts, so a distinct stub class does
+    not change their bytes. The checkout package stays unreachable.
+    """
+    canonical = types.ModuleType("sesslint.canonical")
+
+    class SessionEvent:  # noqa: D106
+        pass
+
+    canonical.SessionEvent = SessionEvent
+    sys.modules["sesslint.canonical"] = canonical
+    sys.modules["sesslint"].canonical = canonical
+
+
+def load_seal() -> Any:
+    sys.dont_write_bytecode = True
+    sys.meta_path.insert(0, _PinOnly())
+    ensure_pkg("sesslint")
+    install_session_event_stub()
+    errors = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/errors.py")
+    require_sha(errors, ERRORS_PY_SHA, "errors.py")
+    exec_blob(errors, "sesslint.errors")
+    codec = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/_canonical_codec.py")
+    require_sha(codec, CODEC_PY_SHA, "_canonical_codec.py")
+    exec_blob(codec, "sesslint._canonical_codec")
+    seal_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/seal.py")
+    require_sha(seal_blob, SEAL_PY_SHA, "seal.py")
+    seal = exec_blob(seal_blob, "sesslint.seal")
+    assert_pin_modules()
+    return seal
+
+
+def load_schema() -> dict[str, Any]:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:{SCHEMA_BLOB}")
+    require_sha(blob, SCHEMA_SHA, SCHEMA_BLOB)
+    if b"\r" in blob:
+        raise SystemExit("pin schema contains CR")
+    schema = json.loads(blob.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pin schema is not an object")
+    assert_supported(schema)
+    return schema
+
+
+def assert_supported(schema: dict[str, Any]) -> None:
+    extra = set(schema) - ROOT_KEYS
+    if extra:
+        raise SystemExit(f"unproven root keywords {sorted(extra)}")
+    if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+        raise SystemExit("root object constraints are not the pinned shape")
+    required = schema.get("required")
+    properties = schema.get("properties")
+    if not isinstance(required, list) or not isinstance(properties, dict):
+        raise SystemExit("required or properties missing")
+    for name, prop in schema["properties"].items():
+        if not isinstance(prop, dict) or set(prop) - PROP_KEYS:
+            raise SystemExit(f"unproven property keywords {name}")
+        names = prop.get("propertyNames")
+        if names is not None and (
+            not isinstance(names, dict) or set(names) - NAME_KEYS or names.get("type") != "string"
+        ):
+            raise SystemExit(f"unproven propertyNames {name}")
+        additional = prop.get("additionalProperties")
+        if additional is None or additional is False:
+            continue
+        if (
+            not isinstance(additional, dict)
+            or set(additional) - VALUE_KEYS
+            or additional.get("type") != "integer"
+        ):
+            raise SystemExit(f"unproven additionalProperties {name}")
+
+
+def reason(kind: str, path: str) -> str:
+    return f"{kind}:{path}"
+
+
+def type_reason(declared: str, instance: Any, path: str) -> str | None:
+    if declared == "object" and type(instance) is dict:
+        return None
+    if declared == "string" and type(instance) is str:
+        return None
+    if declared == "integer" and type(instance) is int:
+        return None
+    if declared in {"object", "string", "integer"}:
+        return reason("type_mismatch", path)
+    raise SystemExit(f"unproven type {declared}")
+
+
+def validate_instance(schema: dict[str, Any], instance: Any, path: str) -> str | None:
+    if "const" in schema and instance != schema["const"]:
+        return reason("const_mismatch", path)
+    declared = schema.get("type")
+    if isinstance(declared, str):
+        found = type_reason(declared, instance, path)
+        if found is not None:
+            return found
+    if "enum" in schema and instance not in schema["enum"]:
+        return reason("enum_mismatch", path)
+    if declared == "string":
+        if "minLength" in schema and len(instance) < schema["minLength"]:
+            return reason("min_length", path)
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.fullmatch(pattern, instance) is None:
+            return reason("pattern", path)
+    if declared == "integer" and "minimum" in schema and instance < schema["minimum"]:
+        return reason("minimum", path)
+    if declared == "object":
+        return validate_object(schema, instance, path)
+    return None
+
+
+def validate_object(schema: dict[str, Any], instance: dict[str, Any], path: str) -> str | None:
+    props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        raise SystemExit("properties")
+    required = schema.get("required", [])
+    if not isinstance(required, list):
+        raise SystemExit("required")
+    if "additionalProperties" not in schema:
+        raise SystemExit("additionalProperties missing")
+    additional = schema["additionalProperties"]
+    for key in required:
+        if key not in instance:
+            return f"missing_required:{key}"
+    unknown = [key for key in instance if key not in props]
+    if additional is False:
+        if unknown:
+            return "additional_property"
+    elif not isinstance(additional, dict):
+        raise SystemExit("unproven additionalProperties")
+    names = schema.get("propertyNames")
+    if isinstance(names, dict):
+        for key in sorted(instance):
+            found = validate_instance(names, key, path)
+            if found is not None:
+                return found
+    for key, sub in props.items():
+        if key not in instance:
+            continue
+        child = key if path == "$" else f"{path}/{key}"
+        found = validate_instance(sub, instance[key], child)
+        if found is not None:
+            return found
+    if isinstance(additional, dict):
+        for key in sorted(unknown):
+            found = validate_instance(additional, instance[key], path)
+            if found is not None:
+                return found
+    return None
+
+
+def utf8(blob: bytes) -> str:
+    try:
+        return blob.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise SystemExit("canonical bytes are not utf-8") from err
+
+
+def canonical(value: Any, newline: bool) -> bytes:
+    from sesslint._canonical_codec import canonical_json_bytes
+
+    try:
+        blob = canonical_json_bytes(value, newline=newline)
+    except CheckoutImportRefused as err:
+        raise SystemExit(f"refusing sesslint import {err}") from err
+    if not isinstance(blob, bytes):
+        raise SystemExit("canonical_json_bytes did not return bytes")
+    return blob
+
+
+def build(seal: Any, **kwargs: Any) -> dict[str, Any]:
+    entry = seal.build_entry(now=NOW, **kwargs)
+    if not isinstance(entry, dict):
+        raise SystemExit("build_entry did not return an object")
+    if entry.get("sealed_at") != SEALED_AT:
+        raise SystemExit("pin sealed_at is not the fixed instant")
+    keys = list(entry)
+    expected = [name for name in EMIT_FIELDS if name in entry]
+    if keys != expected:
+        raise SystemExit("pin field order differs from build_entry")
+    return entry
+
+
+def emit_record(
+    seal: Any,
+    schema: dict[str, Any],
+    entry: dict[str, Any],
+    case_id: str,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    found = validate_instance(schema, entry, "$")
+    if found is not None:
+        raise SystemExit(f"{case_id} emitted entry rejected {found}")
+    preimage = {key: value for key, value in entry.items() if key != "entry_sha256"}
+    preimage_bytes = canonical(preimage, False)
+    object_bytes = canonical(entry, False)
+    line_bytes = canonical(entry, True)
+    if line_bytes != object_bytes + b"\n":
+        raise SystemExit("pin newline is not one LF")
+    object_text = utf8(object_bytes)
+    if json.loads(object_text) != entry:
+        raise SystemExit("canonical round trip mismatch")
+    if hashlib.sha256(preimage_bytes).hexdigest() != entry["entry_sha256"]:
+        raise SystemExit("pin entry_sha256 mismatch")
+    required = schema["required"]
+    props = schema["properties"]
+    if not set(required).issubset(entry) or not set(entry).issubset(props):
+        raise SystemExit("emitted keys do not fit the pin schema")
+    return {
+        "id": case_id,
+        "construct": construct,
+        "expected": {
+            "mode": "ok",
+            "entry_sha256": entry["entry_sha256"],
+            "object_utf8": object_text,
+            "line_utf8": utf8(line_bytes),
+            "keys": list(entry),
+            "required_subset_of_entry": True,
+            "entry_subset_of_properties": True,
+        },
+    }
+
+
+def schema_facts(seal: Any, schema: dict[str, Any]) -> dict[str, Any]:
+    props = schema["properties"]
+    if set(seal.SEAL_TOOLS) != set(props["tool"]["enum"]):
+        raise SystemExit("SEAL_TOOLS differ from the schema enum")
+    if seal.SEAL_SCHEMA_ID != props["schema"]["const"]:
+        raise SystemExit("SEAL_SCHEMA_ID differs from the schema const")
+    if seal.GENESIS != "GENESIS":
+        raise SystemExit("GENESIS differs from the pin literal")
+    if not set(schema["required"]).issubset(props):
+        raise SystemExit("required is not a subset of properties")
+    codes = props["codes"]
+    return {
+        "id": "schema_facts",
+        "construct": {"type": "schema_facts", "fn": "schema_document", "mode": "pin"},
+        "expected": {
+            "draft": schema["$schema"],
+            "id": schema["$id"],
+            "root_type": schema["type"],
+            "additional_properties": False,
+            "required": list(schema["required"]),
+            "properties": list(props),
+            "schema_const": props["schema"]["const"],
+            "seal_schema_id": seal.SEAL_SCHEMA_ID,
+            "genesis": seal.GENESIS,
+            "tool_enum": list(props["tool"]["enum"]),
+            "seq_minimum": props["seq"]["minimum"],
+            "seq_type": props["seq"]["type"],
+            "code_name_pattern": codes["propertyNames"]["pattern"],
+            "code_minimum": codes["additionalProperties"]["minimum"],
+            "code_value_type": codes["additionalProperties"]["type"],
+            "path_min_length": props["path"]["minLength"],
+            "verdict_min_length": props["verdict"]["minLength"],
+            "patterns": {
+                "prev_sha256": props["prev_sha256"]["pattern"],
+                "file_sha256": props["file_sha256"]["pattern"],
+                "report_sha256": props["report_sha256"]["pattern"],
+                "sealed_at": props["sealed_at"]["pattern"],
+                "genesis_of": props["genesis_of"]["pattern"],
+                "entry_sha256": props["entry_sha256"]["pattern"],
+            },
+        },
+    }
+
+
+def validate_case(
+    schema: dict[str, Any],
+    base_text: str,
+    case_id: str,
+    mutate: Callable[[dict[str, Any]], None],
+    expected: str,
+) -> dict[str, Any]:
+    document = json.loads(base_text)
+    mutate(document)
+    found = validate_instance(schema, document, "$")
+    if found != expected:
+        raise SystemExit(f"{case_id} walker {found} != {expected}")
+    encoded = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if validate_instance(schema, json.loads(encoded), "$") != expected:
+        raise SystemExit(f"{case_id} dumped document changed the reason")
+    return {
+        "id": case_id,
+        "construct": {
+            "type": "validate",
+            "fn": "validate_json",
+            "mode": "reject",
+            "document": encoded,
+        },
+        "expected": {"mode": "reject", "reason": expected},
+    }
+
+
+def accept_case(case_id: str, document: str) -> dict[str, Any]:
+    return {
+        "id": case_id,
+        "construct": {
+            "type": "validate",
+            "fn": "validate_json",
+            "mode": "ok",
+            "document": document,
+        },
+        "expected": {"mode": "ok", "reason": None},
+    }
+
+
+def call_names(fn: ast.FunctionDef) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+        elif isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+    return names
+
+
+def coverage_row(test_text: str) -> dict[str, Any]:
+    tree = ast.parse(test_text)
+    found = [
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == SCHEMA_TEST
+    ]
+    if len(found) != 1:
+        raise SystemExit("pinned schema test was not found")
+    names = call_names(found[0])
+    if "load_seal_schema" not in names or "_entry" not in names or len(set(names)) == 1:
+        raise SystemExit("pinned schema test shape changed")
+    return {
+        "test": f"{TEST_FILE}::{SCHEMA_TEST}",
+        "column": "column_0",
+        "status": "not_applicable",
+        "vector_id": None,
+        "note": (
+            "calls load_seal_schema and _entry; _entry calls build_entry. "
+            "One build_entry or validate_json vector is not that whole test."
+        ),
+    }
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    for banned in _BANNED:
+        if banned in text:
+            raise SystemExit(f"refusing banned fragment in JSON: {banned}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    sealed = NOW.isoformat(timespec="seconds").replace("+00:00", "Z")
+    if sealed != SEALED_AT:
+        raise SystemExit("fixed instant format changed")
+    schema = load_schema()
+    seal = load_seal()
+    file_a = "a" * 64
+    report_b = "b" * 64
+    omitted = build(
+        seal,
+        seq=1,
+        prev_sha256=seal.GENESIS,
+        file_sha256=file_a,
+        path=None,
+        tool="check",
+        verdict="healthy",
+        codes={"SL101": 2},
+        report_sha256=report_b,
+    )
+    omitted_record = emit_record(
+        seal,
+        schema,
+        omitted,
+        "emit_path_omitted",
+        {
+            "type": "emit",
+            "fn": "build_entry",
+            "mode": "ok",
+            "seq": 1,
+            "prev_sha256": seal.GENESIS,
+            "file_sha256": file_a,
+            "path": None,
+            "tool": "check",
+            "verdict": "healthy",
+            "codes": [["SL101", 2]],
+            "report_sha256": report_b,
+            "genesis_of": None,
+            "sealed_at": SEALED_AT,
+        },
+    )
+    if '"SL101":2' not in omitted_record["expected"]["object_utf8"]:
+        raise SystemExit("pin canonical bytes omit the code count")
+    rich = build(
+        seal,
+        seq=2,
+        prev_sha256="c" * 64,
+        file_sha256="d" * 64,
+        path="sess.jsonl",
+        tool="repair",
+        verdict="repaired",
+        codes={"SL001": 0, "SL101": 2},
+        report_sha256="e" * 64,
+        genesis_of="f" * 64,
+    )
+    rich_record = emit_record(
+        seal,
+        schema,
+        rich,
+        "emit_path_and_genesis",
+        {
+            "type": "emit",
+            "fn": "build_entry",
+            "mode": "ok",
+            "seq": 2,
+            "prev_sha256": "c" * 64,
+            "file_sha256": "d" * 64,
+            "path": "sess.jsonl",
+            "tool": "repair",
+            "verdict": "repaired",
+            "codes": [["SL001", 0], ["SL101", 2]],
+            "report_sha256": "e" * 64,
+            "genesis_of": "f" * 64,
+            "sealed_at": SEALED_AT,
+        },
+    )
+    rich_text = rich_record["expected"]["object_utf8"]
+    if rich_text.index('"SL001":0') > rich_text.index('"SL101":2'):
+        raise SystemExit("pin code order is not sorted")
+    base_text = omitted_record["expected"]["object_utf8"]
+    mutations: tuple[tuple[str, Callable[[dict[str, Any]], None], str], ...] = (
+        ("validate_missing_seq", lambda doc: doc.pop("seq"), "missing_required:seq"),
+        (
+            "validate_additional_property",
+            lambda doc: doc.__setitem__("extra", 1),
+            "additional_property",
+        ),
+        (
+            "validate_bad_const",
+            lambda doc: doc.__setitem__("schema", "other"),
+            "const_mismatch:schema",
+        ),
+        ("validate_bad_enum", lambda doc: doc.__setitem__("tool", "scan"), "enum_mismatch:tool"),
+        ("validate_tool_integer", lambda doc: doc.__setitem__("tool", 1), "type_mismatch:tool"),
+        (
+            "validate_bad_file_sha256",
+            lambda doc: doc.__setitem__("file_sha256", "A" * 64),
+            "pattern:file_sha256",
+        ),
+        ("validate_seq_zero", lambda doc: doc.__setitem__("seq", 0), "minimum:seq"),
+        (
+            "validate_empty_verdict",
+            lambda doc: doc.__setitem__("verdict", ""),
+            "min_length:verdict",
+        ),
+        (
+            "validate_bad_code_name",
+            lambda doc: doc.__setitem__("codes", {"nope": 1}),
+            "pattern:codes",
+        ),
+        (
+            "validate_negative_code",
+            lambda doc: doc.__setitem__("codes", {"SL101": -1}),
+            "minimum:codes",
+        ),
+        ("validate_empty_path", lambda doc: doc.__setitem__("path", ""), "min_length:path"),
+        ("validate_bool_seq", lambda doc: doc.__setitem__("seq", True), "type_mismatch:seq"),
+        (
+            "validate_bad_prev",
+            lambda doc: doc.__setitem__("prev_sha256", "z" * 64),
+            "pattern:prev_sha256",
+        ),
+    )
+    vectors = [
+        schema_facts(seal, schema),
+        omitted_record,
+        rich_record,
+        accept_case("validate_emit_path_omitted", base_text),
+        accept_case("validate_emit_path_and_genesis", rich_text),
+    ]
+    vectors.extend(
+        validate_case(schema, base_text, name, mutate, expected)
+        for name, mutate, expected in mutations
+    )
+    test_blob = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}")
+    if b"\r" in test_blob:
+        raise SystemExit("pin test file contains CR")
+    row = coverage_row(test_blob.decode("utf-8"))
+    doc = {
+        "schema": SCHEMA_ID,
+        "module": MODULE,
+        "schema_file": SCHEMA_BLOB,
+        "python_commit": PYTHON_COMMIT,
+        "schema_sha256": SCHEMA_SHA,
+        "seal_py_sha256": SEAL_PY_SHA,
+        "canonical_codec_py_sha256": CODEC_PY_SHA,
+        "known_parity_gaps": list(GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc)
+    write_text(OUT / "vectors.json", payload)
+    file_digest = digest(payload.encode("utf-8"))
+    coverage = {
+        "module": MODULE,
+        "schema_file": SCHEMA_BLOB,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 1,
+        "rows": [row],
+    }
+    if row["status"] != "not_applicable":
+        raise SystemExit("refusing a covered claim for the schema test")
+    write_text(OUT / "coverage.json", dump(coverage))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.seal-ledger.v1 parity. Schema facts and entry "
+            "bytes come from the pinned schema document and build_entry. The "
+            "pinned schema test is not covered."
+        ),
+        "generator": "rust/parity/schemas/sesslint.seal-ledger.v1/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance))
+    manifest = {
+        "schema": SCHEMA_ID,
+        "module": MODULE,
+        "schema_file": SCHEMA_BLOB,
+        "python_commit": PYTHON_COMMIT,
+        "schema_sha256": SCHEMA_SHA,
+        "seal_py_sha256": SEAL_PY_SHA,
+        "canonical_codec_py_sha256": CODEC_PY_SHA,
+        "vector_count": len(vectors),
+        "vectors_sha256": file_digest,
+        "generator": "rust/parity/schemas/sesslint.seal-ledger.v1/generate",
+        "known_parity_gaps": list(GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest))
+    print(f"{len(vectors)} {file_digest} covered=0 not_applicable=1")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

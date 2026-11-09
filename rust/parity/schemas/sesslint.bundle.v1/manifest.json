@@ -1,0 +1,18 @@
+{
+  "bundle_py_sha256": "3c5f7df93eaa410d6ccfc83c17b49ac1f85e45e2007fc9076635bec40965b133",
+  "generator": "rust/parity/schemas/sesslint.bundle.v1/generate",
+  "known_parity_gaps": [
+    "GAP-bundle-schema-load: load_bundle_schema and get_bundle_schema_path read schemas/sesslint.bundle.v1.json. This card embeds the pin bytes and does not call those functions. tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent calls both, so it is not covered.",
+    "GAP-bundle-validate-helper: _validate_bundle_dict calls assert_schema and then extra structural checks. The other bundle tests also call build_bundle, to_dict, or to_json. One validate_json result is not that whole test.",
+    "GAP-bundle-emitter-bytes: Bundle.to_json uses json.dumps. sesslint._canonical_codec.canonical_json_bytes is not available. This card does not invent those bytes.",
+    "GAP-bundle-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-bundle-json-number: a JSON number that is not a proven integer is not an integer. Equality of two non-integers is refused. minimum is not applied to a non-integer."
+  ],
+  "module": "sesslint.bundle",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "schema_file": "schemas/sesslint.bundle.v1.json",
+  "schema_sha256": "7fdf8e61f8b787844c7c142029b290b924481baecbda3204ff79425a99738df9",
+  "vector_count": 82,
+  "vectors_sha256": "81bdcd9bcb49ed478b183f696fbad2c92431f0c7757b91013d0efb310b29ea2a"
+}

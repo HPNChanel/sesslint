@@ -1,0 +1,107 @@
+{
+  "covered_count": 1,
+  "module": "sesslint.repair.recipes_conservative",
+  "not_applicable_count": 13,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "column": "column_0",
+      "note": "multi-assert planner or repair sweep; planner seam remains",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_nonadjacent_dup_plans_drop_plus_renumber",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "multi-assert planner or repair sweep; planner seam remains",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_adjacent_dup_still_collapses",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_conflicting_dup_blocked_manual",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_drop_removes_only_later_identicals",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_renumbered_seq_contiguous",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_without_drops",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "multi-assert planner or repair sweep; planner seam remains",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_no_renumber_on_vendor_input",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "multi-assert planner or repair sweep; planner seam remains",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_repair_output_idempotent",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "apply_seq_renumber multi-assert sweep; different function",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_step_idempotent",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "",
+      "status": "covered",
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_conflicting_variant",
+      "vector_id": "drop_refusal_conflicting_variant"
+    },
+    {
+      "column": "column_0",
+      "note": "single apply_identical_duplicate_drop refusal on payload events without content_hash; that failure mode is not the content_hash refusal in this set",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_content_drift",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_plan_determinism_with_synthetic_step",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_seq_renumber_absent_when_no_steps",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "planner or repair entry point; seam remains, no plan or fixture diff is stored",
+      "status": "not_applicable",
+      "test": "tests/repair/test_t04_recipes.py::test_planner_input_format_default_off",
+      "vector_id": null
+    }
+  ],
+  "test_file": "tests/repair/test_t04_recipes.py"
+}

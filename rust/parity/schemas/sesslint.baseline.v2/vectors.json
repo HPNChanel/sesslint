@@ -1,0 +1,470 @@
+{
+  "baseline_py_sha256": "7d641bb31d495783f7f14b0d99e8a29ef3c80f85924ed616013ba883892d0851",
+  "constraints": {
+    "code_pattern": "^SL[0-9]{3}$",
+    "entry_additional": false,
+    "entry_properties": [
+      "key",
+      "code",
+      "file_role",
+      "created_by",
+      "migrated"
+    ],
+    "entry_required": [
+      "key"
+    ],
+    "file_role_min_length": 1,
+    "key_pattern": "^[0-9a-f]{16}$",
+    "migrated_enum": [
+      "verified",
+      "unverified"
+    ],
+    "root_additional": false,
+    "root_properties": [
+      "schema_version",
+      "entries"
+    ],
+    "root_required": [
+      "entries",
+      "schema_version"
+    ],
+    "schema_version_const": "sesslint.baseline/v2"
+  },
+  "module": "sesslint.baseline",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
+  "schema_sha256": "d2b1e0a160b0289db257f353df01f4b7e1620804ee748236f5eeecff6b9802dd",
+  "vectors": [
+    {
+      "construct": {
+        "calls": 1,
+        "created_by": "sesslint",
+        "emitter": true,
+        "entire_test": true,
+        "findings": "none",
+        "fingerprints": [
+          "5d4465190d6abf3f",
+          "aabbccddeeff0011"
+        ],
+        "function": "upgrade_baseline",
+        "mode": "success",
+        "type": "upgrade_baseline",
+        "v1_text": "{\"fingerprints\": [\"5d4465190d6abf3f\", \"aabbccddeeff0011\"], \"schema_version\": \"sesslint.baseline/v1\"}"
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"key\": \"5d4465190d6abf3f\",\n      \"migrated\": \"unverified\"\n    },\n    {\n      \"key\": \"aabbccddeeff0011\",\n      \"migrated\": \"unverified\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "schema_ok": true,
+        "unverified": 2,
+        "verified": 0
+      },
+      "id": "upgrade_unverified_without_source"
+    },
+    {
+      "construct": {
+        "calls": 2,
+        "created_by": "sesslint",
+        "emitter": true,
+        "entire_test": true,
+        "findings": "none",
+        "fingerprints": [
+          "aabbccddeeff0011",
+          "5d4465190d6abf3f"
+        ],
+        "function": "upgrade_baseline",
+        "mode": "success",
+        "type": "upgrade_baseline",
+        "v1_text": "{\"fingerprints\": [\"aabbccddeeff0011\", \"5d4465190d6abf3f\"], \"schema_version\": \"sesslint.baseline/v1\"}"
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [\n    {\n      \"key\": \"5d4465190d6abf3f\",\n      \"migrated\": \"unverified\"\n    },\n    {\n      \"key\": \"aabbccddeeff0011\",\n      \"migrated\": \"unverified\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "schema_ok": true,
+        "unverified": 2,
+        "verified": 0
+      },
+      "id": "upgrade_deterministic"
+    },
+    {
+      "construct": {
+        "created_by": "sesslint",
+        "emitter": true,
+        "entire_test": false,
+        "function": "dump_baseline",
+        "mode": "success",
+        "type": "dump_baseline"
+      },
+      "expected": {
+        "document": "{\n  \"entries\": [],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "schema_ok": true
+      },
+      "id": "dump_empty"
+    },
+    {
+      "construct": {
+        "document": "{\n  \"entries\": [\n    {\n      \"code\": \"SL101\",\n      \"created_by\": \"sesslint\",\n      \"file_role\": \"sess/run.jsonl\",\n      \"key\": \"46d5e88e49082945\",\n      \"migrated\": \"verified\"\n    }\n  ],\n  \"schema_version\": \"sesslint.baseline/v2\"\n}\n",
+        "emitter": true,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "success",
+        "type": "validate"
+      },
+      "expected": {
+        "schema_ok": true
+      },
+      "id": "upgrade_verified_synthetic"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"0123456789abcdef\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "success",
+        "type": "validate"
+      },
+      "expected": {
+        "schema_ok": true
+      },
+      "id": "validate_key_only"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"code\":\"SL001\",\"created_by\":\"\",\"file_role\":\"sess/run.jsonl\",\"key\":\"0123456789abcdef\",\"migrated\":\"verified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "success",
+        "type": "validate"
+      },
+      "expected": {
+        "schema_ok": true
+      },
+      "id": "validate_empty_created_by"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"file_role\":\"x\",\"key\":\"0123456789abcdef\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "success",
+        "type": "validate"
+      },
+      "expected": {
+        "schema_ok": true
+      },
+      "id": "validate_file_role_one"
+    },
+    {
+      "construct": {
+        "document": "{\"schema_version\":\"sesslint.baseline/v2\",\"entries\":[{\"key\":\"nothex\"}]}",
+        "emitter": false,
+        "entire_test": true,
+        "function": "load_baseline",
+        "mode": "failure",
+        "type": "load_baseline"
+      },
+      "expected": {
+        "detail": "^[0-9a-f]{16}$",
+        "keyword": "pattern",
+        "message_contains": [
+          "16-hex",
+          "entries[0].key",
+          "nothex"
+        ],
+        "pointer": "/entries/0/key",
+        "schema_ok": false
+      },
+      "id": "load_malformed_v2"
+    },
+    {
+      "construct": {
+        "document": "{\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "entries",
+        "keyword": "required",
+        "pointer": "",
+        "schema_ok": false
+      },
+      "id": "missing_entries"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}]}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "pointer": "",
+        "schema_ok": false
+      },
+      "id": "missing_schema_version"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "key",
+        "keyword": "required",
+        "pointer": "/entries/0",
+        "schema_ok": false
+      },
+      "id": "missing_key"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"extra\":1,\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "pointer": "",
+        "schema_ok": false
+      },
+      "id": "root_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"extra\":\"x\",\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "pointer": "/entries/0",
+        "schema_ok": false
+      },
+      "id": "entry_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v1\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "sesslint.baseline/v2",
+        "keyword": "const",
+        "pointer": "/schema_version",
+        "schema_ok": false
+      },
+      "id": "wrong_const"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"5d4465190d6abf3f\",\"migrated\":\"nope\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "verified|unverified",
+        "keyword": "enum",
+        "pointer": "/entries/0/migrated",
+        "schema_ok": false
+      },
+      "id": "bad_enum"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"code\":\"SL00A\",\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "^SL[0-9]{3}$",
+        "keyword": "pattern",
+        "pointer": "/entries/0/code",
+        "schema_ok": false
+      },
+      "id": "bad_code_pattern"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"file_role\":\"\",\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "1",
+        "keyword": "minLength",
+        "pointer": "/entries/0/file_role",
+        "schema_ok": false
+      },
+      "id": "empty_file_role"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":{},\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "array",
+        "keyword": "type",
+        "pointer": "/entries",
+        "schema_ok": false
+      },
+      "id": "entries_not_array"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[[]],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "object",
+        "keyword": "type",
+        "pointer": "/entries/0",
+        "schema_ok": false
+      },
+      "id": "entry_not_object"
+    },
+    {
+      "construct": {
+        "document": "[]",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "object",
+        "keyword": "type",
+        "pointer": "",
+        "schema_ok": false
+      },
+      "id": "root_not_object"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"created_by\":true,\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "string",
+        "keyword": "type",
+        "pointer": "/entries/0/created_by",
+        "schema_ok": false
+      },
+      "id": "created_by_not_string"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":null,\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "string",
+        "keyword": "type",
+        "pointer": "/entries/0/key",
+        "schema_ok": false
+      },
+      "id": "key_not_string"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"5d4465190d6abf3f\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":1}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "string",
+        "keyword": "type",
+        "pointer": "/schema_version",
+        "schema_ok": false
+      },
+      "id": "schema_version_not_string"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[{\"key\":\"0123456789ABCDEF\",\"migrated\":\"unverified\"},{\"key\":\"aabbccddeeff0011\",\"migrated\":\"unverified\"}],\"schema_version\":\"sesslint.baseline/v2\"}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "^[0-9a-f]{16}$",
+        "keyword": "pattern",
+        "pointer": "/entries/0/key",
+        "schema_ok": false
+      },
+      "id": "uppercase_key"
+    },
+    {
+      "construct": {
+        "document": "{\"entries\":[],\"schema_version\":\"sesslint.baseline/v2\",}",
+        "emitter": false,
+        "entire_test": false,
+        "function": "validate_baseline_v2",
+        "mode": "failure",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "syntax",
+        "keyword": "parse",
+        "pointer": "",
+        "schema_ok": false
+      },
+      "id": "trailing_comma"
+    }
+  ]
+}

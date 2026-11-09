@@ -1,0 +1,520 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.doctor",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "doctor_py_sha256": "a9fa4e596f382298f1063e0c7c5aa3976c5486c183a3b4da70d435d0a34a70f3",
+  "doctor_rs_sha256": "d9e38e9491a87a00b8fa892d404236ad99fc9ee550b71dda8709642e479bf752",
+  "known_parity_gaps": [
+    "GAP-doctor-index-health: index_health stops at sesslint.indexes.discover_index_files.",
+    "GAP-doctor-doctor-report: doctor_report stops at sesslint.adapters.supported_adapters.",
+    "GAP-doctor-schema-path: get_doctor_schema_path stops at sesslint._resources.schema_path.",
+    "GAP-doctor-load-schema: load_doctor_schema stops at sesslint._resources.schema_path.",
+    "GAP-doctor-minimize-path: RootDiag and DoctorReport to_dict, to_json, and render_human call sesslint.report.minimize_path unless paths are already shown via the parity shim.",
+    "GAP-doctor-check-file: quick_verdicts stops at sesslint.api.check_file when at least one regular file is selected."
+  ],
+  "vectors": [
+    {
+      "id": "iso_utc_samples",
+      "construct": {
+        "type": "iso_utc",
+        "timestamps": [
+          0.0,
+          1.0,
+          1.9,
+          1.1,
+          -1.0,
+          -1.1,
+          -1.9,
+          0.9999994,
+          0.9999995,
+          1.9999994,
+          1.9999995,
+          1700000000.0,
+          1700000000.123456,
+          -43200.0,
+          951782400.0,
+          1e-10,
+          -0.0
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "timestamp": 0.0,
+            "iso": "1970-01-01T00:00:00Z"
+          },
+          {
+            "timestamp": 1.0,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": 1.9,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": 1.1,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": -1.0,
+            "iso": "1969-12-31T23:59:59Z"
+          },
+          {
+            "timestamp": -1.1,
+            "iso": "1969-12-31T23:59:58Z"
+          },
+          {
+            "timestamp": -1.9,
+            "iso": "1969-12-31T23:59:58Z"
+          },
+          {
+            "timestamp": 0.9999994,
+            "iso": "1970-01-01T00:00:00Z"
+          },
+          {
+            "timestamp": 0.9999995,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": 1.9999994,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": 1.9999995,
+            "iso": "1970-01-01T00:00:01Z"
+          },
+          {
+            "timestamp": 1700000000.0,
+            "iso": "2023-11-14T22:13:20Z"
+          },
+          {
+            "timestamp": 1700000000.123456,
+            "iso": "2023-11-14T22:13:20Z"
+          },
+          {
+            "timestamp": -43200.0,
+            "iso": "1969-12-31T12:00:00Z"
+          },
+          {
+            "timestamp": 951782400.0,
+            "iso": "2000-02-29T00:00:00Z"
+          },
+          {
+            "timestamp": 1e-10,
+            "iso": "1970-01-01T00:00:00Z"
+          },
+          {
+            "timestamp": -0.0,
+            "iso": "1970-01-01T00:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "iso_utc_errors_nan",
+      "construct": {
+        "type": "iso_utc_error",
+        "timestamp": "nan"
+      },
+      "expected": {
+        "error": "Invalid value NaN (not a number)"
+      }
+    },
+    {
+      "id": "iso_utc_errors_infinity",
+      "construct": {
+        "type": "iso_utc_error",
+        "timestamp": "inf"
+      },
+      "expected": {
+        "error": "timestamp out of range for platform time_t"
+      }
+    },
+    {
+      "id": "iso_utc_errors_neg_infinity",
+      "construct": {
+        "type": "iso_utc_error",
+        "timestamp": "-inf"
+      },
+      "expected": {
+        "error": "timestamp out of range for platform time_t"
+      }
+    },
+    {
+      "id": "iso_utc_errors_huge",
+      "construct": {
+        "type": "iso_utc_error",
+        "timestamp": 1e+20
+      },
+      "expected": {
+        "error": "timestamp out of range for platform time_t"
+      }
+    },
+    {
+      "id": "index_diag_to_dict_absent",
+      "construct": {
+        "type": "IndexDiag_to_dict",
+        "variant": "absent"
+      },
+      "expected": {
+        "to_dict": {
+          "index_entries": null,
+          "sessions_on_disk": 2,
+          "state": "absent"
+        }
+      }
+    },
+    {
+      "id": "index_diag_to_dict_zero",
+      "construct": {
+        "type": "IndexDiag_to_dict",
+        "variant": "zero"
+      },
+      "expected": {
+        "to_dict": {
+          "index_entries": 0,
+          "sessions_on_disk": 0,
+          "state": "not-a-closed-state"
+        }
+      }
+    },
+    {
+      "id": "doctor_constants",
+      "construct": {
+        "type": "DOCTOR_CONSTANTS"
+      },
+      "expected": {
+        "DOCTOR_SCHEMA_VERSION": "sesslint.doctor/v1",
+        "MAX_FILE_COUNT": 10000,
+        "MAX_QUICK_CHECKS": 5,
+        "MAX_TOP_CODES": 5
+      }
+    },
+    {
+      "id": "empty_report_human_json_keys",
+      "construct": {
+        "type": "DoctorReport",
+        "variant": "primary"
+      },
+      "expected": {
+        "human": "SessLint doctor\n  tool version: 0.5.0\n  adapters:\n    synthetic                v1, v2\n    wide-name-exceeds-twenty-four \n  reader limits:\n    max_line_bytes: 8\n    max_depth: 3\n    max_file_bytes: 100\n    max_records: none\n  config: none\n  roots:",
+        "json": "{\n  \"adapters\": [\n    {\n      \"default_profile\": \"neutral\",\n      \"description\": \"synthetic adapter row\",\n      \"name\": \"synthetic\",\n      \"versions_supported\": [\n        \"v1\",\n        \"v2\"\n      ]\n    },\n    {\n      \"name\": \"wide-name-exceeds-twenty-four\",\n      \"versions_supported\": []\n    }\n  ],\n  \"config_path\": null,\n  \"reader_limits\": {\n    \"max_depth\": 3,\n    \"max_file_bytes\": 100,\n    \"max_line_bytes\": 8,\n    \"max_records\": null\n  },\n  \"roots\": [],\n  \"schema_version\": \"sesslint.doctor/v1\",\n  \"tool_version\": \"0.5.0\"\n}",
+        "to_dict_keys": [
+          "schema_version",
+          "tool_version",
+          "adapters",
+          "reader_limits",
+          "config_path",
+          "roots"
+        ]
+      }
+    },
+    {
+      "id": "render_versions_type_plain",
+      "construct": {
+        "type": "DoctorReport",
+        "variant": "not_list"
+      },
+      "expected": {
+        "human": "SessLint doctor\n  tool version: 0.5.0\n  adapters:\n    n                        \n  reader limits:\n    z: 1\n    a: none\n  config: none\n  roots:",
+        "json": "{\n  \"adapters\": [\n    {\n      \"name\": \"n\",\n      \"versions_supported\": \"plain\"\n    }\n  ],\n  \"config_path\": null,\n  \"reader_limits\": {\n    \"a\": null,\n    \"z\": 1\n  },\n  \"roots\": [],\n  \"schema_version\": \"sesslint.doctor/v1\",\n  \"tool_version\": \"0.5.0\"\n}"
+      }
+    },
+    {
+      "id": "render_versions_mixed_scalars",
+      "construct": {
+        "type": "DoctorReport",
+        "variant": "mixed"
+      },
+      "expected": {
+        "human": "SessLint doctor\n  tool version: t\n  adapters:\n    n                        a, 2, None, True, False\n  reader limits:\n    m: 0\n  config: none\n  roots:",
+        "json": "{\n  \"adapters\": [\n    {\n      \"name\": \"n\",\n      \"versions_supported\": [\n        \"a\",\n        2,\n        null,\n        true,\n        false\n      ]\n    }\n  ],\n  \"config_path\": null,\n  \"reader_limits\": {\n    \"m\": 0\n  },\n  \"roots\": [],\n  \"schema_version\": \"sesslint.doctor/v1\",\n  \"tool_version\": \"t\"\n}"
+      }
+    },
+    {
+      "id": "render_unicode_adapter_row",
+      "construct": {
+        "type": "DoctorReport",
+        "variant": "unicode"
+      },
+      "expected": {
+        "human": "SessLint doctor\n  tool version: t\n  adapters:\n    café                     ☃\n  reader limits:\n  config: none\n  roots:",
+        "json": "{\n  \"adapters\": [\n    {\n      \"name\": \"caf\\u00e9\",\n      \"versions_supported\": [\n        \"\\u2603\"\n      ]\n    }\n  ],\n  \"config_path\": null,\n  \"reader_limits\": {},\n  \"roots\": [],\n  \"schema_version\": \"sesslint.doctor/v1\",\n  \"tool_version\": \"t\"\n}"
+      }
+    },
+    {
+      "id": "render_key_error_versions",
+      "construct": {
+        "type": "DoctorReport_render_key_error",
+        "variant": "versions"
+      },
+      "expected": {
+        "error": "'versions_supported'"
+      }
+    },
+    {
+      "id": "render_key_error_name",
+      "construct": {
+        "type": "DoctorReport_render_key_error",
+        "variant": "name"
+      },
+      "expected": {
+        "error": "'name'"
+      }
+    },
+    {
+      "id": "count_files_walk_sorted",
+      "construct": {
+        "type": "count_files",
+        "development_path": "fixtures/count_walk"
+      },
+      "expected": {
+        "count": 7,
+        "capped": false,
+        "candidates": [
+          "b.json",
+          "c.jsonl",
+          "z/inner/e.json",
+          "m/d.json"
+        ]
+      }
+    },
+    {
+      "id": "count_files_missing_dir",
+      "construct": {
+        "type": "count_files",
+        "development_path": "fixtures/fixtures/count_missing/no-such"
+      },
+      "expected": {
+        "count": 0,
+        "capped": false,
+        "candidates": []
+      }
+    },
+    {
+      "id": "count_files_file_root",
+      "construct": {
+        "type": "count_files",
+        "development_path": "fixtures/count_file_root.txt"
+      },
+      "expected": {
+        "count": 0,
+        "capped": false,
+        "candidates": []
+      }
+    },
+    {
+      "id": "count_files_cap",
+      "construct": {
+        "type": "count_files_cap",
+        "extra_files": 10001
+      },
+      "expected": {
+        "count": 10000,
+        "capped": true,
+        "candidates": []
+      }
+    },
+    {
+      "id": "quick_verdicts_empty",
+      "construct": {
+        "type": "quick_verdicts",
+        "paths": []
+      },
+      "expected": {
+        "checked": 0,
+        "verdicts": [],
+        "top_codes": []
+      }
+    },
+    {
+      "id": "quick_verdicts_ignores_non_files",
+      "construct": {
+        "type": "quick_verdicts",
+        "paths": [
+          "fixtures/quick/sub",
+          "fixtures/quick/nope.json"
+        ]
+      },
+      "expected": {
+        "checked": 0,
+        "verdicts": [],
+        "top_codes": []
+      }
+    },
+    {
+      "id": "verdict_rules_order",
+      "construct": {
+        "type": "verdicts_from_outcomes",
+        "outcomes": [
+          {
+            "kind": "report",
+            "limitation": "Unsupported: synthetic",
+            "by_severity": [
+              [
+                "fatal",
+                4
+              ],
+              [
+                "error",
+                1
+              ]
+            ],
+            "finding_codes": [
+              "SYN-Z"
+            ]
+          },
+          {
+            "kind": "unreadable"
+          },
+          {
+            "kind": "report",
+            "limitation": "Skipped: synthetic",
+            "by_severity": [
+              [
+                "warning",
+                9
+              ]
+            ],
+            "finding_codes": []
+          },
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [
+              [
+                "error",
+                1
+              ],
+              [
+                "warning",
+                3
+              ]
+            ],
+            "finding_codes": [
+              "SYN-B",
+              "SYN-A"
+            ]
+          },
+          {
+            "kind": "report",
+            "limitation": "warning-not-a-prefix",
+            "by_severity": [
+              [
+                "warning",
+                1
+              ],
+              [
+                "fatal",
+                0
+              ]
+            ],
+            "finding_codes": [
+              "SYN-A"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "checked": 5,
+        "verdicts": [
+          [
+            "unsupported",
+            1
+          ],
+          [
+            "unreadable",
+            1
+          ],
+          [
+            "skipped",
+            1
+          ],
+          [
+            "invalid",
+            1
+          ],
+          [
+            "warnings",
+            1
+          ]
+        ],
+        "top_codes": [
+          [
+            "SYN-A",
+            2
+          ],
+          [
+            "SYN-B",
+            1
+          ],
+          [
+            "SYN-Z",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "verdict_top_codes_cap",
+      "construct": {
+        "type": "verdicts_from_outcomes",
+        "outcomes": [
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [],
+            "finding_codes": [
+              "SYN-B"
+            ]
+          },
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [],
+            "finding_codes": [
+              "SYN-B"
+            ]
+          },
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [],
+            "finding_codes": [
+              "SYN-B"
+            ]
+          },
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [],
+            "finding_codes": [
+              "SYN-A"
+            ]
+          },
+          {
+            "kind": "report",
+            "limitation": "",
+            "by_severity": [],
+            "finding_codes": [
+              "SYN-A"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "checked": 5,
+        "top_codes": [
+          [
+            "SYN-B",
+            3
+          ],
+          [
+            "SYN-A",
+            2
+          ]
+        ]
+      }
+    }
+  ]
+}

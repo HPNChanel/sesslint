@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.triage.v1 schema vectors. Accept and reject rows are constraints from the pinned schema. Session text is not stored.",
+  "generator": "rust/parity/schemas/sesslint.triage.v1/generate",
+  "known_parity_gaps": [
+    "tests/test_triage.py drives triage, main, latest_session, or state_db.",
+    "A parametrized sweep is not one success or failure mode.",
+    "The helper validate also checks next_actions and applied."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

@@ -1,0 +1,599 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "errors_rs_sha256": "79a30b309327cda120e14365d85339bbb6df21e851bb297f13037681a152ce16",
+  "known_parity_gaps": [
+    "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; parity vectors use repair::errors types only.",
+    "Python isinstance(exc, SesslintError) on the repair hierarchy; Rust uses an explicit is_sesslint_error probe tied to model::errors::SesslintError — parity is on the boolean, not on converting into SesslintError::Generic.",
+    "VendorProjectionRefused: Python always sets instance code VENDOR_PROJECTION_REFUSED via __init__; there is no code= override vector — parity not required on a non-existent path."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "names": [
+          "Abstained",
+          "ManifestCollision",
+          "OutputInvalid",
+          "PlanSourceMismatch",
+          "PlanTampered",
+          "PolicyMismatch",
+          "RepairError",
+          "RepairRefused",
+          "VendorProjectionRefused",
+          "VendorRepairRefused"
+        ]
+      }
+    },
+    {
+      "id": "repair_error_default",
+      "construct": {
+        "type": "RepairError",
+        "message": "synthetic-repair-error"
+      },
+      "expected": {
+        "display": "synthetic-repair-error",
+        "code": "REPAIR_ERROR",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "plan_tampered_default",
+      "construct": {
+        "type": "PlanTampered",
+        "message": "synthetic-plan-tampered"
+      },
+      "expected": {
+        "display": "synthetic-plan-tampered",
+        "code": "PLAN_TAMPERED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": true,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "abstained_default",
+      "construct": {
+        "type": "Abstained",
+        "message": "synthetic-abstained"
+      },
+      "expected": {
+        "display": "synthetic-abstained",
+        "code": "ABSTAINED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": true,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "policy_mismatch_default",
+      "construct": {
+        "type": "PolicyMismatch",
+        "message": "synthetic-policy-mismatch"
+      },
+      "expected": {
+        "display": "synthetic-policy-mismatch",
+        "code": "POLICY_MISMATCH",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": true,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "output_invalid_default",
+      "construct": {
+        "type": "OutputInvalid",
+        "message": "synthetic-output-invalid"
+      },
+      "expected": {
+        "display": "synthetic-output-invalid",
+        "code": "OUTPUT_INVALID",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": true,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "repair_refused_default",
+      "construct": {
+        "type": "RepairRefused",
+        "message": "synthetic-repair-refused"
+      },
+      "expected": {
+        "display": "synthetic-repair-refused",
+        "code": "REPAIR_REFUSED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "vendor_repair_refused_default",
+      "construct": {
+        "type": "VendorRepairRefused",
+        "message": "synthetic-vendor-repair-refused"
+      },
+      "expected": {
+        "display": "synthetic-vendor-repair-refused",
+        "code": "VENDOR_FORMAT_REFUSED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": true,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "manifest_collision_default",
+      "construct": {
+        "type": "ManifestCollision",
+        "message": "synthetic-manifest-collision"
+      },
+      "expected": {
+        "display": "synthetic-manifest-collision",
+        "code": "MANIFEST_COLLISION",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": true,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "vendor_projection_refused_default",
+      "construct": {
+        "type": "VendorProjectionRefused",
+        "message": "synthetic-vendor-projection-refused"
+      },
+      "expected": {
+        "display": "synthetic-vendor-projection-refused",
+        "code": "VENDOR_PROJECTION_REFUSED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": true,
+        "reason": ""
+      }
+    },
+    {
+      "id": "plan_source_mismatch_default",
+      "construct": {
+        "type": "PlanSourceMismatch",
+        "message": "synthetic-plan-source-mismatch"
+      },
+      "expected": {
+        "display": "synthetic-plan-source-mismatch",
+        "code": "PLAN_SOURCE_MISMATCH",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": true,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "abstained_sl203_message",
+      "construct": {
+        "type": "Abstained",
+        "message": "synthetic abstain SL203"
+      },
+      "expected": {
+        "display": "synthetic abstain SL203",
+        "code": "ABSTAINED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": true,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "repair_error_empty_message",
+      "construct": {
+        "type": "RepairError",
+        "message": ""
+      },
+      "expected": {
+        "display": "",
+        "code": "REPAIR_ERROR",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "abstained_empty_message",
+      "construct": {
+        "type": "Abstained",
+        "message": ""
+      },
+      "expected": {
+        "display": "",
+        "code": "ABSTAINED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": true,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "vendor_projection_refused_reason_r1",
+      "construct": {
+        "type": "VendorProjectionRefused",
+        "message": "synthetic-vendor-projection-refused",
+        "reason": "R1"
+      },
+      "expected": {
+        "display": "synthetic-vendor-projection-refused",
+        "code": "VENDOR_PROJECTION_REFUSED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": true,
+        "reason": "R1"
+      }
+    },
+    {
+      "id": "vendor_projection_refused_explicit_empty_reason",
+      "construct": {
+        "type": "VendorProjectionRefused",
+        "message": "synthetic-vendor-projection-refused",
+        "reason": ""
+      },
+      "expected": {
+        "display": "synthetic-vendor-projection-refused",
+        "code": "VENDOR_PROJECTION_REFUSED",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": true,
+        "reason": ""
+      }
+    },
+    {
+      "id": "repair_error_custom_code",
+      "construct": {
+        "type": "RepairError",
+        "message": "synthetic-repair-error",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-repair-error",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "plan_tampered_custom_code",
+      "construct": {
+        "type": "PlanTampered",
+        "message": "synthetic-plan-tampered",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-plan-tampered",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": true,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "abstained_custom_code",
+      "construct": {
+        "type": "Abstained",
+        "message": "synthetic-abstained",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-abstained",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": true,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "policy_mismatch_custom_code",
+      "construct": {
+        "type": "PolicyMismatch",
+        "message": "synthetic-policy-mismatch",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-policy-mismatch",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": true,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "output_invalid_custom_code",
+      "construct": {
+        "type": "OutputInvalid",
+        "message": "synthetic-output-invalid",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-output-invalid",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": true,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "repair_refused_custom_code",
+      "construct": {
+        "type": "RepairRefused",
+        "message": "synthetic-repair-refused",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-repair-refused",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "vendor_repair_refused_custom_code",
+      "construct": {
+        "type": "VendorRepairRefused",
+        "message": "synthetic-vendor-repair-refused",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-vendor-repair-refused",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": true,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "manifest_collision_custom_code",
+      "construct": {
+        "type": "ManifestCollision",
+        "message": "synthetic-manifest-collision",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-manifest-collision",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": true,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": false,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": true,
+        "is_vendor_projection_refused": false
+      }
+    },
+    {
+      "id": "plan_source_mismatch_custom_code",
+      "construct": {
+        "type": "PlanSourceMismatch",
+        "message": "synthetic-plan-source-mismatch",
+        "code": "CUSTOM"
+      },
+      "expected": {
+        "display": "synthetic-plan-source-mismatch",
+        "code": "CUSTOM",
+        "is_value_error": true,
+        "is_sesslint_error": true,
+        "is_repair_error": true,
+        "is_repair_refused": false,
+        "is_plan_tampered": false,
+        "is_abstained": false,
+        "is_policy_mismatch": false,
+        "is_output_invalid": false,
+        "is_plan_source_mismatch": true,
+        "is_vendor_repair_refused": false,
+        "is_manifest_collision": false,
+        "is_vendor_projection_refused": false
+      }
+    }
+  ]
+}

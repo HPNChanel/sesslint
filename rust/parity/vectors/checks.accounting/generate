@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Generate sesslint.checks.accounting module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ACCOUNTING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ACCOUNTING_RS_SHA256 = (
+    "f5fefc1989cb29e65f9f1059c7c0f9cdfff5c58b4656f180b1bdabb35371e4de"
+)
+MODULE = "sesslint.checks.accounting"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "check_accounting uses make_finding with the fingerprint omitted; Rust returns "
+    "FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python ints are unbounded and Rust uses checked i64 addition for counter sums.",
+    "A bool is not an int (bool, float, and negative int counter values are ignored per key).",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_rev_parse(rev_path: str) -> str:
+    return (
+        subprocess.check_output(
+            ["git", "rev-parse", rev_path],
+            cwd=repo_root(),
+            text=True,
+        )
+        .strip()
+    )
+
+
+def verify_accounting_py_blob() -> None:
+    pin = git_rev_parse(f"{ACCOUNTING_PY_PIN}:src/sesslint/checks/accounting.py")
+    head = git_rev_parse("HEAD:src/sesslint/checks/accounting.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/checks/accounting.py differs from pin blob; "
+            f"pin={pin} HEAD={head}"
+        )
+
+
+def verify_accounting_rs_sha256() -> None:
+    accounting_rs = repo_root() / "rust" / "crates" / "checks" / "src" / "accounting.rs"
+    digest = hashlib.sha256(accounting_rs.read_bytes()).hexdigest()
+    if digest != ACCOUNTING_RS_SHA256:
+        raise SystemExit(
+            f"checks/src/accounting.rs sha256 mismatch: expected {ACCOUNTING_RS_SHA256}, got {digest}"
+        )
+
+
+def load_accounting_module() -> types.ModuleType:
+    verify_accounting_py_blob()
+    verify_accounting_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+    accounting_path = src / "sesslint" / "checks" / "accounting.py"
+    spec = importlib.util.spec_from_file_location(
+        "_sesslint_checks_accounting_parity", accounting_path
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("failed to create import spec for accounting.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in raw.items()]}
+
+
+def session_event(
+    eid: str,
+    seq: int,
+    kind: str,
+    extra_fields: dict[str, Any],
+) -> Any:
+    from sesslint.canonical import SessionEvent
+
+    return SessionEvent(
+        id=eid,
+        parent_id=None,
+        seq=seq,
+        ts="2024-02-29T00:00:00Z",
+        actor="system",
+        kind=kind,  # type: ignore[arg-type]
+        extra_fields=extra_fields,
+    )
+
+
+def event_to_construct_dict(ev: Any) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "seq": ev.seq,
+        "kind": ev.kind,
+        "extra_fields": dict(ev.extra_fields) if ev.extra_fields else {},
+    }
+
+
+def encode_construct_accounting_check(events: list[Any]) -> dict[str, Any]:
+    return {
+        "type": "accounting_check",
+        "events": [encode_event(event_to_construct_dict(ev)) for ev in events],
+    }
+
+
+def vectors_from_accounting(accounting: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    out.append(
+        {
+            "id": "module_dunder_all",
+            "construct": {"type": "module_dunder_all"},
+            "expected": {"names": list(accounting.__all__)},
+        }
+    )
+
+    ev_empty_a = session_event("evt-par-u0-synthetic", 0, "message", {})
+    ev_empty_b = session_event("evt-par-u1-synthetic", 1, "message", {})
+    ev_empty_events = [ev_empty_a, ev_empty_b]
+    out.append(
+        {
+            "id": "no_usage_slots_empty_findings",
+            "construct": encode_construct_accounting_check(ev_empty_events),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_empty_events)),
+            },
+        }
+    )
+
+    ev_c0 = session_event(
+        "evt-par-c0-synthetic",
+        0,
+        "message",
+        {"usage": {"contribution": {"n": 2}}},
+    )
+    ev_c1 = session_event(
+        "evt-par-c1-synthetic",
+        1,
+        "message",
+        {"usage": {"cumulative": {"n": 2}}},
+    )
+    ev_contrib_cum = [ev_c0, ev_c1]
+    out.append(
+        {
+            "id": "contribution_two_then_cumulative_two_empty",
+            "construct": encode_construct_accounting_check(ev_contrib_cum),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_contrib_cum)),
+            },
+        }
+    )
+
+    ev_m0 = session_event(
+        "evt-par-m0-synthetic",
+        0,
+        "message",
+        {"usage": {"contribution": {"n": 5}}},
+    )
+    ev_m1 = session_event(
+        "evt-par-m1-synthetic",
+        1,
+        "message",
+        {"usage": {"contribution": {"n": 2}, "cumulative": {"n": 7}}},
+    )
+    ev_marker_own = [ev_m0, ev_m1]
+    out.append(
+        {
+            "id": "marker_own_contribution_inside_expected_sum_empty",
+            "construct": encode_construct_accounting_check(ev_marker_own),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_marker_own)),
+            },
+        }
+    )
+
+    ev_w0 = session_event(
+        "evt-par-w0-synthetic",
+        0,
+        "message",
+        {
+            "usage": {
+                "contribution": {"n": 2, "w": 9},
+                "cumulative": {"n": 2},
+            }
+        },
+    )
+    ev_window_only = [ev_w0]
+    out.append(
+        {
+            "id": "key_only_in_window_no_mismatch",
+            "construct": encode_construct_accounting_check(ev_window_only),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_window_only)),
+            },
+        }
+    )
+
+    mixed_cumulative = {
+        "n": 2,
+        "a": True,
+        "b": 1.5,
+        "c": -1,
+        "e": "x",
+    }
+    ev_mix = session_event(
+        "evt-par-mix-synthetic",
+        0,
+        "message",
+        {"usage": {"contribution": {"n": 2}, "cumulative": mixed_cumulative}},
+    )
+    ev_mixed = [ev_mix]
+    out.append(
+        {
+            "id": "bool_float_negative_ignored_nonneg_match_empty",
+            "construct": encode_construct_accounting_check(ev_mixed),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_mixed)),
+            },
+        }
+    )
+
+    ev_bnd = session_event("evt-par-bnd-synthetic", 0, "compaction_boundary", {})
+    ev_post = session_event(
+        "evt-par-post-synthetic",
+        1,
+        "message",
+        {"usage": {"cumulative": {"n": 99}}},
+    )
+    ev_compaction_only = [ev_bnd, ev_post]
+    out.append(
+        {
+            "id": "compaction_next_cumulative_baseline_unchecked_empty",
+            "construct": encode_construct_accounting_check(ev_compaction_only),
+            "expected": {
+                "findings_count": len(accounting.check_accounting(ev_compaction_only)),
+            },
+        }
+    )
+
+    return out
+
+
+def main() -> int:
+    accounting = load_accounting_module()
+    out_dir = Path(__file__).resolve().parent
+
+    raw_vectors = vectors_from_accounting(accounting)
+    vectors: list[dict[str, Any]] = []
+    for spec in raw_vectors:
+        vectors.append(
+            {
+                "id": spec["id"],
+                "construct": spec["construct"],
+                "expected": spec["expected"],
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_accounting_rs_sha256": ACCOUNTING_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_accounting_rs_sha256": ACCOUNTING_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/checks.accounting/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.checks.accounting parity (stdlib-only vectors; no session "
+            "payload text)."
+        ),
+        "generator": "rust/parity/vectors/checks.accounting/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

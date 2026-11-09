@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.recipes_sl002 parity (apply discard, affected_region seam, recipe constant, register_all).",
+  "generator": "rust/parity/vectors/repair.recipes_sl002/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-recipes-sl002-affected-region: Python affected_region_torn_terminal_record_discard returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts Rust Display only."
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli._options validator and adapter declaration parity from pinned _options.py.",
+  "generator": "rust/parity/vectors/cli._options/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-options-positive-int-i64: _validate_positive_int accepts positive integers beyond i64::MAX in Python; Rust refuses with int value does not fit i64 (PositiveIntError::Magnitude), not pin int semantics."
+  ]
+}

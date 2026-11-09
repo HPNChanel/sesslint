@@ -1,0 +1,689 @@
+#!/usr/bin/env python3
+"""Generate sesslint.diff parity vectors from pinned git blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DIFF_PY_SHA256 = (
+    "2d597dad56536db2bba2372c6e809ef31bb5784c31442e06ba8f7c34851ddbcf"
+)
+DIFF_RS_SHA256 = (
+    "5d8f763884f4d11944bef2c9939ce4a88b453a06659f1b0bc92b2800dbb9fa73"
+)
+MODULE = "sesslint.diff"
+COVERAGE_TEST_FILE = "tests/cli/test_diff.py"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-diff-minimize-path: SessionDiff.to_dict, to_json, and render_human import "
+    "sesslint.report.minimize_path in Python; Rust returns "
+    "sesslint.report.minimize_path is not available.",
+    "GAP-diff-resolve-format: diff_sessions and _load_side call "
+    "sesslint.adapters.detect.resolve_format once both paths are files; Rust returns "
+    "sesslint.adapters.detect.resolve_format is not available and builds no SessionDiff.",
+    "GAP-diff-content-hash: diff_events with any event calls SessionEvent.content_identity_hash; "
+    "Rust returns sesslint.canonical.SessionEvent is not available and discards partial deltas.",
+    "GAP-diff-schema-path: get_diff_schema_path and load_diff_schema import "
+    "sesslint._resources.schema_path; Rust returns "
+    "sesslint._resources.schema_path is not available.",
+    "GAP-diff-cli-integration: CLI main tests and full diff_sessions success paths are not "
+    "byte-compared here.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/diff.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != DIFF_PY_SHA256:
+        raise SystemExit(
+            f"diff.py pin sha256 mismatch: expected {DIFF_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "diff.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != DIFF_RS_SHA256:
+        raise SystemExit(
+            f"diff.rs sha256 mismatch: expected {DIFF_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def safe_pin_message(message: str) -> str:
+    text = message.replace("\\", "/")
+    if " at " in text:
+        head, _ = text.split(" at ", 1)
+        return f"{head} at <synthetic>"
+    return text
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (b"sesslint-wt-", b"FOR_WORK"):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.repair",
+        "sesslint.scan",
+        "sesslint.profiles",
+        "sesslint.policy",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def install_top_level_stubs() -> None:
+    detect = types.ModuleType("sesslint.adapters.detect")
+
+    def resolve_format(
+        explicit: str | None, path: Path
+    ) -> tuple[str | None, Any, list[Any]]:
+        return "synthetic-pin", None, []
+
+    detect.resolve_format = resolve_format
+    sys.modules["sesslint.adapters.detect"] = detect
+    sys.modules["sesslint.adapters"].detect = detect
+
+    version = types.ModuleType("sesslint._version")
+    version.CLI_VERSION = "0.0.0-synthetic"
+    sys.modules["sesslint._version"] = version
+    sys.modules["sesslint"]._version = version
+
+
+def load_pinned_diff() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    install_top_level_stubs()
+    deps = [m for m in closure("sesslint.diff") if m != "sesslint.diff"]
+    pending = list(deps)
+    for _ in range(64):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod)
+                progress = True
+            except Exception:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:12]}")
+    load_module("sesslint.diff")
+    return sys.modules["sesslint.diff"]
+
+
+def delta_dict(delta: Any) -> dict[str, Any]:
+    out = delta.to_dict()
+    return dict(sorted(out.items()))
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    (fixtures / "side-a.jsonl").write_text(
+        '{"kind":"synthetic"}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    (fixtures / "side-b.jsonl").write_text("", encoding="utf-8", newline="\n")
+    (fixtures / "synthetic-dir").mkdir(exist_ok=True)
+    (fixtures / "synthetic-dir" / ".keep").write_text("", encoding="utf-8", newline="\n")
+
+
+def diff_sessions_pin(
+    diff: Any,
+    out_dir: Path,
+    construct: dict[str, Any],
+) -> dict[str, Any]:
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        path_a = Path(str(construct["path_a"]))
+        path_b = Path(str(construct["path_b"]))
+        kwargs: dict[str, Any] = {}
+        if "format_a" in construct:
+            kwargs["format_a"] = construct["format_a"]
+        if "format_b" in construct:
+            kwargs["format_b"] = construct["format_b"]
+        try:
+            result = diff.diff_sessions(path_a, path_b, **kwargs)
+        except FileNotFoundError as err:
+            return {
+                "raises": "FileNotFoundError",
+                "message": safe_pin_message(str(err)),
+            }
+        except diff.DiffInputError as err:
+            return {
+                "raises": "DiffInputError",
+                "message": safe_pin_message(str(err)),
+            }
+        return {
+            "a_event_count": result.a_event_count,
+            "b_event_count": result.b_event_count,
+            "identical": result.identical,
+            "delta_count": len(result.deltas),
+        }
+    finally:
+        os.chdir(prev)
+
+
+def build_expected(diff: Any, out_dir: Path, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_constants":
+        return {
+            "DIFF_SCHEMA_VERSION": diff.DIFF_SCHEMA_VERSION,
+            "MAX_ROWS": diff.MAX_ROWS,
+            "DELTA_CATEGORIES": list(diff.DELTA_CATEGORIES),
+            "python_all": list(diff.__all__),
+        }
+    if kind == "delta_to_dict":
+        delta = diff.Delta(
+            category=construct["category"],
+            event_id=construct.get("event_id"),
+            a_index=construct.get("a_index"),
+            b_index=construct.get("b_index"),
+            detail=dict(construct.get("detail") or {}),
+        )
+        return {"dict": delta_dict(delta)}
+    if kind == "delta_label":
+        delta = diff.Delta(
+            category="removed",
+            event_id=construct.get("event_id"),
+            a_index=construct.get("a_index"),
+            b_index=construct.get("b_index"),
+            detail=dict(construct.get("detail") or {}),
+        )
+        return {"label": diff._delta_label(delta)}
+    if kind == "session_identical_counts":
+        deltas = []
+        for row in construct.get("deltas", []):
+            deltas.append(
+                diff.Delta(
+                    category=row["category"],
+                    event_id=row.get("event_id"),
+                    a_index=row.get("a_index"),
+                    b_index=row.get("b_index"),
+                    detail=dict(row.get("detail") or {}),
+                )
+            )
+        session = diff.SessionDiff(
+            a_path="a/synthetic.jsonl",
+            b_path="b/synthetic.jsonl",
+            a_format="synthetic",
+            b_format="synthetic",
+            a_event_count=int(construct.get("a_event_count", 0)),
+            b_event_count=int(construct.get("b_event_count", 0)),
+            tool_version="0.0.0-synthetic",
+            deltas=tuple(deltas),
+        )
+        counts = {key: int(value) for key, value in session.counts().items()}
+        return {
+            "identical": session.identical,
+            "counts": counts,
+        }
+    if kind == "session_output_gap":
+        report = types.ModuleType("sesslint.report")
+        report.minimize_path = None  # type: ignore[attr-defined]
+        if "sesslint.report" in sys.modules:
+            del sys.modules["sesslint.report"]
+        sys.modules["sesslint.report"] = report
+        session = diff.SessionDiff(
+            a_path="a/synthetic.jsonl",
+            b_path="b/synthetic.jsonl",
+            a_format="synthetic",
+            b_format="synthetic",
+            a_event_count=0,
+            b_event_count=0,
+            tool_version="0.0.0-synthetic",
+            deltas=(),
+        )
+        pin: dict[str, Any] = {}
+        for method in ("to_dict", "to_json", "render_human"):
+            try:
+                getattr(session, method)()
+            except (ModuleNotFoundError, TypeError, AttributeError) as err:
+                pin[method] = {"raises": type(err).__name__, "message": str(err)}
+        return {
+            "pin": pin,
+            "rust_assertion": {"mode": "minimize_path_unavailable"},
+        }
+    if kind == "diff_events_empty":
+        deltas = diff.diff_events([], [])
+        return {"delta_count": len(deltas), "categories": []}
+    if kind == "diff_events_hash_gap":
+        from sesslint.canonical import SessionEvent  # noqa: WPS433
+        ev = SessionEvent(
+            id="e1",
+            parent_id=None,
+            seq=1,
+            ts="2025-01-01T00:00:01Z",
+            actor="user",
+            kind="message",
+        )
+        pin_deltas = diff.diff_events([ev], [ev])
+        return {
+            "pin": {
+                "delta_count": len(pin_deltas),
+                "categories": sorted({d.category for d in pin_deltas}),
+            },
+            "rust_assertion": {"mode": "content_hash_unavailable"},
+        }
+    if kind == "diff_sessions_path":
+        pin = diff_sessions_pin(diff, out_dir, construct)
+        mode = construct["rust_mode"]
+        return {"pin": pin, "rust_assertion": {"mode": mode}}
+    if kind == "_load_side_gap":
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            path = Path(str(construct["path"]))
+            fmt = construct.get("format")
+            try:
+                diff._load_side(path, fmt)
+            except diff.DiffInputError as err:
+                pin = {
+                    "raises": "DiffInputError",
+                    "message": safe_pin_message(str(err)),
+                }
+            except Exception as err:  # noqa: BLE001
+                pin = {
+                    "raises": type(err).__name__,
+                    "message": safe_pin_message(str(err)),
+                }
+            else:
+                pin = {"raises": None}
+        finally:
+            os.chdir(prev)
+        return {
+            "pin": pin,
+            "rust_assertion": {"mode": "resolve_format_unavailable"},
+        }
+    if kind == "get_diff_schema_path":
+        try:
+            path = diff.get_diff_schema_path()
+        except ModuleNotFoundError as err:
+            pin = {"raises": "ModuleNotFoundError", "message": str(err)}
+        except Exception as err:  # noqa: BLE001
+            pin = {"raises": type(err).__name__, "message": str(err)}
+        else:
+            pin = {"raises": None, "path_suffix": path.name}
+        return {
+            "pin": pin,
+            "rust_assertion": {"mode": "schema_path_unavailable"},
+        }
+    if kind == "load_diff_schema":
+        try:
+            diff.load_diff_schema()
+        except ModuleNotFoundError as err:
+            pin = {"raises": "ModuleNotFoundError", "message": str(err)}
+        except FileNotFoundError as err:
+            pin = {
+                "raises": "FileNotFoundError",
+                "message": safe_pin_message(str(err)),
+            }
+        except Exception as err:  # noqa: BLE001
+            pin = {"raises": type(err).__name__, "message": str(err)}
+        else:
+            pin = {"raises": None}
+        return {
+            "pin": pin,
+            "rust_assertion": {"mode": "schema_path_unavailable"},
+        }
+    raise SystemExit(f"unknown construct {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+        },
+        {
+            "id": "delta_to_dict_minimal",
+            "construct": {
+                "type": "delta_to_dict",
+                "category": "seq-reordered",
+            },
+        },
+        {
+            "id": "delta_to_dict_populated",
+            "construct": {
+                "type": "delta_to_dict",
+                "category": "kind-changed",
+                "event_id": "ev-synth-01",
+                "a_index": 0,
+                "b_index": 2,
+                "detail": {"kind_a": "message", "kind_b": "checkpoint"},
+            },
+        },
+        {
+            "id": "delta_label_pairs",
+            "construct": {
+                "type": "delta_label",
+                "event_id": "ev-synth-02",
+                "a_index": 1,
+                "b_index": 3,
+                "detail": {"z_key": "2", "a_key": "1"},
+            },
+        },
+        {
+            "id": "session_identical_empty",
+            "construct": {
+                "type": "session_identical_counts",
+                "deltas": [],
+            },
+        },
+        {
+            "id": "session_counts_mixed",
+            "construct": {
+                "type": "session_identical_counts",
+                "a_event_count": 3,
+                "b_event_count": 4,
+                "deltas": [
+                    {
+                        "category": "added",
+                        "event_id": "n1",
+                        "b_index": 3,
+                        "detail": {"kind": "message"},
+                    },
+                    {
+                        "category": "kind-changed",
+                        "event_id": "e1",
+                        "a_index": 0,
+                        "b_index": 1,
+                    },
+                    {
+                        "category": "content-changed",
+                        "event_id": "e1",
+                        "a_index": 0,
+                        "b_index": 1,
+                    },
+                ],
+            },
+        },
+        {
+            "id": "session_output_minimize_gap",
+            "construct": {"type": "session_output_gap"},
+        },
+        {
+            "id": "diff_events_empty_pin",
+            "construct": {"type": "diff_events_empty"},
+        },
+        {
+            "id": "diff_events_hash_seam",
+            "construct": {"type": "diff_events_hash_gap"},
+        },
+        {
+            "id": "diff_sessions_missing_first_path",
+            "construct": {
+                "type": "diff_sessions_path",
+                "path_a": "fixtures/absent-a.jsonl",
+                "path_b": "fixtures/side-b.jsonl",
+                "rust_mode": "path_not_found",
+            },
+        },
+        {
+            "id": "diff_sessions_missing_second_path",
+            "construct": {
+                "type": "diff_sessions_path",
+                "path_a": "fixtures/side-a.jsonl",
+                "path_b": "fixtures/absent-b.jsonl",
+                "rust_mode": "path_not_found",
+            },
+        },
+        {
+            "id": "diff_sessions_directory_first",
+            "construct": {
+                "type": "diff_sessions_path",
+                "path_a": "fixtures/synthetic-dir",
+                "path_b": "fixtures/absent-b.jsonl",
+                "rust_mode": "directory_input",
+            },
+        },
+        {
+            "id": "diff_sessions_directory_second",
+            "construct": {
+                "type": "diff_sessions_path",
+                "path_a": "fixtures/side-a.jsonl",
+                "path_b": "fixtures/synthetic-dir",
+                "rust_mode": "directory_input",
+            },
+        },
+        {
+            "id": "diff_sessions_resolve_format_gap",
+            "construct": {
+                "type": "diff_sessions_path",
+                "path_a": "fixtures/side-a.jsonl",
+                "path_b": "fixtures/side-b.jsonl",
+                "format_a": "claude-code-jsonl",
+                "format_b": "codex",
+                "rust_mode": "resolve_format_unavailable",
+            },
+        },
+        {
+            "id": "load_side_resolve_format_gap",
+            "construct": {
+                "type": "_load_side_gap",
+                "path": "fixtures/side-a.jsonl",
+                "format": "synthetic",
+            },
+        },
+        {
+            "id": "get_diff_schema_path_gap",
+            "construct": {"type": "get_diff_schema_path"},
+        },
+        {
+            "id": "load_diff_schema_gap",
+            "construct": {"type": "load_diff_schema"},
+        },
+    ]
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    names: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            names.append(line.split("(")[0].replace("def ", ""))
+    return names
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for name in list_tests_in_file(COVERAGE_TEST_FILE):
+        qual = f"{COVERAGE_TEST_FILE}::{name}"
+        needed = COVERED_BY_VECTORS.get(qual)
+        row: dict[str, object] = {"test": qual}
+        if needed is not None and all(item in vector_ids for item in needed):
+            status = "covered"
+            covered += 1
+            row["vector_ids"] = list(needed)
+        else:
+            status = "not_applicable"
+            not_applicable += 1
+        row["status"] = status
+        rows.append(row)
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def main() -> int:
+    diff = load_pinned_diff()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(diff, out_dir, construct)
+        vectors.append({"id": row["id"], "construct": construct, "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "diff_py_sha256": DIFF_PY_SHA256,
+        "diff_rs_sha256": DIFF_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.diff parity: constants, delta rendering, path gates, "
+            "import seams, and empty diff_events."
+        ),
+        "generator": "rust/parity/vectors/diff/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vectors.json sha256={digest}")
+    print(f"vector_count={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

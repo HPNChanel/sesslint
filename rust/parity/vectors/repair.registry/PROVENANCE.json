@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.registry parity (Recipe construction, register_recipe, lookup, recipes_for, list_recipes, clear_registry).",
+  "generator": "rust/parity/vectors/repair.registry/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-registry-live-map: Python __all__ exports REGISTRY as a live dict alias of the in-process table. Rust exposes ALL and lookup via get_recipe and list_recipes instead of handing out the map.",
+    "GAP-registry-non-string-name: Python Recipe.__post_init__ raises ValueError when name is not a str. Rust Recipe::try_new takes &str and documents NON_STRING_NAME_UNREPRESENTABLE \u2014 parity not required on that branch."
+  ]
+}

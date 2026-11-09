@@ -1,0 +1,630 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.state_db",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "state_db_py_sha256": "0edb4bad2e50b82471e21c6230dbf83e95bfddc1e4aa4694b84281be1756f7b9",
+  "state_db_rs_sha256": "8ee155f0907507ebb512a78efafbfeef62530a926b6ca0e90f14d1dd9d729e27",
+  "known_parity_gaps": [
+    "GAP-state-db-sqlite-read: read_codex_state after symlink, absent, and size checks calls sqlite3.connect and returns a populated CodexStateSnapshot. Rust stops with sqlite3.connect is not available and does not open a database. Vectors store pin snapshots under expected.pin and assert the sqlite seam.",
+    "GAP-state-db-short-hash: migration_skip_reason_hashes in read_codex_state and short_hash cells call sesslint.report.short_hash. Rust migration_skip_reason_hash stops with sesslint.report.short_hash is not available. Vectors assert that seam.",
+    "GAP-state-db-table-columns: _table_columns executes PRAGMA table_info on an open connection. Rust table_columns stops at the sqlite seam without opening a database.",
+    "GAP-state-db-scan-integration: tests/scan/test_state_db.py integration cases that call scan_path or expect full registry reconciliation are not pinned as vectors."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "CodexStateSnapshot",
+          "MAX_STATE_DB_BYTES",
+          "MAX_STATE_ROWS",
+          "STATE_DB_GLOB",
+          "is_state_db_name",
+          "read_codex_state",
+          "rollout_uuid_from_name"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "MAX_STATE_DB_BYTES": 268435456,
+        "MAX_STATE_ROWS": 1000000,
+        "MAX_STATE_QUERY_STEPS": 50000000,
+        "STATE_DB_GLOB": "state_*.sqlite",
+        "THREADS_COLS": [
+          "id",
+          "rollout_path",
+          "thread_source",
+          "archived"
+        ],
+        "SPAWN_COLS": [
+          "parent_thread_id",
+          "child_thread_id"
+        ],
+        "SKIP_COLS": [
+          "skip_reason"
+        ]
+      }
+    },
+    {
+      "id": "rollout_uuid_00_empty",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": ""
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "rollout_uuid_01_01a0c4d8xa9f7x7973x8155xdba14d25a377",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+      },
+      "expected": {
+        "value": "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+      }
+    },
+    {
+      "id": "rollout_uuid_02_01a0c4d8xa9f7x7973x8155xdba14d25a377",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01A0C4D8-A9F7-7973-8155-DBA14D25A377"
+      },
+      "expected": {
+        "value": "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+      }
+    },
+    {
+      "id": "rollout_uuid_03_rolloutx2026x09x20t00x00x00x01a0c4d8xa9f7x7973x8",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "rollout-2026-09-20T00-00-00-01a0c4d8-a9f7-7973-8155-dba14d25a377.jsonl"
+      },
+      "expected": {
+        "value": "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+      }
+    },
+    {
+      "id": "rollout_uuid_04_rolloutx2026x09x20t00x00x00x01a0c4d8xa9f7x7973x8",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "rollout-2026-09-20T00-00-00-01A0C4D8-A9F7-7973-8155-DBA14D25A377.jsonl"
+      },
+      "expected": {
+        "value": "01a0c4d8-a9f7-7973-8155-dba14d25a377"
+      }
+    },
+    {
+      "id": "rollout_uuid_05_prefixx01234567x89abxcdefx0123x456789abcdefxsuff",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "prefix-01234567-89ab-cdef-0123-456789abcdef-suffix"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_06_01234567x89abxcdefx0123x456789abcdef",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89AB-CDEF-0123-456789ABCDEF"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_07_01234567x89abxcdefx0123x456789abcdeg",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89ab-cdef-0123-456789abcdeg"
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "rollout_uuid_08_012345678x9abcxdef0x1234x567890abcdef",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "012345678-9abc-def0-1234-567890abcdef"
+      },
+      "expected": {
+        "value": "12345678-9abc-def0-1234-567890abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_09_01234567x89abxcdefx0123x456789abcdefextra",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89ab-cdef-0123-456789abcdefEXTRA"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_10_x01234567x89abxcdefx0123x456789abcdefx",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "{01234567-89ab-cdef-0123-456789abcdef}"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_11_01234567x89abxcdefx0123x456789abcdefx01234567x89",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89ab-cdef-0123-456789abcdef-01234567-89ab-cdef-0123-456789abcdee"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "rollout_uuid_12_notxaxuuid",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "not-a-uuid"
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "rollout_uuid_13_01234567x89abxcdefx0123x456789abcde",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89ab-cdef-0123-456789abcde"
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "rollout_uuid_14_g1234567x89abxcdefx0123x456789abcdef",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "g1234567-89ab-cdef-0123-456789abcdef"
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "id": "rollout_uuid_15_01234567x89abxcdefx0123x456789abcdefx",
+      "construct": {
+        "type": "rollout_uuid_from_name",
+        "name": "01234567-89ab-cdef-0123-456789abcdef\n"
+      },
+      "expected": {
+        "value": "01234567-89ab-cdef-0123-456789abcdef"
+      }
+    },
+    {
+      "id": "is_state_db_00_empty",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": ""
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_01_statex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.sqlite"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_state_db_02_statexxsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_.sqlite"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_state_db_03_statex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.SQLITE"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_04_statex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "State_1.sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_05_statex1xsqlitexbak",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.sqlite.bak"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_06_xstatex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "xstate_1.sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_07_statex1xsqlitex",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.sqlite "
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_08_statex",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_09_xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": ".sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_10_statex1xsqlitexsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.sqlite.sqlite"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_state_db_11_statexxxsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_*.sqlite"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_state_db_12_statex０xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_０.sqlite"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "is_state_db_13_statex1xsqlitex",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.sqlite\n"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_14_statexsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_15_statexxsqliteextra",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_.sqliteextra"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_16_statex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "STATE_1.sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "is_state_db_17_statex1xsqlite",
+      "construct": {
+        "type": "is_state_db_name",
+        "name": "state_1.Sqlite"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "membership_complete_true",
+      "construct": {
+        "type": "membership_complete",
+        "variant": "ok"
+      },
+      "expected": {
+        "value": true
+      }
+    },
+    {
+      "id": "membership_complete_empty_note",
+      "construct": {
+        "type": "membership_complete",
+        "variant": "empty_note"
+      },
+      "expected": {
+        "value": false
+      }
+    },
+    {
+      "id": "read_codex_state_absent",
+      "construct": {
+        "type": "read_codex_state",
+        "setup": "absent",
+        "immutable": false
+      },
+      "expected": {
+        "snapshot": {
+          "parse_ok": true,
+          "schema_note": "absent",
+          "thread_ids": [],
+          "rollout_uuids": [],
+          "thread_rows": 0,
+          "spawn_edge_orphans": 0,
+          "migration_skips": 0,
+          "migration_skip_reason_hashes": [],
+          "thread_rollout_pairs": [],
+          "membership_complete": false
+        }
+      }
+    },
+    {
+      "id": "read_codex_state_symlink",
+      "construct": {
+        "type": "read_codex_state",
+        "setup": "symlink",
+        "immutable": false
+      },
+      "expected": {
+        "snapshot": {
+          "parse_ok": false,
+          "schema_note": "symlink",
+          "thread_ids": [],
+          "rollout_uuids": [],
+          "thread_rows": 0,
+          "spawn_edge_orphans": 0,
+          "migration_skips": 0,
+          "migration_skip_reason_hashes": [],
+          "thread_rollout_pairs": [],
+          "membership_complete": false
+        }
+      }
+    },
+    {
+      "id": "read_codex_state_oversized",
+      "construct": {
+        "type": "read_codex_state",
+        "setup": "oversized",
+        "immutable": true
+      },
+      "expected": {
+        "snapshot": {
+          "parse_ok": false,
+          "schema_note": "oversized",
+          "thread_ids": [],
+          "rollout_uuids": [],
+          "thread_rows": 0,
+          "spawn_edge_orphans": 0,
+          "migration_skips": 0,
+          "migration_skip_reason_hashes": [],
+          "thread_rollout_pairs": [],
+          "membership_complete": false
+        }
+      }
+    },
+    {
+      "id": "read_codex_state_empty_file_gap",
+      "construct": {
+        "type": "read_codex_state",
+        "setup": "empty_file",
+        "immutable": false
+      },
+      "expected": {
+        "pin": {
+          "snapshot": {
+            "parse_ok": false,
+            "schema_note": "unrecognized-shape",
+            "thread_ids": [],
+            "rollout_uuids": [],
+            "thread_rows": 0,
+            "spawn_edge_orphans": 0,
+            "migration_skips": 0,
+            "migration_skip_reason_hashes": [],
+            "thread_rollout_pairs": [],
+            "membership_complete": false
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    },
+    {
+      "id": "read_codex_state_minimal_db_gap",
+      "construct": {
+        "type": "read_codex_state",
+        "setup": "minimal_db",
+        "immutable": true
+      },
+      "expected": {
+        "pin": {
+          "snapshot": {
+            "parse_ok": true,
+            "schema_note": null,
+            "thread_ids": [],
+            "rollout_uuids": [],
+            "thread_rows": 0,
+            "spawn_edge_orphans": 0,
+            "migration_skips": 0,
+            "migration_skip_reason_hashes": [],
+            "thread_rollout_pairs": [],
+            "membership_complete": true
+          }
+        },
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    },
+    {
+      "id": "migration_skip_reason_schema",
+      "construct": {
+        "type": "migration_skip_reason_hash",
+        "reason": "schema-too-new"
+      },
+      "expected": {
+        "pin": {
+          "hash": "6c05ebc8"
+        },
+        "rust_assertion": {
+          "mode": "gap_short_hash"
+        }
+      }
+    },
+    {
+      "id": "migration_skip_reason_empty",
+      "construct": {
+        "type": "migration_skip_reason_hash",
+        "reason": ""
+      },
+      "expected": {
+        "pin": {
+          "hash": "e3b0c442"
+        },
+        "rust_assertion": {
+          "mode": "gap_short_hash"
+        }
+      }
+    },
+    {
+      "id": "migration_skip_reason_none",
+      "construct": {
+        "type": "migration_skip_reason_hash",
+        "reason": null
+      },
+      "expected": {
+        "pin": {
+          "hash": "e3b0c442"
+        },
+        "rust_assertion": {
+          "mode": "gap_short_hash"
+        }
+      }
+    },
+    {
+      "id": "table_columns_threads",
+      "construct": {
+        "type": "table_columns",
+        "table": "threads"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    },
+    {
+      "id": "table_columns_threadxspawnxedges",
+      "construct": {
+        "type": "table_columns",
+        "table": "thread_spawn_edges"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    },
+    {
+      "id": "table_columns_other",
+      "construct": {
+        "type": "table_columns",
+        "table": "other"
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    },
+    {
+      "id": "table_columns_empty",
+      "construct": {
+        "type": "table_columns",
+        "table": ""
+      },
+      "expected": {
+        "rust_assertion": {
+          "mode": "gap_sqlite_connect"
+        }
+      }
+    }
+  ]
+}

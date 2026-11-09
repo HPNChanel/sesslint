@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.fingerprint parity (module __all__, compute_plan_fingerprint, canonical_json_bytes re-exports).",
+  "generator": "rust/parity/vectors/repair.fingerprint/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "canonical_json_bytes / plan inputs: JSON Number NaN and Infinity (Python float); Rust float codec rejects them \u2014 parity not required here.",
+    "canonical_json_bytes: Unicode string containing a lone surrogate (U+D800); Rust Value string is valid Unicode \u2014 parity not required here.",
+    "canonical_json_bytes: integers outside i64; Rust Value uses i64 \u2014 parity not required here.",
+    "compute_plan_fingerprint: non-mapping plan. Python may raise TypeError from Mapping; Rust returns codec CanonicalError \u2014 if exception text differs from codec error, parity on message is not required."
+  ]
+}

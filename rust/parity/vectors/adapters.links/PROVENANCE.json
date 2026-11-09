@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.links parity (extract_links only, structural IDs).",
+  "generator": "rust/parity/vectors/adapters.links/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "python_int_outside_i64: Python int is unbounded; values outside i64 are not representable in Rust ObjectValue::Int \u2014 no required vector.",
+    "lone_surrogate_target: a lone UTF-16 surrogate cannot be stored in Rust str \u2014 no required vector.",
+    "unicode_line_separator_strip: pinned Rust python_str_strip omits U+2028/U+2029 from strip; Python str.strip removes them \u2014 documented gap, not a required vector."
+  ]
+}

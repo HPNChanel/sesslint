@@ -1,0 +1,52 @@
+{
+  "rows": [
+    {
+      "test": "tests/cli/test_stats.py::test_stats_single_file_exact_counters",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_tool_call_hashing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_directory_walk",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_dir_without_recursive_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_missing_path_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_unreadable_counts_not_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_compaction_and_checkpoint",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_deterministic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_json_schema",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_cli_human_output",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_cli_exit_2_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/cli/test_stats.py::test_stats_no_payload_values",
+      "status": "not_applicable"
+    }
+  ]
+}

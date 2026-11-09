@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Fail-closed parity corpus builder (RX-P1.3b).
+
+Walks synthetic fixtures at the pinned Python commit. Writes a sorted
+manifest of relative path, sha256 of file bytes, and argv profile name.
+Does not copy fixture bodies. Stdlib only. No wall clock. No randomness.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SCHEMA = "sesslint.parity-corpus/v1"
+PROFILES = {
+    "check": ["check", "{path}"],
+}
+SKIP_NAMES = frozenset({"PROVENANCE.json", "INDEX.md", "EXPECTATIONS.json", "README.md"})
+SKIP_SUFFIXES = (".expected.json", ".sha256")
+PROVENANCE_LIMIT = 65_536
+
+HERE = Path(__file__).resolve().parent
+PIN_PATH = HERE.parent / "PIN"
+WORK = HERE.parent / "run-work"
+MANIFEST_PATH = HERE / "manifest.json"
+
+
+def refuse(reason: str) -> int:
+    sys.stderr.write(f"reason={reason}\n")
+    return 2
+
+
+def child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def run_git(
+    args: list[str], cwd: Path, timeout: int = 120
+) -> subprocess.CompletedProcess[bytes] | None:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=child_env(),
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def git_head(cwd: Path) -> str | None:
+    proc = run_git(["rev-parse", "HEAD"], cwd)
+    if proc is None or proc.returncode != 0:
+        return None
+    text = proc.stdout.decode("ascii", "replace").strip()
+    if len(text) != 40:
+        return None
+    return text
+
+
+def repo_root() -> Path | None:
+    proc = run_git(["rev-parse", "--show-toplevel"], HERE)
+    if proc is None or proc.returncode != 0:
+        return None
+    text = proc.stdout.decode("utf-8", "replace").strip()
+    if not text:
+        return None
+    return Path(text)
+
+
+def load_pin() -> str | None:
+    try:
+        data = PIN_PATH.read_bytes()
+    except OSError:
+        return None
+    if not data.endswith(b"\n") or b"\r" in data:
+        return None
+    text = data[:-1].decode("ascii", "replace")
+    if len(text) != 40:
+        return None
+    return text
+
+
+def parent_posix(path: str) -> str:
+    if "/" not in path:
+        return ""
+    return path.rsplit("/", 1)[0]
+
+
+def skip_file(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    if name in SKIP_NAMES:
+        return True
+    return any(name.endswith(suffix) for suffix in SKIP_SUFFIXES)
+
+
+def list_pin_files(repo: Path, pin: str) -> list[str] | None:
+    proc = run_git(
+        ["ls-tree", "-r", "--name-only", "-z", pin, "--", "fixtures"],
+        repo,
+    )
+    if proc is None or proc.returncode != 0:
+        return None
+    names = [item.decode("utf-8") for item in proc.stdout.split(b"\0") if item]
+    cleaned: list[str] = []
+    for name in names:
+        raw = name.replace("\\", "/")
+        if raw.startswith("/") or (len(raw) >= 2 and raw[1] == ":"):
+            return None
+        parts = [part for part in raw.split("/") if part not in ("", ".")]
+        if not parts or any(part == ".." for part in parts) or parts[0] != "fixtures":
+            return None
+        cleaned.append("/".join(parts))
+    return sorted(set(cleaned))
+
+
+def cat_blob(repo: Path, pin: str, path: str) -> bytes | None:
+    proc = run_git(["cat-file", "blob", f"{pin}:{path}"], repo)
+    if proc is None or proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def provenance_ok(blob: bytes) -> bool:
+    if len(blob) > PROVENANCE_LIMIT:
+        return False
+    try:
+        data = json.loads(blob.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and data.get("contains_real_data") is False
+
+
+def dump_manifest(doc: dict[str, object]) -> bytes:
+    text = json.dumps(doc, ensure_ascii=True, indent=2, sort_keys=True)
+    data = (text + "\n").encode("ascii")
+    if b"\r" in data:
+        raise ValueError("crlf")
+    return data
+
+
+def build_document(repo: Path, pin: str) -> tuple[dict[str, object], int] | str:
+    names = list_pin_files(repo, pin)
+    if names is None:
+        return "list_failed"
+    provenance_cache: dict[str, bool] = {}
+    skipped_dirs = 0
+    entries: list[dict[str, str]] = []
+    for path in names:
+        if skip_file(path):
+            continue
+        directory = parent_posix(path)
+        if not directory:
+            continue
+        if directory not in provenance_cache:
+            prov_path = f"{directory}/PROVENANCE.json"
+            blob = cat_blob(repo, pin, prov_path)
+            if blob is None or not provenance_ok(blob):
+                provenance_cache[directory] = False
+                skipped_dirs += 1
+            else:
+                provenance_cache[directory] = True
+        if not provenance_cache[directory]:
+            continue
+        body = cat_blob(repo, pin, path)
+        if body is None:
+            return "blob_missing"
+        entries.append(
+            {
+                "argv_profile": "check",
+                "path": path,
+                "sha256": hashlib.sha256(body).hexdigest(),
+            }
+        )
+    if not entries:
+        return "empty_corpus"
+    entries.sort(key=lambda item: item["path"])
+    document: dict[str, object] = {
+        "entries": entries,
+        "pin": pin,
+        "profiles": PROFILES,
+        "schema": SCHEMA,
+    }
+    return document, skipped_dirs
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="build", add_help=False)
+    parser.add_argument("--output", default=str(MANIFEST_PATH))
+    parser.add_argument("--check", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    if sys.version_info < (3, 11):
+        return refuse("python_too_old")
+    pin = load_pin()
+    if pin is None:
+        return refuse("pin_mismatch")
+    repo = repo_root()
+    if repo is None:
+        return refuse("repo_mismatch")
+    if WORK.exists():
+        head = git_head(WORK)
+        if head != pin:
+            return refuse("worktree_pin_mismatch")
+    probed = run_git(["cat-file", "-e", f"{pin}^{{commit}}"], repo)
+    if probed is None or probed.returncode != 0:
+        return refuse("pin_unknown")
+    built = build_document(repo, pin)
+    if isinstance(built, str):
+        return refuse(built)
+    document, skipped_dirs = built
+    try:
+        payload = dump_manifest(document)
+    except (TypeError, ValueError):
+        return refuse("manifest_not_canonical")
+    digest = hashlib.sha256(payload).hexdigest()
+    args = parse_args(argv)
+    if args.check:
+        try:
+            existing = Path(args.output).read_bytes()
+        except OSError:
+            return refuse("manifest_missing")
+        if existing != payload:
+            return refuse("manifest_mismatch")
+        sys.stdout.write(f"pin={pin}\n")
+        sys.stdout.write(f"entries={len(document['entries'])}\n")
+        sys.stdout.write(f"skipped_dirs={skipped_dirs}\n")
+        sys.stdout.write(f"manifest_sha256={digest}\n")
+        sys.stdout.write("check=ok\n")
+        sys.stdout.flush()
+        return 0
+    target = Path(args.output)
+    try:
+        target.write_bytes(payload)
+    except OSError:
+        return refuse("write_failed")
+    written = target.read_bytes()
+    if written != payload:
+        return refuse("write_mismatch")
+    sys.stdout.write(f"pin={pin}\n")
+    sys.stdout.write(f"entries={len(document['entries'])}\n")
+    sys.stdout.write(f"skipped_dirs={skipped_dirs}\n")
+    sys.stdout.write(f"manifest_sha256={digest}\n")
+    sys.stdout.write(f"output={target.as_posix()}\n")
+    sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

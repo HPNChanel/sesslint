@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.watch configure declarations and run() rust seam fixtures from pinned src/sesslint/cli/watch.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.watch/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-watch-discover-session-roots: Python run() may reach path checks, discover_session_roots, or sesslint.watch.watch after imports; Rust run() returns Display `sesslint.api.discover_session_roots is not available` immediately after `json` import (no path check, print, or exit 0)."
+  ]
+}

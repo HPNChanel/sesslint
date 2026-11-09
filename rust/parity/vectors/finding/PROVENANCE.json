@@ -1,0 +1,45 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.finding parity (exported names, content-free text, SourceRef, ordering, constructors, parsing).",
+  "generator": "rust/parity/vectors/finding/generate",
+  "known_parity_gaps": [
+    {
+      "id": "compute_finding_fingerprint_unavailable",
+      "detail": "When make_finding omits a fingerprint hash, Python uses sesslint.determinism.canonical_json_bytes; Rust returns exactly 'sesslint.determinism.canonical_json_bytes is not available' and does not build a digest. Parity does not assert a hex digest."
+    },
+    {
+      "id": "schema_path_unavailable",
+      "detail": "get_finding_schema_path and load_finding_schema require sesslint._resources.schema_path; Rust returns 'sesslint._resources.schema_path is not available' and does not read schemas/."
+    },
+    {
+      "id": "related_ids_set_order",
+      "detail": "Python set and frozenset order is not stable; which bad related_ids item is reported first is not a required vector. A successful related_ids result is still sorted."
+    },
+    {
+      "id": "evidence_non_string_cast",
+      "detail": "A non-string evidence variant: Python typing.cast returns the raw value; Rust returns FindingError. Not a required vector."
+    },
+    {
+      "id": "template_line_unicode_nd",
+      "detail": "Template line strings that use Unicode Nd digits are rejected by Rust. Not a required vector."
+    },
+    {
+      "id": "explicit_bool_ordinal",
+      "detail": "An explicit bool ordinal is not representable in Rust. Not a required vector."
+    },
+    {
+      "id": "lone_surrogates_and_i64",
+      "detail": "Lone surrogates and integers outside i64 are not representable. Not a required vector."
+    },
+    {
+      "id": "from_dict_exception_kind",
+      "detail": "Finding.from_dict raises KeyError, ValueError, or TypeError in Python and FindingError in Rust; exception type parity is not required."
+    },
+    {
+      "id": "fingerprint_context_narrowing",
+      "detail": "FingerprintContext has only adapter_id, adapter_version, profile_id, and profile_version; the rest of CheckContext is not required."
+    }
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

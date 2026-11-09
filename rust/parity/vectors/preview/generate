@@ -1,0 +1,911 @@
+#!/usr/bin/env python3
+"""Generate sesslint.preview parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PREVIEW_SHA256 = "13f05663816b930c1df1d6297740168545b9b702fd3e2abdf67f25df1a54f5a9"
+
+SYNTHETIC_SOURCE = "synthetic-preview.jsonl"
+SYNTHETIC_FP = "fp-synth-aaaa"
+SYNTHETIC_FP_LATE = "fp-synth-bbbb"
+SYNTHETIC_EVENT = "ev-synth-01"
+SYNTHETIC_KIND = "message"
+SYNTHETIC_CODE = "SL003"
+SYNTHETIC_REASON = "synthetic-refuse"
+SYNTHETIC_PLAN_FP = "plan-fp-synth"
+SYNTHETIC_POLICY = "conservative"
+SYNTHETIC_RECORD = "rec-synth-01"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "repair_preview: Rust returns EvidenceError::Unsupported; Python calls "
+        "sesslint.batch._plan_detail and sesslint.report.minimize_path."
+    ),
+    (
+        "get_preview_schema_path: Rust returns EvidenceError::Unsupported; Python "
+        "calls sesslint._resources.schema_path."
+    ),
+    (
+        "load_preview_schema: Rust returns EvidenceError::Unsupported; Python reads "
+        "schemas/sesslint.preview.v1.json."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_preview_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "preview.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != PREVIEW_SHA256:
+        raise SystemExit(
+            f"preview.py sha256 mismatch: expected {PREVIEW_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.preview as preview  # noqa: WPS433
+
+    return preview
+
+
+def delta_row(delta: Any) -> dict[str, Any]:
+    row = delta.to_dict()
+    row["seq"] = delta.seq
+    return row
+
+
+def make_source(line: Any = None, record_id: Any = None) -> SimpleNamespace | None:
+    if line is None and record_id is None:
+        return None
+    return SimpleNamespace(line=line, record_id=record_id)
+
+
+def make_finding(
+    fingerprint: str,
+    code: str,
+    *,
+    line: Any = None,
+    record_id: Any = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        fingerprint=fingerprint,
+        code=code,
+        source=make_source(line, record_id),
+    )
+
+
+def make_event(event_id: Any = None, kind: Any = None) -> SimpleNamespace:
+    return SimpleNamespace(id=event_id, kind=kind)
+
+
+def make_plan(steps: list[Any]) -> SimpleNamespace:
+    return SimpleNamespace(steps=tuple(steps))
+
+
+def plan_step(
+    preview: Any,
+    recipe: str,
+    target_finding_fp: str,
+    target_index: int | None,
+    seq: int,
+) -> Any:
+    from sesslint.repair.planner import PlanStep  # noqa: WPS433
+
+    return PlanStep(
+        seq=seq,
+        recipe=recipe,
+        target_finding_fp=target_finding_fp,
+        target_index=target_index,
+    )
+
+
+def vector_specs(preview: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "preview_version_constant",
+        {"type": "PREVIEW_VERSION"},
+        {"value": preview.PREVIEW_VERSION},
+    )
+
+    add(
+        "recipe_actions_declaration_order",
+        {"type": "RECIPE_ACTIONS"},
+        {"names": list(preview.RECIPE_ACTIONS.keys())},
+    )
+
+    add(
+        "unknown_recipe_action_drop",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "brand-new-recipe",
+                    "target_finding_fp": "fp-synth-unknown",
+                    "target_index": None,
+                    "seq": 0,
+                }
+            ],
+            "findings": [],
+            "events": [],
+        },
+        {
+            "deltas": [
+                {
+                    "action": "drop",
+                    "reason_code": "SL000",
+                    "recipe": "brand-new-recipe",
+                    "seq": 0,
+                }
+            ]
+        },
+    )
+
+    add(
+        "bounded_id_none_and_empty",
+        {"type": "bounded_id", "values": [None, ""]},
+        {"results": [None, None]},
+    )
+
+    add(
+        "bounded_id_non_string_absent",
+        {"type": "bounded_id", "values": [0, 1.5, [], {}]},
+        {"results": [None, None, None, None]},
+    )
+
+    eighty = "a" * 80
+    eighty_one = "a" * 81
+    wide = "\u00e9" * 81
+    wide_cap = "\u00e9" * 80
+    add(
+        "bounded_id_cap_eighty_scalars",
+        {"type": "bounded_id", "values": [eighty, eighty_one, wide]},
+        {"results": [eighty, eighty, wide_cap]},
+    )
+
+    add(
+        "bounded_id_known_event",
+        {"type": "bounded_id", "values": [SYNTHETIC_EVENT]},
+        {"results": [SYNTHETIC_EVENT]},
+    )
+
+    add(
+        "deltas_happy_path_maps_recipe_event_and_line",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "identical-duplicate-collapse",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": 0,
+                    "seq": 0,
+                },
+                {
+                    "recipe": "seq-renumber",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": 0,
+                    "seq": 1,
+                },
+            ],
+            "findings": [
+                {
+                    "fingerprint": SYNTHETIC_FP,
+                    "code": SYNTHETIC_CODE,
+                    "line": 4,
+                    "record_id": SYNTHETIC_RECORD,
+                }
+            ],
+            "events": [{"id": SYNTHETIC_EVENT, "kind": SYNTHETIC_KIND}],
+        },
+        {
+            "deltas": [
+                {
+                    "action": "dedupe",
+                    "reason_code": SYNTHETIC_CODE,
+                    "recipe": "identical-duplicate-collapse",
+                    "event_id": SYNTHETIC_EVENT,
+                    "kind": SYNTHETIC_KIND,
+                    "source_line": 4,
+                    "seq": 0,
+                },
+                {
+                    "action": "normalize",
+                    "reason_code": SYNTHETIC_CODE,
+                    "recipe": "seq-renumber",
+                    "event_id": SYNTHETIC_EVENT,
+                    "kind": SYNTHETIC_KIND,
+                    "source_line": 4,
+                    "seq": 1,
+                },
+            ]
+        },
+    )
+
+    add(
+        "missing_finding_uses_sl000",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "missing-fp",
+                    "target_index": None,
+                    "seq": 0,
+                }
+            ],
+            "findings": [],
+            "events": [],
+        },
+        {
+            "deltas": [
+                {
+                    "action": "drop",
+                    "reason_code": "SL000",
+                    "recipe": "orphan-result-drop",
+                    "seq": 0,
+                }
+            ]
+        },
+    )
+
+    add(
+        "duplicate_fingerprint_last_finding_wins",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": None,
+                    "seq": 0,
+                }
+            ],
+            "findings": [
+                {"fingerprint": SYNTHETIC_FP, "code": "SL001", "line": 1},
+                {"fingerprint": SYNTHETIC_FP, "code": SYNTHETIC_CODE, "line": 9},
+            ],
+            "events": [],
+        },
+        {
+            "deltas": [
+                {
+                    "action": "drop",
+                    "reason_code": SYNTHETIC_CODE,
+                    "recipe": "orphan-result-drop",
+                    "source_line": 9,
+                    "seq": 0,
+                }
+            ]
+        },
+    )
+
+    add(
+        "source_line_requires_int_at_least_one",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-a",
+                    "target_index": None,
+                    "seq": 0,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-b",
+                    "target_index": None,
+                    "seq": 1,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-c",
+                    "target_index": None,
+                    "seq": 2,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-d",
+                    "target_index": None,
+                    "seq": 3,
+                },
+            ],
+            "findings": [
+                {"fingerprint": "fp-a", "code": "SL001", "line": None},
+                {"fingerprint": "fp-b", "code": "SL001", "line": 0},
+                {"fingerprint": "fp-c", "code": "SL001", "line": -3},
+                {"fingerprint": "fp-d", "code": "SL001", "line": 2},
+            ],
+            "events": [],
+        },
+        {
+            "deltas": [
+                {"source_line": None, "seq": 0},
+                {"source_line": None, "seq": 1},
+                {"source_line": None, "seq": 2},
+                {"source_line": 2, "seq": 3},
+            ]
+        },
+    )
+
+    add(
+        "event_index_requires_int_inside_slice",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": None,
+                    "seq": 0,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": -1,
+                    "seq": 1,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": 1,
+                    "seq": 2,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": 0,
+                    "seq": 3,
+                },
+            ],
+            "findings": [
+                {"fingerprint": SYNTHETIC_FP, "code": SYNTHETIC_CODE, "line": 1}
+            ],
+            "events": [{"id": SYNTHETIC_EVENT, "kind": SYNTHETIC_KIND}],
+        },
+        {
+            "deltas": [
+                {"event_id": None, "kind": None, "seq": 0},
+                {"event_id": None, "kind": None, "seq": 1},
+                {"event_id": None, "kind": None, "seq": 2},
+                {
+                    "event_id": SYNTHETIC_EVENT,
+                    "kind": SYNTHETIC_KIND,
+                    "seq": 3,
+                },
+            ]
+        },
+    )
+
+    add(
+        "event_id_falls_back_to_record_id",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": 0,
+                    "seq": 0,
+                }
+            ],
+            "findings": [
+                {
+                    "fingerprint": SYNTHETIC_FP,
+                    "code": SYNTHETIC_CODE,
+                    "line": 1,
+                    "record_id": SYNTHETIC_RECORD,
+                }
+            ],
+            "events": [{"id": "", "kind": SYNTHETIC_KIND}],
+        },
+        {
+            "deltas": [
+                {
+                    "event_id": SYNTHETIC_RECORD,
+                    "kind": SYNTHETIC_KIND,
+                    "seq": 0,
+                }
+            ]
+        },
+    )
+
+    add(
+        "sort_is_seq_then_action_then_source_line",
+        {
+            "type": "deltas_for_plan",
+            "steps": [
+                {
+                    "recipe": "seq-renumber",
+                    "target_finding_fp": "fp-n",
+                    "target_index": None,
+                    "seq": 1,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-high",
+                    "target_index": None,
+                    "seq": 1,
+                },
+                {
+                    "recipe": "orphan-result-drop",
+                    "target_finding_fp": "fp-low",
+                    "target_index": None,
+                    "seq": 1,
+                },
+                {
+                    "recipe": "identical-duplicate-collapse",
+                    "target_finding_fp": SYNTHETIC_FP,
+                    "target_index": None,
+                    "seq": 0,
+                },
+            ],
+            "findings": [
+                {"fingerprint": "fp-n", "code": "SL001", "line": None},
+                {"fingerprint": "fp-high", "code": "SL001", "line": 9},
+                {"fingerprint": "fp-low", "code": "SL001", "line": 3},
+                {"fingerprint": SYNTHETIC_FP, "code": SYNTHETIC_CODE, "line": None},
+            ],
+            "events": [],
+        },
+        {
+            "sort_keys": [
+                ["dedupe", 0, 0],
+                ["drop", 1, 3],
+                ["drop", 1, 9],
+                ["normalize", 1, 0],
+            ]
+        },
+    )
+
+    sparse = preview.PreviewDelta(
+        action="drop",
+        reason_code="SL000",
+        recipe="brand-new-recipe",
+        seq=7,
+    )
+    full = preview.PreviewDelta(
+        action="drop",
+        reason_code="SL000",
+        recipe="brand-new-recipe",
+        event_id=SYNTHETIC_EVENT,
+        kind=SYNTHETIC_KIND,
+        source_line=4,
+        seq=7,
+    )
+    add(
+        "delta_to_dict_omits_seq_and_absent_optionals",
+        {"type": "PreviewDelta_to_dict", "variant": "sparse_and_full"},
+        {
+            "sparse_keys": list(sparse.to_dict().keys()),
+            "full_keys": list(full.to_dict().keys()),
+        },
+    )
+
+    blocked = preview.PreviewBlocked(
+        code="SL203",
+        reason=SYNTHETIC_REASON,
+        finding_fp=SYNTHETIC_FP,
+    )
+    add(
+        "blocked_to_dict_key_order",
+        {"type": "PreviewBlocked_to_dict"},
+        {"keys": list(blocked.to_dict().keys())},
+    )
+
+    doc_counts = preview.PreviewDoc(
+        source=SYNTHETIC_SOURCE,
+        steps=(
+            preview.PreviewDelta(
+                action="normalize",
+                reason_code="SL000",
+                recipe="seq-renumber",
+                seq=0,
+            ),
+            preview.PreviewDelta(
+                action="drop",
+                reason_code="SL000",
+                recipe="orphan-result-drop",
+                seq=1,
+            ),
+        ),
+        blocked=(),
+        plan_fingerprint=SYNTHETIC_PLAN_FP,
+        policy=SYNTHETIC_POLICY,
+    )
+    counts_dict = doc_counts.to_dict()["counts"]
+    add(
+        "counts_first_seen_after_sort_not_alphabetical",
+        {"type": "PreviewDoc_counts", "steps": ["normalize", "drop"]},
+        {"count_keys": list(counts_dict.keys())},
+    )
+
+    doc_json = preview.PreviewDoc(
+        source=SYNTHETIC_SOURCE,
+        steps=(
+            preview.PreviewDelta(
+                action="drop",
+                reason_code="SL000",
+                recipe="brand-new-recipe",
+                event_id=SYNTHETIC_EVENT,
+                kind=SYNTHETIC_KIND,
+                source_line=3,
+                seq=1,
+            ),
+        ),
+        blocked=(
+            preview.PreviewBlocked(
+                code="SL203",
+                reason="caf\u00e9",
+                finding_fp=SYNTHETIC_FP,
+            ),
+        ),
+        plan_fingerprint=SYNTHETIC_PLAN_FP,
+        policy=SYNTHETIC_POLICY,
+    )
+    add(
+        "preview_doc_to_json_indent_sort_keys_ensure_ascii",
+        {"type": "PreviewDoc_to_json"},
+        {"json": doc_json.to_json(), "refused": doc_json.refused},
+    )
+
+    empty_doc = preview.PreviewDoc(
+        source=SYNTHETIC_SOURCE,
+        steps=(),
+        blocked=(),
+        plan_fingerprint=SYNTHETIC_PLAN_FP,
+        policy=SYNTHETIC_POLICY,
+    )
+    sparse_doc = preview.PreviewDoc(
+        source=SYNTHETIC_SOURCE,
+        steps=(
+            preview.PreviewDelta(
+                action="drop",
+                reason_code="SL000",
+                recipe="brand-new-recipe",
+                seq=0,
+            ),
+        ),
+        blocked=(
+            preview.PreviewBlocked(
+                code="SL203",
+                reason=SYNTHETIC_REASON,
+                finding_fp=SYNTHETIC_FP,
+            ),
+        ),
+        plan_fingerprint=SYNTHETIC_PLAN_FP,
+        policy=SYNTHETIC_POLICY,
+    )
+    add(
+        "render_human_uses_dashes_for_missing_fields",
+        {"type": "PreviewDoc_render_human"},
+        {
+            "empty": empty_doc.render_human(),
+            "sparse": sparse_doc.render_human(),
+            "empty_refused": empty_doc.refused,
+            "sparse_refused": sparse_doc.refused,
+        },
+    )
+
+    payload_doc = preview.PreviewDoc(
+        source=SYNTHETIC_SOURCE,
+        steps=preview._deltas_for_plan(
+            make_plan(
+                [
+                    plan_step(
+                        preview,
+                        "identical-duplicate-collapse",
+                        SYNTHETIC_FP_LATE,
+                        0,
+                        0,
+                    )
+                ]
+            ),
+            [make_finding(SYNTHETIC_FP_LATE, SYNTHETIC_CODE, line=1)],
+            [make_event(SYNTHETIC_EVENT, SYNTHETIC_KIND)],
+        ),
+        blocked=(),
+        plan_fingerprint=SYNTHETIC_PLAN_FP,
+        policy=SYNTHETIC_POLICY,
+    )
+    payload_json = payload_doc.to_json()
+    add(
+        "deltas_do_not_copy_payload_fields",
+        {"type": "PreviewDoc_payload_absent"},
+        {
+            "json": payload_json,
+            "contains_payload": "payload" in payload_json,
+            "contains_content": "content" in payload_json,
+        },
+    )
+
+    return specs
+
+
+def build_deltas_input(preview: Any, construct: dict[str, Any]) -> tuple[Any, list[Any], list[Any]]:
+    steps = [
+        plan_step(
+            preview,
+            row["recipe"],
+            row["target_finding_fp"],
+            row.get("target_index"),
+            row["seq"],
+        )
+        for row in construct["steps"]
+    ]
+    findings = [
+        make_finding(
+            row["fingerprint"],
+            row["code"],
+            line=row.get("line"),
+            record_id=row.get("record_id"),
+        )
+        for row in construct.get("findings", [])
+    ]
+    events = [
+        make_event(row.get("id"), row.get("kind")) for row in construct.get("events", [])
+    ]
+    return make_plan(steps), findings, events
+
+
+def build_expected(preview: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    construct = spec["construct"]
+    kind = construct["type"]
+    if kind == "PREVIEW_VERSION":
+        return {"value": preview.PREVIEW_VERSION}
+    if kind == "RECIPE_ACTIONS":
+        return {"names": list(preview.RECIPE_ACTIONS.keys())}
+    if kind == "bounded_id":
+        return {
+            "results": [preview._bounded_id(value) for value in construct["values"]]
+        }
+    if kind == "deltas_for_plan":
+        plan, findings, events = build_deltas_input(preview, construct)
+        deltas = preview._deltas_for_plan(plan, findings, events)
+        expected = spec["expected"]
+        if "sort_keys" in expected:
+            keys = [
+                (row.action, row.seq, row.source_line or 0) for row in deltas
+            ]
+            want = [tuple(item) for item in expected["sort_keys"]]
+            if keys != want:
+                raise SystemExit(f"{spec['id']}: sort key mismatch {keys!r} != {want!r}")
+            return {"sort_keys": expected["sort_keys"]}
+        rows = []
+        for index, delta in enumerate(deltas):
+            row = delta_row(delta)
+            patch = expected["deltas"][index]
+            for key, value in patch.items():
+                if row.get(key) != value:
+                    raise SystemExit(
+                        f"{spec['id']}: delta[{index}].{key} "
+                        f"got {row.get(key)!r} want {value!r}"
+                    )
+            rows.append(row)
+        return {"deltas": rows}
+    if kind == "PreviewDelta_to_dict":
+        sparse = preview.PreviewDelta(
+            action="drop",
+            reason_code="SL000",
+            recipe="brand-new-recipe",
+            seq=7,
+        )
+        full = preview.PreviewDelta(
+            action="drop",
+            reason_code="SL000",
+            recipe="brand-new-recipe",
+            event_id=SYNTHETIC_EVENT,
+            kind=SYNTHETIC_KIND,
+            source_line=4,
+            seq=7,
+        )
+        return {
+            "sparse_keys": list(sparse.to_dict().keys()),
+            "full_keys": list(full.to_dict().keys()),
+        }
+    if kind == "PreviewBlocked_to_dict":
+        blocked = preview.PreviewBlocked(
+            code="SL203",
+            reason=SYNTHETIC_REASON,
+            finding_fp=SYNTHETIC_FP,
+        )
+        return {"keys": list(blocked.to_dict().keys())}
+    if kind == "PreviewDoc_counts":
+        doc = preview.PreviewDoc(
+            source=SYNTHETIC_SOURCE,
+            steps=(
+                preview.PreviewDelta(
+                    action="normalize",
+                    reason_code="SL000",
+                    recipe="seq-renumber",
+                    seq=0,
+                ),
+                preview.PreviewDelta(
+                    action="drop",
+                    reason_code="SL000",
+                    recipe="orphan-result-drop",
+                    seq=1,
+                ),
+            ),
+            blocked=(),
+            plan_fingerprint=SYNTHETIC_PLAN_FP,
+            policy=SYNTHETIC_POLICY,
+        )
+        return {"count_keys": list(doc.to_dict()["counts"].keys())}
+    if kind == "PreviewDoc_to_json":
+        doc = preview.PreviewDoc(
+            source=SYNTHETIC_SOURCE,
+            steps=(
+                preview.PreviewDelta(
+                    action="drop",
+                    reason_code="SL000",
+                    recipe="brand-new-recipe",
+                    event_id=SYNTHETIC_EVENT,
+                    kind=SYNTHETIC_KIND,
+                    source_line=3,
+                    seq=1,
+                ),
+            ),
+            blocked=(
+                preview.PreviewBlocked(
+                    code="SL203",
+                    reason="caf\u00e9",
+                    finding_fp=SYNTHETIC_FP,
+                ),
+            ),
+            plan_fingerprint=SYNTHETIC_PLAN_FP,
+            policy=SYNTHETIC_POLICY,
+        )
+        return {"json": doc.to_json(), "refused": doc.refused}
+    if kind == "PreviewDoc_render_human":
+        empty = preview.PreviewDoc(
+            source=SYNTHETIC_SOURCE,
+            steps=(),
+            blocked=(),
+            plan_fingerprint=SYNTHETIC_PLAN_FP,
+            policy=SYNTHETIC_POLICY,
+        )
+        sparse = preview.PreviewDoc(
+            source=SYNTHETIC_SOURCE,
+            steps=(
+                preview.PreviewDelta(
+                    action="drop",
+                    reason_code="SL000",
+                    recipe="brand-new-recipe",
+                    seq=0,
+                ),
+            ),
+            blocked=(
+                preview.PreviewBlocked(
+                    code="SL203",
+                    reason=SYNTHETIC_REASON,
+                    finding_fp=SYNTHETIC_FP,
+                ),
+            ),
+            plan_fingerprint=SYNTHETIC_PLAN_FP,
+            policy=SYNTHETIC_POLICY,
+        )
+        return {
+            "empty": empty.render_human(),
+            "sparse": sparse.render_human(),
+            "empty_refused": empty.refused,
+            "sparse_refused": sparse.refused,
+        }
+    if kind == "PreviewDoc_payload_absent":
+        plan, findings, events = build_deltas_input(
+            preview,
+            {
+                "steps": [
+                    {
+                        "recipe": "identical-duplicate-collapse",
+                        "target_finding_fp": SYNTHETIC_FP_LATE,
+                        "target_index": 0,
+                        "seq": 0,
+                    }
+                ],
+                "findings": [
+                    {
+                        "fingerprint": SYNTHETIC_FP_LATE,
+                        "code": SYNTHETIC_CODE,
+                        "line": 1,
+                    }
+                ],
+                "events": [{"id": SYNTHETIC_EVENT, "kind": SYNTHETIC_KIND}],
+            },
+        )
+        doc = preview.PreviewDoc(
+            source=SYNTHETIC_SOURCE,
+            steps=preview._deltas_for_plan(plan, findings, events),
+            blocked=(),
+            plan_fingerprint=SYNTHETIC_PLAN_FP,
+            policy=SYNTHETIC_POLICY,
+        )
+        payload_json = doc.to_json()
+        return {
+            "json": payload_json,
+            "contains_payload": "payload" in payload_json,
+            "contains_content": "content" in payload_json,
+        }
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    preview = load_preview_module()
+    out_dir = Path(__file__).resolve().parent
+    specs = vector_specs(preview)
+    vectors: list[dict[str, Any]] = []
+    for row in specs:
+        expected = build_expected(preview, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.preview",
+        "python_commit": PYTHON_COMMIT,
+        "preview_py_sha256": PREVIEW_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.preview",
+        "python_commit": PYTHON_COMMIT,
+        "preview_py_sha256": PREVIEW_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/preview/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.preview parity (bounded ids, plan deltas, "
+            "PreviewDoc JSON and human render only)."
+        ),
+        "generator": "rust/parity/vectors/preview/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

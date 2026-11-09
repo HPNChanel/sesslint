@@ -1,0 +1,177 @@
+{
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "orphan-result-drop",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 1,
+  "not_applicable_count": 23,
+  "rows": [
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_opt_in",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_acknowledgement",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_no_shorthand",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_assurance_lattice",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_fingerprint_differs_by_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_component_too_large",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_sums",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_sl203_refusal_beats_salvage",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_empty_events_salvage_policy",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_loss_key_injection_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_invalid_policy_string_rejected",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_torn_compaction_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_truncate_direct_apply_validation",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_vendor_free",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; different function from apply_orphan_result_drop; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_dual_policy_plan_merge_attempt",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_plans_and_applies",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "plan plus apply_orphan_result_drop and apply_orphan_result_drop_with_loss; planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_conservative_blocks",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "planner seam remains; a missing canonical_json_bytes call is not a successful plan; no fingerprint is stored and zero steps are not a diff; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_resolves_by_params",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "apply_orphan_result_drop mixes a successful drop with a PreconditionFailed refusal; one example inside a sweep is not the entire test"
+    },
+    {
+      "test": "tests/repair/test_recipes_salvage.py::test_orphan_result_drop_direct_apply_refusals",
+      "column": "column_0",
+      "status": "covered",
+      "vector_id": "orphan_result_drop_direct_apply_refusals",
+      "note": ""
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.version",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "version_py_sha256": "e9ab7e2611701c733315e40b218b70f807463f1ad35f4310b05e23b548328c30",
+  "vectors": [
+    {
+      "id": "configure_name_and_json_flag_metadata",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "version",
+        "help": "[read-only] Display detailed component and schema version information.",
+        "description": "[read-only] Display detailed component and schema version information.",
+        "json_help": "Output version details as JSON object"
+      }
+    },
+    {
+      "id": "run_text_stdout_bytes",
+      "construct": {
+        "type": "run",
+        "json": false
+      },
+      "expected": {
+        "stdout": "SessLint CLI: 0.5.0\nSchemas:\n  session:  sesslint.session/v1\n  report:   sesslint.report/v1\n  manifest: sesslint.repair-manifest/v1\nAdapters:\n  canonical: 1.0.0\n  claude-code-jsonl: 1.0.0\n  codex-rollout: 1.0.0\n  openai-agents: 1.0.0\nProfiles:\n  claude-strict: 1.0.0\n  neutral: 1.0.0\n  openai-strict: 1.0.0\n",
+        "exit_code": 0
+      }
+    },
+    {
+      "id": "run_json_stdout_bytes",
+      "construct": {
+        "type": "run",
+        "json": true
+      },
+      "expected": {
+        "stdout": "{\n  \"adapters\": {\n    \"canonical\": \"1.0.0\",\n    \"claude-code-jsonl\": \"1.0.0\",\n    \"codex-rollout\": \"1.0.0\",\n    \"openai-agents\": \"1.0.0\"\n  },\n  \"cli\": \"0.5.0\",\n  \"profiles\": {\n    \"claude-strict\": \"1.0.0\",\n    \"neutral\": \"1.0.0\",\n    \"openai-strict\": \"1.0.0\"\n  },\n  \"schema_manifest\": \"sesslint.repair-manifest/v1\",\n  \"schema_report\": \"sesslint.report/v1\",\n  \"schema_session\": \"sesslint.session/v1\"\n}\n",
+        "exit_code": 0
+      }
+    }
+  ]
+}

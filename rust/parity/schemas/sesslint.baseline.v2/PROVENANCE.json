@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.baseline.v2 schema vectors. Emitter documents come from the pinned blob. Session text is not stored.",
+  "generator": "rust/parity/schemas/sesslint.baseline.v2/generate",
+  "known_parity_gaps": [
+    "GAP-baseline-schema-fixture: tests that call main or _findings on a fixture session are not replayed. Session text is not stored.",
+    "GAP-baseline-schema-other-functions: file_role, compute_v2_key, filter_findings, and v1 load are different functions from the v2 schema check.",
+    "GAP-baseline-schema-partial: a test that mixes write, load, and upgrade is not covered by one of those calls."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

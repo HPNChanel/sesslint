@@ -1,0 +1,1000 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_conservative",
+  "recipe": "identical-duplicate-collapse",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
+  "known_parity_gaps": [
+    "GAP-identical-duplicate-collapse-affected-region: affected_region_identical_duplicate_collapse in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
+    "GAP-identical-duplicate-collapse-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply, the second-index collapse, and the child-pointer rewrite succeed in the pin. That success is not replayed. tests/repair/test_scoped_abstention.py::test_scenario_1_completed_mutating_call_elsewhere_disjoint_repair executes. tests/repair/test_scoped_abstention.py::test_scenario_4_ambiguous_call_adjacent_but_outside_region_boundary_pin plans and executes. tests/repair/test_scoped_abstention.py::test_multistep_conservative_repair_no_index_drift_in_executor executes. tests/repair/test_t04_recipes.py::test_adjacent_dup_still_collapses plans. Those tests assert a result and do not raise. That result is not replayed. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-identical-duplicate-collapse-fingerprint: a pair with a payload and no content_hash asks the pin for a content fingerprint. This set does not hash a fingerprint and does not store payload content. The published function returns a different error. This set does not claim that refusal.",
+    "GAP-identical-duplicate-collapse-payload-test: tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_checkpoint_or_boundary and tests/repair/test_recipes_conservative.py::test_duplicate_collapse_refusal_mixed_kinds are each one apply refusal. The events carry a payload. This set does not store payload content. A payload-free refusal is not that test."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_identical_duplicate_collapse",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_IDENTICAL_DUPLICATE_COLLAPSE",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "identical-duplicate-collapse",
+        "handles": [
+          "SL003"
+        ],
+        "preconditions": [
+          "no_sl203",
+          "adjacent_identical_duplicate"
+        ],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": true
+      }
+    },
+    {
+      "id": "collapse_refusal_needs_two",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: requires at least 2 events"
+      }
+    },
+    {
+      "id": "collapse_refusal_one_event",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: requires at least 2 events"
+      }
+    },
+    {
+      "id": "collapse_refusal_index_out_of_bounds",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 9
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: target index 9 out of bounds"
+      }
+    },
+    {
+      "id": "collapse_refusal_negative_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "at_index",
+                {
+                  "t": "int",
+                  "v": -2
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: target index -2 out of bounds"
+      }
+    },
+    {
+      "id": "collapse_refusal_param_skips_non_int",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "at_index",
+                {
+                  "t": "str",
+                  "v": "skip"
+                }
+              ],
+              [
+                "index",
+                {
+                  "t": "int",
+                  "v": 9
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: target index 9 out of bounds"
+      }
+    },
+    {
+      "id": "collapse_refusal_fingerprints_differ",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-kept"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "hash-left"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-drop"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "content_hash",
+                {
+                  "t": "str",
+                  "v": "hash-right"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: event content fingerprints differ"
+      }
+    },
+    {
+      "id": "collapse_refusal_missing_kind",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-none"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-note"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: kind mismatch between 'None' and 'note'"
+      }
+    },
+    {
+      "id": "collapse_refusal_no_eligible_pair",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-scan-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-scan-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: no eligible duplicate pair found"
+      }
+    },
+    {
+      "id": "collapse_refusal_note_kind_mismatch",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-scan-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "note"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-scan-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: kind mismatch between 'note' and 'tool_result'"
+      }
+    },
+    {
+      "id": "collapse_refusal_scan_skips_boundary",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-bound-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-bound-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: no eligible duplicate pair found"
+      }
+    },
+    {
+      "id": "collapse_refusal_boundary_compaction",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-comp-a"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-comp-b"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: cannot collapse boundary kind 'compaction_boundary'"
+      }
+    },
+    {
+      "id": "collapse_refusal_boundary_checkpoint",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "chk1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "chk2"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: cannot collapse boundary kind 'checkpoint'"
+      }
+    },
+    {
+      "id": "collapse_refusal_kind_mismatch",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_identical_duplicate_collapse",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e0"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_call"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e1"
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "tool_result"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "identical-duplicate-collapse: kind mismatch between 'tool_call' and 'tool_result'"
+      }
+    }
+  ]
+}

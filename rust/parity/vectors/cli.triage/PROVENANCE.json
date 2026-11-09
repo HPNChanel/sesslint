@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.triage configure declarations and run() rust seam fixtures from pinned src/sesslint/cli/triage.py (no checkout import).",
+  "generator": "rust/parity/vectors/cli.triage/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-triage-latest-session: Python run() imports sesslint.discovery.latest_session and sesslint.triage.triage, then usage checks, discovery, triage(), and emit_text; Rust run() returns Display `sesslint.discovery.latest_session is not available` immediately after evaluating the first import name (no stderr, no exit 2, no triage, no emit_text)."
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.profiles.builtin parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/profiles.builtin/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "checks::profile::get_profile is not wired to this registry. It still returns sesslint.profiles.builtin is not available. Python get_profile returns the registered profile.",
+    "REGISTRY.get of a missing name is None. Python dict lookup raises KeyError. Do not require the KeyError text."
+  ]
+}

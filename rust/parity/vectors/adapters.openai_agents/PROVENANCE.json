@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.openai_agents parity (prefix helpers, detection, projection, and documented load seams).",
+  "generator": "rust/parity/vectors/adapters.openai_agents/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-openai-secret-scan-tracker: load_openai_agents stops at sesslint.checks.hygiene.SecretScanTracker after classifying JSON or JSONL. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
+    "GAP-openai-feed-blob: load_openai_agents_json stops at SecretScanTracker.feed_blob. Rust returns the feed_blob display for every document.",
+    "GAP-openai-tail-tracker: load_openai_agents_jsonl stops at sesslint.io.MalformedTailTracker before the line loop.",
+    "GAP-openai-session-envelope: load_openai_agents_session calls load_openai_agents and stops at MalformedTailTracker. Rust does not build a Session envelope.",
+    "GAP-openai-content-hash: process_openai_item stops at compute_content_hash and does not append a SessionEvent. Unsupported versions and unknown types stop at sesslint.determinism.canonical_json_bytes when make_finding would run in the pin.",
+    "GAP-openai-finding-fingerprint: size-limit and SQLite refusal gates call make_finding in the pin. Rust stops at the fingerprint codec for those findings."
+  ]
+}

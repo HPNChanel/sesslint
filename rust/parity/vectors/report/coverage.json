@@ -1,0 +1,197 @@
+{
+  "module": "sesslint.report",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 1,
+  "not_applicable_count": 45,
+  "rows": [
+    {
+      "test": "tests/report/test_summary.py::test_summary_header_healthy",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_summary.py::test_summary_header_invalid_with_deterministic_fix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_summary.py::test_summary_header_warning_state",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_summary.py::test_disclaimer_sentences_present_verbatim",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_under_home",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_home_itself",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_outside_home",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_with_spaces_and_unicode",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_minimize_path_already_minimized",
+      "vector_ids": [
+        "minimize_path_passthrough_tilde",
+        "minimize_path_passthrough_dotdot",
+        "minimize_path_passthrough_home"
+      ],
+      "status": "covered"
+    },
+    {
+      "test": "tests/report/test_paths.py::test_scan_path_uses_minimized_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_build_report_derives_counts_correctly",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_build_report_signature_has_no_counts_parameter",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_empty_findings_clean_bill_report",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_limitation_required_for_all_assurance_levels",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_invalid_assurance_level_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_build_report_sorts_shuffled_findings_deterministically",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_minimal_report_fixture_roundtrip",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_report_schema_anti_drift",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_unknown_field_raises_sl302",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_unsupported_version_raises_sl301",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_enforce_content_free_report_catches_smuggled_payload",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_enforce_content_free_report_catches_intrinsic_credentials",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_unicode_session_id_support",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_large_findings_performance",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_a0_unreadable_invariant_documented_and_asserted",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_report_counts_mismatch_in_dataclass_raises",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_tool_version_variance_affects_dump_not_counts",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_schema_loader_file_not_found",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_counts_model_validation_errors",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_report_model_validation_errors",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_build_report_argument_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_dump_report_type_error",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_error_cases",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_enforce_content_free_report_all_locations",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_get_report_schema_path_prefix_resolution",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_invalid_assurance_and_limitation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_get_schema_paths_fallback_when_neither_exists",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_enforce_content_free_source_fingerprint_and_tool_version_leaks",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_enforce_content_free_handles_none_forbidden_substrings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_strict_string_field_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_counts_unknown_fields_and_severities",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_report_and_parse_report_reject_counts_mismatch_with_findings",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_counts_rejects_unknown_severity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_parse_report_counts_subfield_types",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_compute_assurance_empty_matrix",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_report.py::test_compute_assurance_non_empty_transitions",
+      "status": "not_applicable"
+    }
+  ]
+}

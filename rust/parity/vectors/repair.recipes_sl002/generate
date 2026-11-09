@@ -1,0 +1,590 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.recipes_sl002 parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+RECIPES_SL002_PY_SHA256 = (
+    "535f3226281b68d39c62508d88afe3d85b9231c19f247246a0a939542f7e82a8"
+)
+RECIPES_SL002_RS_SHA256 = (
+    "4e2176cad2b80bbb5e798edb79f0225f167a18b7946f2213ef159e20312af6cf"
+)
+MODULE = "sesslint.repair.recipes_sl002"
+GAP_AFFECTED_REGION = "GAP-recipes-sl002-affected-region"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_AFFECTED_REGION}: Python affected_region_torn_terminal_record_discard "
+    "returns sesslint.policy.abstention.AffectedRegion. Rust returns "
+    "AffectedRegionUnavailable; parity asserts Rust Display only.",
+)
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/recipes_sl002.py",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def fullname_for(path: str) -> str:
+    rel = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    return rel
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp = handle.name
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"failed to create import spec for {fullname}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    return mod
+
+
+def verify_recipes_sl002_rs() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "repair" / "src" / "recipes_sl002.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != RECIPES_SL002_RS_SHA256:
+        raise SystemExit(
+            f"recipes_sl002.rs sha256 mismatch: expected {RECIPES_SL002_RS_SHA256}, got {digest}"
+        )
+
+
+def load_recipes_module() -> Any:
+    verify_recipes_sl002_rs()
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_sl002.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for i in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:i]))
+        exec_blob(blob, fullname)
+    recipes_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_sl002.py")
+    digest = hashlib.sha256(recipes_blob).hexdigest()
+    if digest != RECIPES_SL002_PY_SHA256:
+        raise SystemExit(
+            f"pinned recipes_sl002.py sha256 mismatch: "
+            f"expected {RECIPES_SL002_PY_SHA256}, got {digest}"
+        )
+    ensure_pkg("sesslint.repair")
+    return exec_blob(recipes_blob, "sesslint.repair.recipes_sl002")
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, dict):
+        entries = [[k, tagged(v)] for k, v in value.items()]
+        return {"t": "map", "entries": entries}
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(v) for v in value]}
+    raise TypeError(f"unencodable {type(value)!r}")
+
+
+def event_dict(entries: dict[str, Any]) -> dict[str, Any]:
+    return {"entries": [[k, tagged(v)] for k, v in entries.items()]}
+
+
+def session_event_spec(
+    *,
+    id_: str,
+    parent_id: Any,
+    seq: int,
+    ts: str,
+    actor: str,
+    kind: str,
+) -> dict[str, Any]:
+    return {
+        "t": "session",
+        "id": id_,
+        "parent_id": parent_id,
+        "seq": seq,
+        "ts": ts,
+        "actor": actor,
+        "kind": kind,
+    }
+
+
+def step_spec(
+    target_index: dict[str, Any],
+    params: dict[str, Any] | list[tuple[str, Any]] | str,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {"target_index": target_index}
+    if params == "not_mapping":
+        row["params"] = {"t": "not_mapping"}
+    elif isinstance(params, list):
+        row["params"] = {
+            "t": "map_entries",
+            "entries": [[k, tagged(v)] for k, v in params],
+        }
+    else:
+        row["params"] = {"t": "map", "entries": [[k, tagged(v)] for k, v in params.items()]}
+    return row
+
+
+def decode_step(spec: dict[str, Any]) -> SimpleNamespace:
+    target = _decode_tagged(spec["target_index"])
+    params_node = spec["params"]
+    if params_node.get("t") == "not_mapping":
+        params: Any = "not-a-mapping"
+    elif params_node.get("t") == "map_entries":
+        params = {k: _decode_tagged(v) for k, v in params_node["entries"]}
+    else:
+        params = _decode_tagged(params_node)
+    return SimpleNamespace(target_index=target, params=params)
+
+
+def decode_events(items: list[dict[str, Any]]) -> list[Any]:
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
+
+    out: list[Any] = []
+    for item in items:
+        if item.get("t") == "session":
+            out.append(
+                SessionEvent(
+                    item["id"],
+                    item.get("parent_id"),
+                    item["seq"],
+                    item["ts"],
+                    item["actor"],
+                    item["kind"],
+                )
+            )
+        else:
+            decoded: dict[str, Any] = {}
+            for key, val in item.get("entries", []):
+                decoded[key] = _decode_tagged(val)
+            out.append(decoded)
+    return out
+
+
+def _decode_tagged(node: Any) -> Any:
+    if not isinstance(node, dict) or "t" not in node:
+        return node
+    kind = node["t"]
+    if kind == "null":
+        return None
+    if kind == "bool":
+        return node["v"]
+    if kind == "int":
+        return node["v"]
+    if kind == "float":
+        return node["v"]
+    if kind == "str":
+        return node["v"]
+    if kind == "map":
+        out: dict[str, Any] = {}
+        for key, val in node["entries"]:
+            out[key] = _decode_tagged(val)
+        return out
+    if kind == "list":
+        return [_decode_tagged(item) for item in node["items"]]
+    if kind == "other":
+        return node["v"]
+    raise ValueError(f"bad tagged node {node!r}")
+
+
+def id_list(events: list[dict[str, Any]]) -> list[Any]:
+    ids: list[Any] = []
+    for row in events:
+        found = None
+        for key, val in row.get("entries", []):
+            if key == "id":
+                inner = _decode_tagged(val)
+                found = inner
+                break
+        ids.append(found)
+    return ids
+
+
+def callable_field(value: Any) -> dict[str, bool]:
+    return {"present": value is not None}
+
+
+def recipe_snapshot(recipe: Any) -> dict[str, Any]:
+    return {
+        "mode": "recipe",
+        "name": recipe.name,
+        "handles": list(recipe.handles),
+        "preconditions": list(recipe.preconditions),
+        "lossy": recipe.lossy,
+        "salvage_only": recipe.salvage_only,
+        "min_policy": recipe.min_policy,
+        "version": recipe.version,
+        "excludes_execution_dependence": recipe.excludes_execution_dependence,
+        "apply": callable_field(recipe.apply),
+        "affected_region": callable_field(recipe.affected_region),
+    }
+
+
+def region_snapshot(region: Any) -> dict[str, Any]:
+    indices = sorted(region.indices) if region.indices is not None else []
+    ids = sorted(region.ids) if region.ids is not None else []
+    ranges = [list(pair) for pair in region.ranges] if region.ranges else []
+    return {
+        "unproven": bool(region.unproven),
+        "indices": indices,
+        "ids": ids,
+        "ranges": ranges,
+    }
+
+
+def run_expected(mod: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "module_all":
+        return {"mode": "names", "names": list(mod.__all__)}
+    if kind == "recipe_constant":
+        return recipe_snapshot(mod.RECIPE_TORN_TERMINAL_RECORD_DISCARD)
+    if kind == "register_all":
+        reg = sys.modules["sesslint.repair.registry"]
+        reg.clear_registry()
+        mod.register_all()
+        first = reg.get_recipe("torn-terminal-record-discard") is not None
+        mod.register_all()
+        names = [r.name for r in reg.list_recipes()]
+        return {"mode": "registered", "present": first, "list_names": names}
+    if kind == "apply":
+        events = decode_events(construct["events"])
+        step = decode_step(construct["step"])
+        try:
+            out = mod.apply_torn_terminal_record_discard(events, step)
+        except IndexError as exc:
+            return {"mode": "index_error", "message": str(exc)}
+        ids = []
+        for row in out:
+            ids.append(row.get("id"))
+        return {"mode": "ok", "ids": ids, "len": len(out)}
+    if kind == "affected_region":
+        events = decode_events(construct["events"])
+        step = decode_step(construct["step"])
+        region = mod.affected_region_torn_terminal_record_discard(step, events)
+        return {
+            "mode": "gap",
+            "gap_id": GAP_AFFECTED_REGION,
+            "region": region_snapshot(region),
+        }
+    raise SystemExit(f"unknown construct type {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    null = {"t": "null"}
+    i = lambda v: {"t": "int", "v": v}
+    b = lambda v: {"t": "bool", "v": v}
+    s = lambda v: {"t": "str", "v": v}
+    other = lambda v: {"t": "other", "v": v}
+
+    def ev(**entries: Any) -> dict[str, Any]:
+        return event_dict(entries)
+
+    def apply_row(
+        vector_id: str, events: list[dict[str, Any]], step: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "id": vector_id,
+            "construct": {"type": "apply", "events": events, "step": step},
+        }
+
+    def region_row(
+        vector_id: str, events: list[dict[str, Any]], step: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "id": vector_id,
+            "construct": {"type": "affected_region", "events": events, "step": step},
+        }
+
+    specs: list[dict[str, Any]] = []
+    specs.append({"id": "module_all_export_order", "construct": {"type": "module_all"}})
+    specs.append({"id": "recipe_constant_snapshot", "construct": {"type": "recipe_constant"}})
+    specs.append({"id": "register_all_idempotent", "construct": {"type": "register_all"}})
+
+    specs.append(
+        apply_row(
+            "apply_discards_named_last_event",
+            [ev(id="a"), ev(id="b"), ev(id="c")],
+            step_spec(i(2), {"cut_index": 2}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_reader_minted_keeps_terminal",
+            [ev(id="a"), ev(id="torn")],
+            step_spec(null, {"cut_index": 1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_shared_id_discards_last_only",
+            [ev(id="same"), ev(id="same")],
+            step_spec(i(1), {"cut_index": 1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_shared_id_index_zero_keeps_both",
+            [ev(id="same"), ev(id="same")],
+            step_spec(i(0), {"cut_index": 0}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_bool_cut_index_is_not_int",
+            [ev(id="a"), ev(id="b")],
+            step_spec(i(1), {"cut_index": True}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_bool_target_true_discards_index_one",
+            [ev(id="a"), ev(id="b")],
+            step_spec(b(True), {"cut_index": 1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_bool_target_false_clears_singleton",
+            [ev(id="only")],
+            step_spec(b(False), {"cut_index": 0}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_bool_true_not_cut_zero_keeps_singleton",
+            [ev(id="only")],
+            step_spec(b(True), {"cut_index": 0}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_non_mapping_params_keeps_events",
+            [ev(id="a"), ev(id="b")],
+            step_spec(i(1), "not_mapping"),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_other_target_keeps_events",
+            [ev(id="a"), ev(id="b")],
+            step_spec(other("synthetic-scalar"), {"cut_index": 1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_ignores_region_fallback_keys",
+            [ev(id="a"), ev(id="b")],
+            step_spec(i(1), {"first_unsafe_index": 1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_duplicate_cut_index_last_wins",
+            [
+                ev(id="a", kind="message"),
+                ev(id="b"),
+            ],
+            step_spec(i(1), [("cut_index", 0), ("cut_index", 1)]),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_empty_pop_index_error",
+            [],
+            step_spec(i(-1), {"cut_index": -1}),
+        )
+    )
+    specs.append(
+        apply_row(
+            "apply_empty_no_cut_stays_empty",
+            [],
+            step_spec(null, "not_mapping"),
+        )
+    )
+
+    specs.append(
+        region_row(
+            "region_gap_empty_events",
+            [],
+            step_spec(i(0), "not_mapping"),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_proven_cut_suffix",
+            [ev(id="a"), ev(id="b"), ev(id="c")],
+            step_spec(i(2), {"cut_index": 2}),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_out_of_range_cut",
+            [ev(id="a")],
+            step_spec(i(3), "not_mapping"),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_bool_step_target",
+            [ev(id="a"), ev(id="b")],
+            step_spec(b(True), {"cut_index": 0}),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_float_event_id",
+            [ev(id=1.5)],
+            step_spec(null, "not_mapping"),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_ingestion_boundary",
+            [ev(id="a"), ev(id="b"), ev(id="c")],
+            step_spec(
+                null,
+                {"cut_index": False, "first_unsafe_index": 0},
+            ),
+        )
+    )
+    specs.append(
+        region_row(
+            "region_gap_session_boundary_id",
+            [
+                session_event_spec(
+                    id_="evt-boundary",
+                    parent_id=None,
+                    seq=0,
+                    ts="2026-01-01T00:00:00Z",
+                    actor="user",
+                    kind="message",
+                )
+            ],
+            step_spec(null, "not_mapping"),
+        )
+    )
+
+    return specs
+
+
+def main() -> int:
+    mod = load_recipes_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        construct = spec["construct"]
+        expected = run_expected(mod, construct)
+        vectors.append({"id": spec["id"], "construct": construct, "expected": expected})
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_sl002_py_sha256": RECIPES_SL002_PY_SHA256,
+        "recipes_sl002_rs_sha256": RECIPES_SL002_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.recipes_sl002 parity (apply discard, "
+            "affected_region seam, recipe constant, register_all)."
+        ),
+        "generator": "rust/parity/vectors/repair.recipes_sl002/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_sl002_rs_sha256": RECIPES_SL002_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.recipes_sl002/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

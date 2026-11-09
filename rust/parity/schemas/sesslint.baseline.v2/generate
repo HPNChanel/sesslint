@@ -1,0 +1,1067 @@
+#!/usr/bin/env python3
+"""Generate sesslint.baseline.v2 schema vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The blob is executed
+from a temporary file after sesslint imports that miss the pin are refused.
+Expected documents are the pin's results. Session text is not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "schemas" / "sesslint.baseline.v2"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_PATH = "schemas/sesslint.baseline.v2.json"
+EMITTER_PATH = "src/sesslint/baseline.py"
+TEST_FILE = "tests/test_baseline.py"
+GENERATOR = "rust/parity/schemas/sesslint.baseline.v2/generate"
+SCHEMA_ID = "https://sesslint.dev/schemas/sesslint.baseline/v2"
+ENVELOPE = "sesslint.parity-schema-vectors/v1"
+MODULE = "sesslint.baseline"
+PINNED_TEST_COUNT = 22
+VECTOR_COUNT = 25
+COVERED_COUNT = 3
+
+PIN_CLOSURE = (
+    "errors.py",
+    "atomic.py",
+    "_version.py",
+    "codes.py",
+    "context.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "baseline.py",
+)
+
+MALFORMED_V2 = '{"schema_version":"sesslint.baseline/v2","entries":[{"key":"nothex"}]}'
+UNVERIFIED_FPS = ["5d4465190d6abf3f", "aabbccddeeff0011"]
+DETERMINISTIC_FPS = ["aabbccddeeff0011", "5d4465190d6abf3f"]
+KEY_ONLY = "0123456789abcdef"
+UPPER_KEY = "0123456789ABCDEF"
+CREATED_BY = "sesslint"
+SYNTHETIC_PATH = "/abs/sess/run.jsonl"
+SYNTHETIC_CODE = "SL101"
+SYNTHETIC_TEMPLATE = "x"
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED = (
+    "FOR_WORK",
+    "sesslint-wt-",
+    "02694d5",
+    "AppData",
+    "Users",
+    "orphan_output",
+)
+
+NOTES: dict[str, str] = {
+    "test_baseline_v2_round_trip": (
+        "write_baseline, load_baseline, dump_baseline, and compute_v2_key "
+        "on _findings. Several functions. A fixture session is not stored. "
+        "One document is not the whole test."
+    ),
+    "test_load_v1_still_supported": (
+        "load_baseline of sesslint.baseline/v1. Different schema from v2."
+    ),
+    "test_load_missing_fails": (
+        "load_baseline of a missing path. There is no v2 document."
+    ),
+    "test_load_malformed_v1_fails": (
+        "load_baseline of a v1 document whose fingerprint is not 16 hex. "
+        "Different schema from v2."
+    ),
+    "test_load_wrong_schema_fails": (
+        "load_baseline rejects schema_version other/v9 on a fingerprints "
+        "document. That loader check is not validate_baseline_v2 of a v2 object."
+    ),
+    "test_file_role_normalizes_spelling": (
+        "file_role of five spellings. Different function from upgrade_baseline "
+        "and from validate_baseline_v2."
+    ),
+    "test_file_role_bare_name_uses_cwd": (
+        "file_role reads the process working directory. Different function, "
+        "and the directory spelling is not stored."
+    ),
+    "test_v2_key_path_spelling_independent": (
+        "compute_v2_key and make_finding for two paths. Different function "
+        "from validate_baseline_v2."
+    ),
+    "test_v2_key_immediate_parent_rename_differs": (
+        "compute_v2_key for two parents. Different function from "
+        "validate_baseline_v2."
+    ),
+    "test_check_write_v2_then_baseline": (
+        "main check writes a baseline and then applies it. Different function. "
+        "A fixture session is not stored."
+    ),
+    "test_check_v2_baseline_survives_relative_invoke": (
+        "main check with a relative spelling. Different function. "
+        "A fixture session is not stored."
+    ),
+    "test_v1_baseline_still_suppresses_via_v1_leg": (
+        "main check of a v1 baseline. Different schema and different function."
+    ),
+    "test_ambiguous_v2_key_suppresses_nothing": (
+        "filter_findings runs twice, once for a shared key and once for a "
+        "single key. Two modes. Different function from validate_baseline_v2."
+    ),
+    "test_upgrade_verified_with_source": (
+        "upgrade_baseline of fixture findings, then compute_v2_key and "
+        "file_role. The synthetic verified document is a different finding "
+        "and does not check those equalities."
+    ),
+    "test_upgrade_rejects_non_v1": (
+        "write_baseline of fixture findings, then upgrade_baseline failure. "
+        "Two functions. A fixture session is not stored."
+    ),
+    "test_check_missing_baseline_fails": (
+        "main check of a missing baseline path. Different function."
+    ),
+    "test_scan_baseline_suppresses": (
+        "main scan writes and applies a baseline. Different function. "
+        "A fixture session is not stored."
+    ),
+    "test_scan_v2_baseline_survives_tree_rename": (
+        "main scan after a directory move. Different function. "
+        "A fixture session is not stored."
+    ),
+    "test_baseline_flags_mutually_exclusive": (
+        "main rejects both baseline flags together. Different function."
+    ),
+}
+
+REQUIRED_CALLS: dict[str, set[str]] = {
+    "test_baseline_v2_round_trip": {
+        "write_baseline",
+        "load_baseline",
+        "dump_baseline",
+        "compute_v2_key",
+        "_findings",
+    },
+    "test_load_v1_still_supported": {"load_baseline"},
+    "test_load_missing_fails": {"load_baseline"},
+    "test_load_malformed_v1_fails": {"load_baseline"},
+    "test_load_malformed_v2_fails": {"load_baseline"},
+    "test_load_wrong_schema_fails": {"load_baseline"},
+    "test_file_role_normalizes_spelling": {"file_role"},
+    "test_file_role_bare_name_uses_cwd": {"file_role"},
+    "test_v2_key_path_spelling_independent": {"compute_v2_key", "make_finding"},
+    "test_v2_key_immediate_parent_rename_differs": {"compute_v2_key", "make_finding"},
+    "test_check_write_v2_then_baseline": {"main"},
+    "test_check_v2_baseline_survives_relative_invoke": {"main"},
+    "test_v1_baseline_still_suppresses_via_v1_leg": {"main", "_findings"},
+    "test_ambiguous_v2_key_suppresses_nothing": {
+        "filter_findings",
+        "compute_v2_key",
+        "make_finding",
+    },
+    "test_upgrade_unverified_without_source": {"upgrade_baseline"},
+    "test_upgrade_verified_with_source": {
+        "upgrade_baseline",
+        "_findings",
+        "compute_v2_key",
+        "file_role",
+    },
+    "test_upgrade_rejects_non_v1": {"upgrade_baseline", "write_baseline", "_findings"},
+    "test_upgrade_deterministic": {"upgrade_baseline"},
+    "test_check_missing_baseline_fails": {"main"},
+    "test_scan_baseline_suppresses": {"main"},
+    "test_scan_v2_baseline_survives_tree_rename": {"main"},
+    "test_baseline_flags_mutually_exclusive": {"main"},
+}
+
+FORBIDDEN_CALLS: dict[str, set[str]] = {
+    "test_load_malformed_v2_fails": {
+        "upgrade_baseline",
+        "dump_baseline",
+        "write_baseline",
+        "main",
+        "_findings",
+    },
+    "test_upgrade_unverified_without_source": {
+        "load_baseline",
+        "dump_baseline",
+        "write_baseline",
+        "main",
+        "_findings",
+        "file_role",
+        "compute_v2_key",
+    },
+    "test_upgrade_deterministic": {
+        "load_baseline",
+        "dump_baseline",
+        "write_baseline",
+        "main",
+        "_findings",
+        "file_role",
+        "compute_v2_key",
+    },
+}
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not use the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(rel: str) -> str:
+    return "sesslint." + rel.removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name in sys.modules:
+        return
+    mod = types.ModuleType(name)
+    mod.__path__ = []  # type: ignore[attr-defined]
+    sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    except CheckoutImportRefused as err:
+        raise SystemExit(f"refusing checkout import {err}") from err
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0]
+    parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+    setattr(parent_mod, fullname.rsplit(".", 1)[1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file_name = getattr(mod, "__file__", None)
+        if file_name is None:
+            continue
+        if not str(file_name).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_emitter() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [
+        item
+        for item in sys.path
+        if item not in blocked and not str(item).startswith(str(ROOT))
+    ]
+    sys.meta_path.insert(0, _PinOnly())
+    ensure_pkg("sesslint")
+    for rel in PIN_CLOSURE:
+        if rel == "baseline.py":
+            continue
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/{rel}")
+        if b"02694d5" in blob:
+            raise SystemExit(f"refusing 02694d5 in {rel}")
+        fullname = fullname_for(rel)
+        exec_blob(blob, fullname)
+    emitter = git_show_bytes(f"{PYTHON_COMMIT}:{EMITTER_PATH}")
+    if b"02694d5" in emitter:
+        raise SystemExit("refusing 02694d5 in the emitter")
+    mod = exec_blob(emitter, MODULE)
+    assert_pin_modules()
+    if mod.dump_baseline.__module__ != MODULE:
+        raise SystemExit("dump_baseline is not the pin blob")
+    if mod.upgrade_baseline.__module__ != MODULE:
+        raise SystemExit("upgrade_baseline is not the pin blob")
+    if mod.load_baseline.__module__ != MODULE:
+        raise SystemExit("load_baseline is not the pin blob")
+    return mod
+
+
+def require_schema(blob: bytes) -> dict[str, Any]:
+    schema = json.loads(blob)
+    if not isinstance(schema, dict):
+        raise SystemExit("schema is not an object")
+    allowed_root = {
+        "$schema",
+        "$id",
+        "title",
+        "description",
+        "type",
+        "required",
+        "properties",
+        "additionalProperties",
+    }
+    unknown = set(schema) - allowed_root
+    if unknown:
+        raise SystemExit(f"unhandled root keywords {sorted(unknown)}")
+    if schema.get("$id") != SCHEMA_ID:
+        raise SystemExit("schema $id drifted")
+    if schema.get("type") != "object":
+        raise SystemExit("root type drifted")
+    if schema.get("additionalProperties") is not False:
+        raise SystemExit("root additionalProperties drifted")
+    if schema.get("required") != ["entries", "schema_version"]:
+        raise SystemExit("root required drifted")
+    props = schema.get("properties")
+    if not isinstance(props, dict) or list(props) != ["schema_version", "entries"]:
+        raise SystemExit("root properties drifted")
+    version = props["schema_version"]
+    if version != {"const": "sesslint.baseline/v2"}:
+        raise SystemExit("schema_version const drifted")
+    entries = props["entries"]
+    if set(entries) - {"type", "items"}:
+        raise SystemExit(f"unhandled entries keywords {sorted(set(entries))}")
+    if entries.get("type") != "array":
+        raise SystemExit("entries type drifted")
+    items = entries["items"]
+    allowed_item = {"type", "required", "properties", "additionalProperties"}
+    if set(items) - allowed_item:
+        raise SystemExit(f"unhandled item keywords {sorted(set(items))}")
+    if items.get("type") != "object":
+        raise SystemExit("item type drifted")
+    if items.get("additionalProperties") is not False:
+        raise SystemExit("item additionalProperties drifted")
+    if items.get("required") != ["key"]:
+        raise SystemExit("item required drifted")
+    item_props = items["properties"]
+    expected_props = ["key", "code", "file_role", "created_by", "migrated"]
+    if not isinstance(item_props, dict) or list(item_props) != expected_props:
+        raise SystemExit("item properties drifted")
+    if item_props["key"] != {"type": "string", "pattern": "^[0-9a-f]{16}$"}:
+        raise SystemExit("key drifted")
+    if item_props["code"] != {"type": "string", "pattern": "^SL[0-9]{3}$"}:
+        raise SystemExit("code drifted")
+    if item_props["file_role"] != {"type": "string", "minLength": 1}:
+        raise SystemExit("file_role drifted")
+    if item_props["created_by"] != {"type": "string"}:
+        raise SystemExit("created_by drifted")
+    migrated = {"type": "string", "enum": ["verified", "unverified"]}
+    if item_props["migrated"] != migrated:
+        raise SystemExit("migrated drifted")
+    return {
+        "root_required": ["entries", "schema_version"],
+        "root_properties": ["schema_version", "entries"],
+        "root_additional": False,
+        "schema_version_const": "sesslint.baseline/v2",
+        "entry_required": ["key"],
+        "entry_properties": expected_props,
+        "entry_additional": False,
+        "key_pattern": "^[0-9a-f]{16}$",
+        "code_pattern": "^SL[0-9]{3}$",
+        "file_role_min_length": 1,
+        "migrated_enum": ["verified", "unverified"],
+    }
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name):
+            names.append(func.id)
+        elif isinstance(func, ast.Attribute):
+            names.append(func.attr)
+    return names
+
+
+def string_constants(fn: ast.AST) -> list[str]:
+    values: list[str] = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            values.append(node.value)
+    return values
+
+
+def prove_tests(text: str) -> list[ast.FunctionDef]:
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    names = [fn.name for fn in functions]
+    expected = [
+        "test_baseline_v2_round_trip",
+        "test_load_v1_still_supported",
+        "test_load_missing_fails",
+        "test_load_malformed_v1_fails",
+        "test_load_malformed_v2_fails",
+        "test_load_wrong_schema_fails",
+        "test_file_role_normalizes_spelling",
+        "test_file_role_bare_name_uses_cwd",
+        "test_v2_key_path_spelling_independent",
+        "test_v2_key_immediate_parent_rename_differs",
+        "test_check_write_v2_then_baseline",
+        "test_check_v2_baseline_survives_relative_invoke",
+        "test_v1_baseline_still_suppresses_via_v1_leg",
+        "test_ambiguous_v2_key_suppresses_nothing",
+        "test_upgrade_unverified_without_source",
+        "test_upgrade_verified_with_source",
+        "test_upgrade_rejects_non_v1",
+        "test_upgrade_deterministic",
+        "test_check_missing_baseline_fails",
+        "test_scan_baseline_suppresses",
+        "test_scan_v2_baseline_survives_tree_rename",
+        "test_baseline_flags_mutually_exclusive",
+    ]
+    if names != expected:
+        raise SystemExit("pinned test order drifted")
+    by_name = {fn.name: fn for fn in functions}
+    for name, required in REQUIRED_CALLS.items():
+        calls = set(call_names(by_name[name]))
+        missing = required - calls
+        if missing:
+            raise SystemExit(f"{name} lost calls {sorted(missing)}")
+        forbidden = FORBIDDEN_CALLS.get(name, set())
+        hit = forbidden & calls
+        if hit:
+            raise SystemExit(f"{name} gained calls {sorted(hit)}")
+    malformed = by_name["test_load_malformed_v2_fails"]
+    if MALFORMED_V2 not in string_constants(malformed):
+        raise SystemExit("malformed v2 literal drifted")
+    if call_names(malformed).count("load_baseline") != 1:
+        raise SystemExit("malformed v2 call count drifted")
+    unverified = by_name["test_upgrade_unverified_without_source"]
+    constants = string_constants(unverified)
+    for fingerprint in UNVERIFIED_FPS:
+        if fingerprint not in constants:
+            raise SystemExit("unverified fingerprints drifted")
+    if call_names(unverified).count("upgrade_baseline") != 1:
+        raise SystemExit("unverified call count drifted")
+    deterministic = by_name["test_upgrade_deterministic"]
+    constants = string_constants(deterministic)
+    for fingerprint in DETERMINISTIC_FPS:
+        if fingerprint not in constants:
+            raise SystemExit("deterministic fingerprints drifted")
+    if call_names(deterministic).count("upgrade_baseline") != 2:
+        raise SystemExit("deterministic call count drifted")
+    ambiguous = by_name["test_ambiguous_v2_key_suppresses_nothing"]
+    if call_names(ambiguous).count("filter_findings") != 2:
+        raise SystemExit("ambiguous test is not two modes")
+    return functions
+
+
+def v1_text(baseline: Any, fingerprints: list[str]) -> str:
+    doc = {
+        "fingerprints": list(fingerprints),
+        "schema_version": baseline.BASELINE_SCHEMA_VERSION,
+    }
+    return json.dumps(doc)
+
+
+def run_upgrade(
+    baseline: Any,
+    fingerprints: list[str],
+    findings: list[Any] | None,
+) -> tuple[str, str, int, int]:
+    text = v1_text(baseline, fingerprints)
+    fd, name = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    path = Path(name)
+    try:
+        path.write_text(text, encoding="utf-8", newline="\n")
+        document, verified, unverified = baseline.upgrade_baseline(
+            path,
+            findings,
+            created_by=CREATED_BY,
+        )
+    finally:
+        path.unlink(missing_ok=True)
+    if not isinstance(document, str) or not document.endswith("\n") or "\r" in document:
+        raise SystemExit("upgrade document is not one LF-ended string")
+    return text, document, verified, unverified
+
+
+def run_load_malformed(baseline: Any) -> list[str]:
+    fd, name = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    path = Path(name)
+    try:
+        path.write_text(MALFORMED_V2, encoding="utf-8", newline="\n")
+        try:
+            baseline.load_baseline(path)
+        except baseline.BaselineError as err:
+            message = str(err)
+        else:
+            raise SystemExit("malformed v2 load succeeded")
+    finally:
+        path.unlink(missing_ok=True)
+    needles = ["16-hex", "entries[0].key", "nothex"]
+    for needle in needles:
+        if needle not in message:
+            raise SystemExit(f"pin load message lost {needle}")
+        if any(banned in needle for banned in _BANNED):
+            raise SystemExit(f"needle contains a banned fragment {needle}")
+    return needles
+
+
+def compact(value: Any) -> str:
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def reject(
+    name: str,
+    document: str,
+    keyword: str,
+    pointer: str,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "id": name,
+        "construct": {
+            "type": "validate",
+            "entire_test": False,
+            "function": "validate_baseline_v2",
+            "mode": "failure",
+            "emitter": False,
+            "document": document,
+        },
+        "expected": {
+            "schema_ok": False,
+            "keyword": keyword,
+            "pointer": pointer,
+            "detail": detail,
+        },
+    }
+
+
+def accept_input(name: str, document: str) -> dict[str, Any]:
+    return {
+        "id": name,
+        "construct": {
+            "type": "validate",
+            "entire_test": False,
+            "function": "validate_baseline_v2",
+            "mode": "success",
+            "emitter": False,
+            "document": document,
+        },
+        "expected": {"schema_ok": True},
+    }
+
+
+def build_vectors(baseline: Any) -> list[dict[str, Any]]:
+    v1_unverified, doc_unverified, verified, unverified = run_upgrade(
+        baseline,
+        UNVERIFIED_FPS,
+        None,
+    )
+    if (verified, unverified) != (0, 2):
+        raise SystemExit("unverified counts drifted")
+    v1_deterministic, doc_deterministic, verified, unverified = run_upgrade(
+        baseline,
+        DETERMINISTIC_FPS,
+        None,
+    )
+    if (verified, unverified) != (0, 2):
+        raise SystemExit("deterministic counts drifted")
+    again = run_upgrade(baseline, DETERMINISTIC_FPS, None)[1]
+    if again != doc_deterministic:
+        raise SystemExit("pin upgrade_baseline is not stable")
+    empty = baseline.dump_baseline([], created_by=CREATED_BY)
+    if not isinstance(empty, str) or not empty.endswith("\n") or "\r" in empty:
+        raise SystemExit("empty dump drifted")
+
+    from sesslint.finding import SourceRef, make_finding
+
+    finding = make_finding(
+        code=SYNTHETIC_CODE,
+        severity="error",
+        message_template=SYNTHETIC_TEMPLATE,
+        source=SourceRef(SYNTHETIC_PATH),
+    )
+    _v1_verified, doc_verified, verified, unverified = run_upgrade(
+        baseline,
+        [finding.fingerprint],
+        [finding],
+    )
+    if (verified, unverified) != (1, 0):
+        raise SystemExit("synthetic verified counts drifted")
+    if SYNTHETIC_TEMPLATE in doc_verified or SYNTHETIC_PATH in doc_verified:
+        raise SystemExit("synthetic finding leaked into the document")
+    if finding.fingerprint in doc_verified:
+        raise SystemExit("v1 fingerprint leaked into the verified document")
+
+    needles = run_load_malformed(baseline)
+    parsed = json.loads(doc_unverified)
+    if not isinstance(parsed, dict):
+        raise SystemExit("unverified document is not an object")
+    missing_entries = dict(parsed)
+    del missing_entries["entries"]
+    missing_version = dict(parsed)
+    del missing_version["schema_version"]
+    missing_key = json.loads(doc_unverified)
+    del missing_key["entries"][0]["key"]
+    root_extra = json.loads(doc_unverified)
+    root_extra["extra"] = 1
+    entry_extra = json.loads(doc_unverified)
+    entry_extra["entries"][0]["extra"] = "x"
+    wrong_const = json.loads(doc_unverified)
+    wrong_const["schema_version"] = "sesslint.baseline/v1"
+    bad_enum = json.loads(doc_unverified)
+    bad_enum["entries"][0]["migrated"] = "nope"
+    bad_code = json.loads(doc_unverified)
+    bad_code["entries"][0]["code"] = "SL00A"
+    empty_role = json.loads(doc_unverified)
+    empty_role["entries"][0]["file_role"] = ""
+    entries_object = json.loads(doc_unverified)
+    entries_object["entries"] = {}
+    entry_array = json.loads(doc_unverified)
+    entry_array["entries"] = [[]]
+    created_bool = json.loads(doc_unverified)
+    created_bool["entries"][0]["created_by"] = True
+    key_null = json.loads(doc_unverified)
+    key_null["entries"][0]["key"] = None
+    version_number = json.loads(doc_unverified)
+    version_number["schema_version"] = 1
+    upper = json.loads(doc_unverified)
+    upper["entries"][0]["key"] = UPPER_KEY
+    trailing = '{"entries":[],"schema_version":"sesslint.baseline/v2",}'
+    try:
+        json.loads(trailing)
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise SystemExit("trailing comma was accepted by json.loads")
+
+    vectors = [
+        {
+            "id": "upgrade_unverified_without_source",
+            "construct": {
+                "type": "upgrade_baseline",
+                "entire_test": True,
+                "function": "upgrade_baseline",
+                "mode": "success",
+                "emitter": True,
+                "findings": "none",
+                "created_by": CREATED_BY,
+                "calls": 1,
+                "fingerprints": UNVERIFIED_FPS,
+                "v1_text": v1_unverified,
+            },
+            "expected": {
+                "schema_ok": True,
+                "document": doc_unverified,
+                "verified": 0,
+                "unverified": 2,
+            },
+        },
+        {
+            "id": "upgrade_deterministic",
+            "construct": {
+                "type": "upgrade_baseline",
+                "entire_test": True,
+                "function": "upgrade_baseline",
+                "mode": "success",
+                "emitter": True,
+                "findings": "none",
+                "created_by": CREATED_BY,
+                "calls": 2,
+                "fingerprints": DETERMINISTIC_FPS,
+                "v1_text": v1_deterministic,
+            },
+            "expected": {
+                "schema_ok": True,
+                "document": doc_deterministic,
+                "verified": 0,
+                "unverified": 2,
+            },
+        },
+        {
+            "id": "dump_empty",
+            "construct": {
+                "type": "dump_baseline",
+                "entire_test": False,
+                "function": "dump_baseline",
+                "mode": "success",
+                "emitter": True,
+                "created_by": CREATED_BY,
+            },
+            "expected": {"schema_ok": True, "document": empty},
+        },
+        {
+            "id": "upgrade_verified_synthetic",
+            "construct": {
+                "type": "validate",
+                "entire_test": False,
+                "function": "validate_baseline_v2",
+                "mode": "success",
+                "emitter": True,
+                "document": doc_verified,
+            },
+            "expected": {"schema_ok": True},
+        },
+        accept_input(
+            "validate_key_only",
+            compact(
+                {
+                    "entries": [{"key": KEY_ONLY}],
+                    "schema_version": "sesslint.baseline/v2",
+                }
+            ),
+        ),
+        accept_input(
+            "validate_empty_created_by",
+            compact(
+                {
+                    "entries": [
+                        {
+                            "code": "SL001",
+                            "created_by": "",
+                            "file_role": "sess/run.jsonl",
+                            "key": KEY_ONLY,
+                            "migrated": "verified",
+                        }
+                    ],
+                    "schema_version": "sesslint.baseline/v2",
+                }
+            ),
+        ),
+        accept_input(
+            "validate_file_role_one",
+            compact(
+                {
+                    "entries": [{"file_role": "x", "key": KEY_ONLY}],
+                    "schema_version": "sesslint.baseline/v2",
+                }
+            ),
+        ),
+        {
+            "id": "load_malformed_v2",
+            "construct": {
+                "type": "load_baseline",
+                "entire_test": True,
+                "function": "load_baseline",
+                "mode": "failure",
+                "emitter": False,
+                "document": MALFORMED_V2,
+            },
+            "expected": {
+                "schema_ok": False,
+                "keyword": "pattern",
+                "pointer": "/entries/0/key",
+                "detail": "^[0-9a-f]{16}$",
+                "message_contains": needles,
+            },
+        },
+        reject("missing_entries", compact(missing_entries), "required", "", "entries"),
+        reject(
+            "missing_schema_version",
+            compact(missing_version),
+            "required",
+            "",
+            "schema_version",
+        ),
+        reject(
+            "missing_key",
+            compact(missing_key),
+            "required",
+            "/entries/0",
+            "key",
+        ),
+        reject(
+            "root_additional",
+            compact(root_extra),
+            "additionalProperties",
+            "",
+            "extra",
+        ),
+        reject(
+            "entry_additional",
+            compact(entry_extra),
+            "additionalProperties",
+            "/entries/0",
+            "extra",
+        ),
+        reject(
+            "wrong_const",
+            compact(wrong_const),
+            "const",
+            "/schema_version",
+            "sesslint.baseline/v2",
+        ),
+        reject(
+            "bad_enum",
+            compact(bad_enum),
+            "enum",
+            "/entries/0/migrated",
+            "verified|unverified",
+        ),
+        reject(
+            "bad_code_pattern",
+            compact(bad_code),
+            "pattern",
+            "/entries/0/code",
+            "^SL[0-9]{3}$",
+        ),
+        reject(
+            "empty_file_role",
+            compact(empty_role),
+            "minLength",
+            "/entries/0/file_role",
+            "1",
+        ),
+        reject(
+            "entries_not_array",
+            compact(entries_object),
+            "type",
+            "/entries",
+            "array",
+        ),
+        reject(
+            "entry_not_object",
+            compact(entry_array),
+            "type",
+            "/entries/0",
+            "object",
+        ),
+        reject("root_not_object", "[]", "type", "", "object"),
+        reject(
+            "created_by_not_string",
+            compact(created_bool),
+            "type",
+            "/entries/0/created_by",
+            "string",
+        ),
+        reject(
+            "key_not_string",
+            compact(key_null),
+            "type",
+            "/entries/0/key",
+            "string",
+        ),
+        reject(
+            "schema_version_not_string",
+            compact(version_number),
+            "type",
+            "/schema_version",
+            "string",
+        ),
+        reject(
+            "uppercase_key",
+            compact(upper),
+            "pattern",
+            "/entries/0/key",
+            "^[0-9a-f]{16}$",
+        ),
+        reject("trailing_comma", trailing, "parse", "", "syntax"),
+    ]
+    if len(vectors) != VECTOR_COUNT:
+        raise SystemExit(f"vector count {len(vectors)}")
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def coverage_rows() -> list[dict[str, Any]]:
+    covered = {
+        "test_load_malformed_v2_fails": "load_malformed_v2",
+        "test_upgrade_unverified_without_source": "upgrade_unverified_without_source",
+        "test_upgrade_deterministic": "upgrade_deterministic",
+    }
+    rows: list[dict[str, Any]] = []
+    order = [
+        "test_baseline_v2_round_trip",
+        "test_load_v1_still_supported",
+        "test_load_missing_fails",
+        "test_load_malformed_v1_fails",
+        "test_load_malformed_v2_fails",
+        "test_load_wrong_schema_fails",
+        "test_file_role_normalizes_spelling",
+        "test_file_role_bare_name_uses_cwd",
+        "test_v2_key_path_spelling_independent",
+        "test_v2_key_immediate_parent_rename_differs",
+        "test_check_write_v2_then_baseline",
+        "test_check_v2_baseline_survives_relative_invoke",
+        "test_v1_baseline_still_suppresses_via_v1_leg",
+        "test_ambiguous_v2_key_suppresses_nothing",
+        "test_upgrade_unverified_without_source",
+        "test_upgrade_verified_with_source",
+        "test_upgrade_rejects_non_v1",
+        "test_upgrade_deterministic",
+        "test_check_missing_baseline_fails",
+        "test_scan_baseline_suppresses",
+        "test_scan_v2_baseline_survives_tree_rename",
+        "test_baseline_flags_mutually_exclusive",
+    ]
+    for name in order:
+        vector_id = covered.get(name)
+        if vector_id is None and name not in NOTES:
+            raise SystemExit(f"missing note {name}")
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{name}",
+                "column": "column_0",
+                "status": "covered" if vector_id else "not_applicable",
+                "vector_id": vector_id,
+                "note": "" if vector_id else NOTES[name],
+            }
+        )
+    covered_count = sum(row["status"] == "covered" for row in rows)
+    if covered_count != COVERED_COUNT or len(rows) != PINNED_TEST_COUNT:
+        raise SystemExit("coverage counts drifted")
+    return rows
+
+
+def dump(doc: Any) -> str:
+    text = json.dumps(doc, indent=2, sort_keys=True) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    for banned in _BANNED:
+        if banned in text:
+            raise SystemExit(f"refusing banned fragment {banned}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    schema_blob = git_show_bytes(f"{PYTHON_COMMIT}:{SCHEMA_PATH}")
+    if b"02694d5" in schema_blob:
+        raise SystemExit("refusing 02694d5 in the schema")
+    constraints = require_schema(schema_blob)
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    prove_tests(test_text)
+    emitter_blob = git_show_bytes(f"{PYTHON_COMMIT}:{EMITTER_PATH}")
+    baseline = load_emitter()
+    vectors = build_vectors(baseline)
+    rows = coverage_rows()
+    schema_sha = hashlib.sha256(schema_blob).hexdigest()
+    emitter_sha = hashlib.sha256(emitter_blob).hexdigest()
+    envelope = {
+        "baseline_py_sha256": emitter_sha,
+        "constraints": constraints,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "schema": ENVELOPE,
+        "schema_id": SCHEMA_ID,
+        "schema_sha256": schema_sha,
+        "vectors": vectors,
+    }
+    vectors_text = dump(envelope)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    coverage = {
+        "covered_count": COVERED_COUNT,
+        "module": MODULE,
+        "not_applicable_count": PINNED_TEST_COUNT - COVERED_COUNT,
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_id": SCHEMA_ID,
+        "test_file": TEST_FILE,
+    }
+    manifest = {
+        "baseline_py_sha256": emitter_sha,
+        "covered_count": COVERED_COUNT,
+        "generator": GENERATOR,
+        "module": MODULE,
+        "not_applicable_count": PINNED_TEST_COUNT - COVERED_COUNT,
+        "python_commit": PYTHON_COMMIT,
+        "schema": ENVELOPE,
+        "schema_id": SCHEMA_ID,
+        "schema_sha256": schema_sha,
+        "vector_count": VECTOR_COUNT,
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.baseline.v2 schema vectors. Emitter documents "
+            "come from the pinned blob. Session text is not stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            (
+                "GAP-baseline-schema-fixture: tests that call main or _findings "
+                "on a fixture session are not replayed. Session text is not stored."
+            ),
+            (
+                "GAP-baseline-schema-other-functions: file_role, compute_v2_key, "
+                "filter_findings, and v1 load are different functions from the "
+                "v2 schema check."
+            ),
+            (
+                "GAP-baseline-schema-partial: a test that mixes write, load, and "
+                "upgrade is not covered by one of those calls."
+            ),
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dump(coverage))
+    write_text(OUT / "manifest.json", dump(manifest))
+    write_text(OUT / "PROVENANCE.json", dump(provenance))
+    reread = (OUT / "vectors.json").read_bytes()
+    if hashlib.sha256(reread).hexdigest() != vectors_sha:
+        raise SystemExit("vectors sha changed while writing")
+    print(f"vectors {VECTOR_COUNT} sha {vectors_sha}")
+    print(f"schema_sha {schema_sha}")
+    print(f"baseline_py_sha {emitter_sha}")
+    print(f"covered {COVERED_COUNT} not_applicable {PINNED_TEST_COUNT - COVERED_COUNT}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,79 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "vectors": [
+    {
+      "id": "cli_error_exit_2_synthetic",
+      "construct": {
+        "type": "CliError",
+        "exit_code": 2,
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "cli_error_exit_0_synthetic",
+      "construct": {
+        "type": "CliError",
+        "exit_code": 0,
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "exit_code": 0
+      }
+    },
+    {
+      "id": "cli_error_exit_130_synthetic",
+      "construct": {
+        "type": "CliError",
+        "exit_code": 130,
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "exit_code": 130
+      }
+    },
+    {
+      "id": "cli_error_exit_negative_synthetic",
+      "construct": {
+        "type": "CliError",
+        "exit_code": -1,
+        "message": "synthetic-check-ok"
+      },
+      "expected": {
+        "display": "synthetic-check-ok",
+        "exit_code": -1
+      }
+    },
+    {
+      "id": "cli_error_empty_message",
+      "construct": {
+        "type": "CliError",
+        "exit_code": 2,
+        "message": ""
+      },
+      "expected": {
+        "display": "",
+        "exit_code": 2
+      }
+    },
+    {
+      "id": "cli_error_unicode_message",
+      "construct": {
+        "type": "CliError",
+        "exit_code": 2,
+        "message": "synthetic-phiên-bản-không-hỗ-trợ"
+      },
+      "expected": {
+        "display": "synthetic-phiên-bản-không-hỗ-trợ",
+        "exit_code": 2
+      }
+    }
+  ]
+}

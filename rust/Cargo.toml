@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [".", "crates/codec", "crates/checks", "crates/cli", "crates/adapters", "crates/evidence", "crates/model", "crates/repair", "crates/report", "crates/scan", "crates/integrations", "crates/outcome", "crates/support"]
+
+[package]
+name = "sesslint-rust-workspace"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"

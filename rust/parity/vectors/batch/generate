@@ -1,0 +1,469 @@
+#!/usr/bin/env python3
+"""Generate sesslint.batch parity vectors from pinned git blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BATCH_PY_SHA256 = (
+    "07e323ecd79668cfb7eefc94436314d9c37912f625b83b23a5544fd4e14378f8"
+)
+BATCH_RS_SHA256 = (
+    "8b2d8e430e124ca565979a0fbb9ee392373a102083499df1e4eefc6595423c16"
+)
+MODULE = "sesslint.batch"
+SCHEMA_LEAF = "sesslint.batch-repair.v1.json"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-scan-batch-import-stops: repair_many stops with Display "
+    "`sesslint.api is not available`; _plan_detail stops with Display "
+    "`sesslint.adapters.detect.FORMAT_CANONICAL is not available`; "
+    "resolve_scan_report_files after a successful read stops with Display "
+    "`json.loads is not available`; load_batch_schema after a successful read "
+    "stops with Display `json.loads is not available`.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/batch.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != BATCH_PY_SHA256:
+        raise SystemExit(
+            f"batch.py pin sha256 mismatch: expected {BATCH_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "scan" / "src" / "batch.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != BATCH_RS_SHA256:
+        raise SystemExit(
+            f"batch.rs sha256 mismatch: expected {BATCH_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if raw.count(b"\r"):
+        raise SystemExit("committed output must be LF-only")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (b"sesslint-wt-", b"FOR_WORK"):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+
+
+def install_stubs() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    progress = types.ModuleType("sesslint.progress")
+
+    class CancellationToken:
+        pass
+
+    class ProgressEvent:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+
+    ProgressCallback = Any  # type: ignore[misc,assignment]
+
+    def check_token(_token: Any) -> None:
+        return None
+
+    def emit_progress(_cb: Any, _event: Any) -> None:
+        return None
+
+    progress.CancellationToken = CancellationToken
+    progress.ProgressCallback = ProgressCallback
+    progress.ProgressEvent = ProgressEvent
+    progress.check_token = check_token
+    progress.emit = emit_progress
+    sys.modules["sesslint.progress"] = progress
+    pkg.progress = progress
+
+    repair = types.ModuleType("sesslint.repair")
+
+    @dataclass(frozen=True)
+    class RepairPlan:
+        blocked: tuple[Any, ...] = ()
+        steps: tuple[Any, ...] = ()
+
+    repair.RepairPlan = RepairPlan
+    sys.modules["sesslint.repair"] = repair
+    pkg.repair = repair
+
+    stats = types.ModuleType("sesslint.stats")
+
+    def _iter_files(_roots: Any, _max_files: int) -> tuple[list[Any], list[Any]]:
+        return [], []
+
+    stats._iter_files = _iter_files
+    sys.modules["sesslint.stats"] = stats
+    pkg.stats = stats
+
+    resources = types.ModuleType("sesslint._resources")
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/_resources.py").decode("utf-8")
+    exec(compile(blob, "<_resources>", "exec"), resources.__dict__)
+    sys.modules["sesslint._resources"] = resources
+    pkg._resources = resources
+
+
+def load_batch_module() -> types.ModuleType:
+    verify_pin_hashes()
+    install_stubs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/batch.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("sesslint.batch", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned batch.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["sesslint.batch"] = mod
+        sys.modules["sesslint"].batch = mod
+        spec.loader.exec_module(mod)
+        mod.__file__ = str(repo_root() / "src" / "sesslint" / "batch.py")
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def dict_keys_ordered(d: dict[str, Any]) -> list[str]:
+    return list(d.keys())
+
+
+def row_to_expected(batch: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    row = batch.BatchRow(
+        path=str(construct["path"]),
+        outcome=str(construct["outcome"]),
+        codes=tuple(construct.get("codes", ())),
+        reason=construct.get("reason"),
+        output=construct.get("output"),
+        manifest=construct.get("manifest"),
+    )
+    payload = row.to_dict()
+    return {
+        "keys": dict_keys_ordered(payload),
+        "dict": payload,
+    }
+
+
+def render_expected(batch: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for spec in construct["rows"]:
+        rows.append(
+            batch.BatchRow(
+                path=str(spec["path"]),
+                outcome=str(spec["outcome"]),
+                codes=tuple(spec.get("codes", ())),
+                reason=spec.get("reason"),
+            )
+        )
+    report = batch.BatchRepairReport(rows=tuple(rows))
+    text = report.render_human(home=None)
+    return {"text": text}
+
+
+def output_for_expected(batch: Any, construct: dict[str, Any], out_dir: Path) -> dict[str, Any]:
+    prev = Path.cwd()
+    try:
+        import os
+
+        os.chdir(out_dir)
+        src = Path(str(construct["src"]))
+        root = Path(str(construct["root"])) if "root" in construct else None
+        out = Path(str(construct.get("out_leaf", "out")))
+        result = batch._output_for(src, root, out)
+        rel = result.as_posix()
+        if rel.startswith("out/"):
+            rel = rel[4:]
+        return {"path_posix": rel}
+    finally:
+        import os
+
+        os.chdir(prev)
+
+
+def rel_to_home(home: Path, path: Path) -> str:
+    if path == home:
+        return "."
+    return path.relative_to(home).as_posix()
+
+
+def resolve_scan_pin(batch: Any, fixture: Path, home: Path) -> dict[str, Any]:
+    resolved, unresolvable = batch.resolve_scan_report_files(fixture, home=home)
+    return {
+        "resolved": [rel_to_home(home, p) for p in resolved],
+        "unresolvable": list(unresolvable),
+    }
+
+
+def schema_path_pin(batch: Any) -> dict[str, Any]:
+    path = batch.get_batch_schema_path()
+    if path.name != SCHEMA_LEAF:
+        raise SystemExit(f"unexpected schema leaf {path.name!r}")
+    return {"path_suffix": f"schemas/{SCHEMA_LEAF}"}
+
+
+def ensure_fixtures(out_dir: Path) -> Path:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    home_root = fixtures / "home-root"
+    home_root.mkdir(exist_ok=True)
+    report = {
+        "files": [
+            {"path": "synthetic/rel.jsonl"},
+            {"path": "~/synthetic/home.jsonl"},
+            {"path": "synthetic/min.dot"},
+        ]
+    }
+    scan_report = fixtures / "synthetic-scan-report.json"
+    scan_report.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    mirror = fixtures / "mirror"
+    nested = mirror / "synthetic" / "nested"
+    nested.mkdir(parents=True, exist_ok=True)
+    (nested / "session.jsonl").write_text("{}\n", encoding="utf-8", newline="\n")
+    return fixtures
+
+
+def build_expected(
+    batch: Any, out_dir: Path, construct: dict[str, Any]
+) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "batch_row_to_dict":
+        return row_to_expected(batch, construct)
+    if kind == "render_human":
+        return render_expected(batch, construct)
+    if kind == "output_for":
+        return output_for_expected(batch, construct, out_dir)
+    if kind == "repair_many_gap":
+        return {"rust_assertion": {"mode": "api_unavailable"}}
+    if kind == "plan_detail_gap":
+        return {"rust_assertion": {"mode": "format_canonical_unavailable"}}
+    if kind == "resolve_scan_report_files_gap":
+        fixtures = out_dir / "fixtures"
+        home = fixtures / "home-root"
+        pin = resolve_scan_pin(
+            batch, Path("fixtures/synthetic-scan-report.json"), home=home
+        )
+        return {"pin": pin, "rust_assertion": {"mode": "json_loads_unavailable"}}
+    if kind == "load_batch_schema_gap":
+        return {"rust_assertion": {"mode": "json_loads_unavailable"}}
+    if kind == "get_batch_schema_path":
+        return schema_path_pin(batch)
+    raise SystemExit(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "batch_row_to_dict_bare",
+            "construct": {
+                "type": "batch_row_to_dict",
+                "path": "synthetic/a.jsonl",
+                "outcome": "eligible",
+            },
+        },
+        {
+            "id": "batch_row_to_dict_empty_reason",
+            "construct": {
+                "type": "batch_row_to_dict",
+                "path": "synthetic/b.jsonl",
+                "outcome": "repaired",
+                "reason": "",
+            },
+        },
+        {
+            "id": "batch_row_to_dict_codes_sorted",
+            "construct": {
+                "type": "batch_row_to_dict",
+                "path": "synthetic/c.jsonl",
+                "outcome": "skipped",
+                "codes": ["SL002", "SL001", "SL001"],
+                "reason": "blocked",
+            },
+        },
+        {
+            "id": "batch_row_to_dict_optional_fields",
+            "construct": {
+                "type": "batch_row_to_dict",
+                "path": "synthetic/d.jsonl",
+                "outcome": "repaired",
+                "output": "synthetic/d.repaired.jsonl",
+                "manifest": "synthetic/d.manifest.json",
+            },
+        },
+        {
+            "id": "render_human_empty_reason",
+            "construct": {
+                "type": "render_human",
+                "rows": [
+                    {
+                        "path": "synthetic/a.jsonl",
+                        "outcome": "skipped",
+                        "reason": "",
+                        "codes": [""],
+                    },
+                    {"path": "synthetic/b.jsonl", "outcome": "eligible"},
+                ],
+            },
+        },
+        {
+            "id": "render_human_with_reason",
+            "construct": {
+                "type": "render_human",
+                "rows": [
+                    {
+                        "path": "synthetic/a.jsonl",
+                        "outcome": "skipped",
+                        "codes": ["SL203", "SL001"],
+                        "reason": "blocked",
+                    },
+                    {"path": "synthetic/b.jsonl", "outcome": "repaired"},
+                ],
+            },
+        },
+        {
+            "id": "output_for_default_suffix",
+            "construct": {
+                "type": "output_for",
+                "src": "session.jsonl",
+            },
+        },
+        {
+            "id": "output_for_no_suffix",
+            "construct": {
+                "type": "output_for",
+                "src": "session",
+            },
+        },
+        {
+            "id": "output_for_dotted_suffix",
+            "construct": {
+                "type": "output_for",
+                "src": "foo.bar.jsonl",
+            },
+        },
+        {
+            "id": "output_for_double_extension",
+            "construct": {
+                "type": "output_for",
+                "src": "a.tar.gz",
+            },
+        },
+        {
+            "id": "output_for_relative_mirror",
+            "construct": {
+                "type": "output_for",
+                "src": "fixtures/mirror/synthetic/nested/session.jsonl",
+                "root": "fixtures/mirror/synthetic",
+            },
+        },
+        {"id": "repair_many_gap", "construct": {"type": "repair_many_gap"}},
+        {"id": "plan_detail_gap", "construct": {"type": "plan_detail_gap"}},
+        {
+            "id": "resolve_scan_report_files_gap",
+            "construct": {"type": "resolve_scan_report_files_gap"},
+        },
+        {"id": "load_batch_schema_gap", "construct": {"type": "load_batch_schema_gap"}},
+        {
+            "id": "get_batch_schema_path",
+            "construct": {"type": "get_batch_schema_path"},
+        },
+    ]
+
+
+def write_coverage(out_dir: Path) -> tuple[int, int]:
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "rows": [],
+    }
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return 0, 0
+
+
+def main() -> int:
+    batch = load_batch_module()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(batch, out_dir, construct)
+        vectors.append({"id": row["id"], "construct": construct, "expected": expected})
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "batch_py_sha256": BATCH_PY_SHA256,
+        "batch_rs_sha256": BATCH_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.batch parity: BatchRow.to_dict key order, "
+            "render_human empty-reason omission, _output_for suffix names, "
+            "and import-stop seams."
+        ),
+        "generator": "rust/parity/vectors/batch/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir)
+    print(f"vectors.json sha256={digest}")
+    print(f"vector_count={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""Generate sesslint.config parity vectors (stdlib only; pinned Python validate_keys / load_config)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CONFIG_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+CONFIG_RS_SHA256 = (
+    "1db412bba3bd026326ba15d3407c06bec9770b1be23f1beb9749536f9a9eafa0"
+)
+MODULE = "sesslint.config"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "A readable config file calls tomllib. Rust returns tomllib is not available "
+    "and does not invent keys. Python returns the parsed table or Invalid TOML. "
+    "Do not rewrite the Python table into the Rust error.",
+    "A pyproject.toml that contains [tool.sesslint and parses is a successful "
+    "discovery in Python. Rust returns tomllib is not available and does not "
+    "continue to a parent file.",
+    "No [tool.sesslint] section is not produced, because the file is not parsed.",
+    "A non-empty profile string calls list_profiles. Rust returns "
+    "sesslint.profiles.builtin is not available. Python returns the registered names.",
+    "Rust trim does not drop U+001C through U+001F.",
+    "OS error text is Rust std::io::Error, not CPython OSError.",
+    "An int that does not fit i64 is a typed error. An int stored as f64 is not "
+    "exact past 2^53.",
+)
+
+SOURCE_NAME = "config.toml"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_config_py_matches_head() -> None:
+    pin = git_show_blob(f"{CONFIG_PY_PIN}:src/sesslint/config.py")
+    head = git_show_blob("HEAD:src/sesslint/config.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/config.py differs from pin blob; regenerate or align the worktree."
+        )
+
+
+def verify_config_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "config.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != CONFIG_RS_SHA256:
+        raise SystemExit(
+            "checks/src/config.rs sha256 mismatch: "
+            f"expected {CONFIG_RS_SHA256}, got {digest}"
+        )
+
+
+def load_config_module() -> types.ModuleType:
+    verify_config_py_matches_head()
+    verify_config_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{CONFIG_PY_PIN}:src/sesslint/config.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_config.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_config_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned config.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, list):
+        return {"t": "list", "items": [tagged(item) for item in value]}
+    if isinstance(value, dict):
+        entries: list[list[Any]] = []
+        for key, val in value.items():
+            entries.append([key, tagged(val)])
+        return {"t": "map", "entries": entries}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def cfg_construct(entries: list[tuple[str, Any]]) -> dict[str, Any]:
+    return {
+        "type": "validate_keys",
+        "cfg": {"entries": [[k, tagged(v)] for k, v in entries]},
+    }
+
+
+def vectors_from_python(mod: Any) -> list[dict[str, Any]]:
+    source = Path(SOURCE_NAME)
+    validate = mod._validate_keys
+    out: list[dict[str, Any]] = []
+
+    # format_renamed
+    try:
+        validate({"format": "canonical", "bogus": True}, source)
+        raise SystemExit("format_renamed: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "format_renamed",
+                "construct": cfg_construct([("format", "canonical"), ("bogus", True)]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # unknown_key
+    try:
+        validate({"bogus": True}, source)
+        raise SystemExit("unknown_key: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "unknown_key",
+                "construct": cfg_construct([("bogus", True)]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # select_and_ignore
+    try:
+        validate({"select": [], "ignore": []}, source)
+        raise SystemExit("select_and_ignore: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "select_and_ignore",
+                "construct": cfg_construct([("select", []), ("ignore", [])]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # empty_profile
+    try:
+        validate({"profile": ""}, source)
+        raise SystemExit("empty_profile: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "empty_profile",
+                "construct": cfg_construct([("profile", "")]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # fail_on_stripped
+    cfg = validate({"fail_on": "  error  "}, source)
+    out.append(
+        {
+            "id": "fail_on_stripped",
+            "construct": cfg_construct([("fail_on", "  error  ")]),
+            "expected": {"outcome": "ok", "config": tagged(cfg)},
+        }
+    )
+
+    # adapter_claude
+    cfg = validate({"adapter": "claude"}, source)
+    out.append(
+        {
+            "id": "adapter_claude",
+            "construct": cfg_construct([("adapter", "claude")]),
+            "expected": {"outcome": "ok", "config": tagged(cfg)},
+        }
+    )
+
+    # bad_adapter
+    try:
+        validate({"adapter": "nope"}, source)
+        raise SystemExit("bad_adapter: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "bad_adapter",
+                "construct": cfg_construct([("adapter", "nope")]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # bool_is_not_a_number
+    try:
+        validate({"confidence_min": True}, source)
+        raise SystemExit("bool_is_not_a_number: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "bool_is_not_a_number",
+                "construct": cfg_construct([("confidence_min", True)]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # timestamp_zero
+    cfg = validate({"timestamp_skew_ms": 0}, source)
+    out.append(
+        {
+            "id": "timestamp_zero",
+            "construct": cfg_construct([("timestamp_skew_ms", 0)]),
+            "expected": {"outcome": "ok", "config": tagged(cfg)},
+        }
+    )
+
+    # timestamp_negative
+    try:
+        validate({"timestamp_skew_ms": -1}, source)
+        raise SystemExit("timestamp_negative: expected ConfigError")
+    except mod.ConfigError as err:
+        out.append(
+            {
+                "id": "timestamp_negative",
+                "construct": cfg_construct([("timestamp_skew_ms", -1)]),
+                "expected": {"outcome": "error", "message": str(err)},
+            }
+        )
+
+    # list_strip
+    cfg = validate({"exclude": ["  a  ", "b"]}, source)
+    out.append(
+        {
+            "id": "list_strip",
+            "construct": cfg_construct([("exclude", ["  a  ", "b"])]),
+            "expected": {"outcome": "ok", "config": tagged(cfg)},
+        }
+    )
+
+    # key_order
+    cfg = validate({"adapter": "auto", "fail_on": "warning"}, source)
+    out.append(
+        {
+            "id": "key_order",
+            "construct": cfg_construct([("adapter", "auto"), ("fail_on", "warning")]),
+            "expected": {"outcome": "ok", "config": tagged(cfg)},
+        }
+    )
+
+    # nothing_found — empty discovery root (generator uses temp dir; test does the same)
+    with tempfile.TemporaryDirectory() as td:
+        start = Path(td)
+        loaded = mod.load_config(start=start, explicit=None)
+        if loaded != {}:
+            raise SystemExit(f"nothing_found: expected {{}}, got {loaded!r}")
+        out.append(
+            {
+                "id": "nothing_found",
+                "construct": {
+                    "type": "load_config",
+                    "start": {"kind": "empty_directory"},
+                },
+                "expected": {"outcome": "ok", "config": tagged({})},
+            }
+        )
+
+    if len(out) != 13:
+        raise SystemExit(f"expected 13 vectors, got {len(out)}")
+    return out
+
+
+def main() -> int:
+    mod = load_config_module()
+    out_dir = Path(__file__).resolve().parent
+
+    vectors = vectors_from_python(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_config_rs_sha256": CONFIG_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_config_rs_sha256": CONFIG_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/config/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.config parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/config/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

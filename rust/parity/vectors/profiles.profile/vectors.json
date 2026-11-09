@@ -1,0 +1,1159 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.profiles.profile",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
+  "python_all": [
+    "EffectiveConfig",
+    "Profile",
+    "VALID_FORMATS",
+    "apply_rule_selection",
+    "get_profile",
+    "list_profiles",
+    "require_canonical",
+    "resolve_effective_config",
+    "stamp_source_profile"
+  ],
+  "known_parity_gaps": [
+    "get_profile and list_profiles need sesslint.profiles.builtin. Rust returns sesslint.profiles.builtin is not available. Python returns a registered profile or a KeyError. Do not copy REGISTRY into the vector expected value.",
+    "apply_rule_selection and deselected_rules with only one of select or ignore need ALL_RULES. Rust returns the builtin error. Python filters the rules.",
+    "Rust trim does not drop U+001C through U+001F. Python str.strip does.",
+    "A float or list schema has no honest Python repr. Rust returns a typed error.",
+    "There is no bytes input. Python reports got bytes.",
+    "EventValue::Other has no Python type name. Rust returns PYTHON_TYPE_NAME_UNREPRESENTABLE.",
+    "A bool is not an f64. true is not coerced to 1.0.",
+    "Some finite-float messages use Rust debug text and can differ from Python str at other magnitudes. The locked 0.0, 1.0, 0.2, and 0.3 cases are the ones that match."
+  ],
+  "vectors": [
+    {
+      "id": "profile_to_dict_defaults",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "adapter-b"
+                  },
+                  {
+                    "t": "str",
+                    "v": "adapter-a"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "synth-sensitivity"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synth-description"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "RULE-B"
+                  },
+                  {
+                    "t": "str",
+                    "v": "RULE-A"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "synth-profile"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.2
+                    }
+                  ],
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.5
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "adapter-b"
+                  },
+                  {
+                    "t": "str",
+                    "v": "adapter-a"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "synth-sensitivity"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synth-description"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "RULE-B"
+                  },
+                  {
+                    "t": "str",
+                    "v": "RULE-A"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "synth-profile"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.2
+                    }
+                  ],
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.5
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ]
+          ]
+        },
+        "rule_severities_absent": true
+      }
+    },
+    {
+      "id": "rule_severities_sorted",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": []
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ],
+            [
+              "rule_severities",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "SL001",
+                    {
+                      "t": "str",
+                      "v": "fatal"
+                    }
+                  ],
+                  [
+                    "SL002",
+                    {
+                      "t": "str",
+                      "v": "warning"
+                    }
+                  ],
+                  [
+                    "SL003",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ],
+                  [
+                    "SL010",
+                    {
+                      "t": "str",
+                      "v": "info"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": []
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ],
+            [
+              "rule_severities",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "SL001",
+                    {
+                      "t": "str",
+                      "v": "fatal"
+                    }
+                  ],
+                  [
+                    "SL002",
+                    {
+                      "t": "str",
+                      "v": "warning"
+                    }
+                  ],
+                  [
+                    "SL003",
+                    {
+                      "t": "str",
+                      "v": "error"
+                    }
+                  ],
+                  [
+                    "SL010",
+                    {
+                      "t": "str",
+                      "v": "info"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "threshold_update_keeps_position",
+      "construct": {
+        "type": "profile_to_dict",
+        "profile": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.11
+                    }
+                  ],
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.5
+                    }
+                  ],
+                  [
+                    "other",
+                    {
+                      "t": "float",
+                      "v": 0.3
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ]
+          ]
+        }
+      },
+      "expected": {
+        "dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "name",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.11
+                    }
+                  ],
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.5
+                    }
+                  ],
+                  [
+                    "other",
+                    {
+                      "t": "float",
+                      "v": 0.3
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "timestamp_skew_ms",
+              {
+                "t": "int",
+                "v": 2000
+              }
+            ],
+            [
+              "version",
+              {
+                "t": "str",
+                "v": "1.0.0"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "effective_rounding",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "defaults_thresholds_source": "profile",
+        "defaults_version": "9.9.9",
+        "half_thresholds_source": "cli",
+        "effective_to_dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "confidence_min",
+              {
+                "t": "float",
+                "v": 0.55
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "format_override",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "margin_min",
+              {
+                "t": "float",
+                "v": 0.15
+              }
+            ],
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds_source",
+              {
+                "t": "str",
+                "v": "profile"
+              }
+            ]
+          ]
+        },
+        "half_to_dict": {
+          "t": "map",
+          "entries": [
+            [
+              "allowed_adapters",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "codex"
+                  },
+                  {
+                    "t": "str",
+                    "v": "claude"
+                  }
+                ]
+              }
+            ],
+            [
+              "checkpoint_sensitivity",
+              {
+                "t": "str",
+                "v": "strict"
+              }
+            ],
+            [
+              "confidence_min",
+              {
+                "t": "float",
+                "v": 0.55
+              }
+            ],
+            [
+              "description",
+              {
+                "t": "str",
+                "v": "synthetic profile"
+              }
+            ],
+            [
+              "enabled_rules",
+              {
+                "t": "list",
+                "items": [
+                  {
+                    "t": "str",
+                    "v": "SL002"
+                  },
+                  {
+                    "t": "str",
+                    "v": "SL001"
+                  }
+                ]
+              }
+            ],
+            [
+              "format_override",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "margin_min",
+              {
+                "t": "float",
+                "v": 0.0312
+              }
+            ],
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds_source",
+              {
+                "t": "str",
+                "v": "cli"
+              }
+            ]
+          ]
+        },
+        "half_resolution": {
+          "t": "map",
+          "entries": [
+            [
+              "confidence_min",
+              {
+                "t": "float",
+                "v": 0.55
+              }
+            ],
+            [
+              "format_override",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "margin_min",
+              {
+                "t": "float",
+                "v": 0.0312
+              }
+            ],
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "thresholds_source",
+              {
+                "t": "str",
+                "v": "cli"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "format_cleaned",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "format_override": "claude"
+      }
+    },
+    {
+      "id": "invalid_format",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "Invalid format override 'nope'. Must be one of ['auto', 'canonical', 'claude', 'claude-code-jsonl', 'codex', 'codex-rollout', 'openai', 'openai-agents']"
+      }
+    },
+    {
+      "id": "bounds_zero_and_one",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "confidence_zero": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0",
+        "confidence_one": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.0",
+        "margin_exceeds": "margin_min (0.3) cannot exceed confidence_min (0.2)"
+      }
+    },
+    {
+      "id": "non_finite",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "confidence_min must be a finite float"
+      }
+    },
+    {
+      "id": "mutual_exclusion",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "select and ignore are mutually exclusive"
+      }
+    },
+    {
+      "id": "empty_selection_returns_profile",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "enabled_rules": [
+          "SL002",
+          "SL001"
+        ]
+      }
+    },
+    {
+      "id": "require_canonical_none",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "Input cannot be None; expected canonical session or events"
+      }
+    },
+    {
+      "id": "require_canonical_bad_schema",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "Expected canonical session schema 'sesslint.session/v1', got 'other'"
+      }
+    },
+    {
+      "id": "require_canonical_missing_keys",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "Canonical session dictionary must contain 'events' array or 'session_id'"
+      }
+    },
+    {
+      "id": "require_canonical_empty_sequence",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "require_canonical_text",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "error": "Expected canonical session Mapping or Sequence of events, got str"
+      }
+    },
+    {
+      "id": "stamp_updates_profile_in_place",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "stamped1": {
+          "t": "map",
+          "entries": [
+            [
+              "adapter",
+              {
+                "t": "str",
+                "v": "codex"
+              }
+            ],
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ],
+            [
+              "tail",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ],
+            [
+              "resolution",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.55
+                    }
+                  ],
+                  [
+                    "format_override",
+                    {
+                      "t": "str",
+                      "v": "auto"
+                    }
+                  ],
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.15
+                    }
+                  ],
+                  [
+                    "profile",
+                    {
+                      "t": "str",
+                      "v": "replay"
+                    }
+                  ],
+                  [
+                    "thresholds_source",
+                    {
+                      "t": "str",
+                      "v": "profile"
+                    }
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "stamped1_keys": [
+          "adapter",
+          "profile",
+          "tail",
+          "resolution"
+        ],
+        "stamped2": {
+          "t": "map",
+          "entries": [
+            [
+              "resolution",
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "confidence_min",
+                    {
+                      "t": "float",
+                      "v": 0.55
+                    }
+                  ],
+                  [
+                    "format_override",
+                    {
+                      "t": "str",
+                      "v": "auto"
+                    }
+                  ],
+                  [
+                    "margin_min",
+                    {
+                      "t": "float",
+                      "v": 0.15
+                    }
+                  ],
+                  [
+                    "profile",
+                    {
+                      "t": "str",
+                      "v": "replay"
+                    }
+                  ],
+                  [
+                    "thresholds_source",
+                    {
+                      "t": "str",
+                      "v": "profile"
+                    }
+                  ]
+                ]
+              }
+            ],
+            [
+              "profile",
+              {
+                "t": "str",
+                "v": "replay"
+              }
+            ]
+          ]
+        },
+        "stamped2_keys": [
+          "resolution",
+          "profile"
+        ]
+      }
+    },
+    {
+      "id": "all_names",
+      "construct": {
+        "type": "noop"
+      },
+      "expected": {
+        "names": [
+          "EffectiveConfig",
+          "Profile",
+          "VALID_FORMATS",
+          "apply_rule_selection",
+          "get_profile",
+          "list_profiles",
+          "require_canonical",
+          "resolve_effective_config",
+          "stamp_source_profile"
+        ]
+      }
+    }
+  ]
+}

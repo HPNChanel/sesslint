@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "path": "adapter_mutate.jsonl",
+      "sha256": "738d598b4a72030348690ad87dc325e7adc1742f2d7ced4f61be25e41afcb3f8"
+    },
+    {
+      "path": "canonical_bytes.bin",
+      "sha256": "3eca3cc9576b0877f481af4dcc80c831a6b0fb46a554468ffeb465f12ca4239e"
+    },
+    {
+      "path": "canonical_event.jsonl",
+      "sha256": "1a7eb8c3d7daf90ef95e72968144d05b236328790d1b221790f73a95d7675a05"
+    },
+    {
+      "path": "graph.jsonl",
+      "sha256": "c8c6ef1e244d4d264f1b45714acde9c59d95f6abe955bb0690539db8655a311b"
+    },
+    {
+      "path": "jsonl_arbitrary.bin",
+      "sha256": "50e59aeb398b03396fc01a8567ab688eb38fe71130b1efbe81f767804e8f7c52"
+    },
+    {
+      "path": "jsonl_lines.jsonl",
+      "sha256": "486d26c255914d20fab011af2dd6507c1450f0ced602c480ddd4445ac1514740"
+    },
+    {
+      "path": "repair_torn.jsonl",
+      "sha256": "117a16d5e9723eccec951fd59ea266fae21d36873409847eb63d75d2c2021b42"
+    },
+    {
+      "path": "stateful.json",
+      "sha256": "c345dddb025409bafce97df7a7475531e4aec14fc0eed62815a5eefb7fdfc7ec"
+    }
+  ],
+  "pin": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-hypothesis-corpus/v1",
+  "seed": 42,
+  "source": "tests/fuzz"
+}

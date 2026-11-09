@@ -1,0 +1,349 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.diff",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "diff_py_sha256": "2d597dad56536db2bba2372c6e809ef31bb5784c31442e06ba8f7c34851ddbcf",
+  "diff_rs_sha256": "5d8f763884f4d11944bef2c9939ce4a88b453a06659f1b0bc92b2800dbb9fa73",
+  "known_parity_gaps": [
+    "GAP-diff-minimize-path: SessionDiff.to_dict, to_json, and render_human import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available.",
+    "GAP-diff-resolve-format: diff_sessions and _load_side call sesslint.adapters.detect.resolve_format once both paths are files; Rust returns sesslint.adapters.detect.resolve_format is not available and builds no SessionDiff.",
+    "GAP-diff-content-hash: diff_events with any event calls SessionEvent.content_identity_hash; Rust returns sesslint.canonical.SessionEvent is not available and discards partial deltas.",
+    "GAP-diff-schema-path: get_diff_schema_path and load_diff_schema import sesslint._resources.schema_path; Rust returns sesslint._resources.schema_path is not available.",
+    "GAP-diff-cli-integration: CLI main tests and full diff_sessions success paths are not byte-compared here."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "DIFF_SCHEMA_VERSION": "sesslint.diff/v1",
+        "MAX_ROWS": 100,
+        "DELTA_CATEGORIES": [
+          "added",
+          "removed",
+          "kind-changed",
+          "parent-relinked",
+          "seq-reordered",
+          "content-changed"
+        ],
+        "python_all": [
+          "DELTA_CATEGORIES",
+          "DIFF_SCHEMA_VERSION",
+          "MAX_ROWS",
+          "Delta",
+          "DeltaCategory",
+          "DiffInputError",
+          "SessionDiff",
+          "diff_events",
+          "diff_sessions",
+          "get_diff_schema_path",
+          "load_diff_schema"
+        ]
+      }
+    },
+    {
+      "id": "delta_to_dict_minimal",
+      "construct": {
+        "type": "delta_to_dict",
+        "category": "seq-reordered"
+      },
+      "expected": {
+        "dict": {
+          "category": "seq-reordered"
+        }
+      }
+    },
+    {
+      "id": "delta_to_dict_populated",
+      "construct": {
+        "type": "delta_to_dict",
+        "category": "kind-changed",
+        "event_id": "ev-synth-01",
+        "a_index": 0,
+        "b_index": 2,
+        "detail": {
+          "kind_a": "message",
+          "kind_b": "checkpoint"
+        }
+      },
+      "expected": {
+        "dict": {
+          "a_index": 0,
+          "b_index": 2,
+          "category": "kind-changed",
+          "detail": {
+            "kind_a": "message",
+            "kind_b": "checkpoint"
+          },
+          "event_id": "ev-synth-01"
+        }
+      }
+    },
+    {
+      "id": "delta_label_pairs",
+      "construct": {
+        "type": "delta_label",
+        "event_id": "ev-synth-02",
+        "a_index": 1,
+        "b_index": 3,
+        "detail": {
+          "z_key": "2",
+          "a_key": "1"
+        }
+      },
+      "expected": {
+        "label": "a[1] -> b[3] id=ev-synth-02 a_key=1 z_key=2"
+      }
+    },
+    {
+      "id": "session_identical_empty",
+      "construct": {
+        "type": "session_identical_counts",
+        "deltas": []
+      },
+      "expected": {
+        "identical": true,
+        "counts": {
+          "added": 0,
+          "removed": 0,
+          "kind-changed": 0,
+          "parent-relinked": 0,
+          "seq-reordered": 0,
+          "content-changed": 0
+        }
+      }
+    },
+    {
+      "id": "session_counts_mixed",
+      "construct": {
+        "type": "session_identical_counts",
+        "a_event_count": 3,
+        "b_event_count": 4,
+        "deltas": [
+          {
+            "category": "added",
+            "event_id": "n1",
+            "b_index": 3,
+            "detail": {
+              "kind": "message"
+            }
+          },
+          {
+            "category": "kind-changed",
+            "event_id": "e1",
+            "a_index": 0,
+            "b_index": 1
+          },
+          {
+            "category": "content-changed",
+            "event_id": "e1",
+            "a_index": 0,
+            "b_index": 1
+          }
+        ]
+      },
+      "expected": {
+        "identical": false,
+        "counts": {
+          "added": 1,
+          "removed": 0,
+          "kind-changed": 1,
+          "parent-relinked": 0,
+          "seq-reordered": 0,
+          "content-changed": 1
+        }
+      }
+    },
+    {
+      "id": "session_output_minimize_gap",
+      "construct": {
+        "type": "session_output_gap"
+      },
+      "expected": {
+        "pin": {
+          "to_dict": {
+            "raises": "TypeError",
+            "message": "'NoneType' object is not callable"
+          },
+          "to_json": {
+            "raises": "TypeError",
+            "message": "'NoneType' object is not callable"
+          },
+          "render_human": {
+            "raises": "TypeError",
+            "message": "'NoneType' object is not callable"
+          }
+        },
+        "rust_assertion": {
+          "mode": "minimize_path_unavailable"
+        }
+      }
+    },
+    {
+      "id": "diff_events_empty_pin",
+      "construct": {
+        "type": "diff_events_empty"
+      },
+      "expected": {
+        "delta_count": 0,
+        "categories": []
+      }
+    },
+    {
+      "id": "diff_events_hash_seam",
+      "construct": {
+        "type": "diff_events_hash_gap"
+      },
+      "expected": {
+        "pin": {
+          "delta_count": 0,
+          "categories": []
+        },
+        "rust_assertion": {
+          "mode": "content_hash_unavailable"
+        }
+      }
+    },
+    {
+      "id": "diff_sessions_missing_first_path",
+      "construct": {
+        "type": "diff_sessions_path",
+        "path_a": "fixtures/absent-a.jsonl",
+        "path_b": "fixtures/side-b.jsonl",
+        "rust_mode": "path_not_found"
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "Path not found: fixtures/absent-a.jsonl"
+        },
+        "rust_assertion": {
+          "mode": "path_not_found"
+        }
+      }
+    },
+    {
+      "id": "diff_sessions_missing_second_path",
+      "construct": {
+        "type": "diff_sessions_path",
+        "path_a": "fixtures/side-a.jsonl",
+        "path_b": "fixtures/absent-b.jsonl",
+        "rust_mode": "path_not_found"
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "Path not found: fixtures/absent-b.jsonl"
+        },
+        "rust_assertion": {
+          "mode": "path_not_found"
+        }
+      }
+    },
+    {
+      "id": "diff_sessions_directory_first",
+      "construct": {
+        "type": "diff_sessions_path",
+        "path_a": "fixtures/synthetic-dir",
+        "path_b": "fixtures/absent-b.jsonl",
+        "rust_mode": "directory_input"
+      },
+      "expected": {
+        "pin": {
+          "raises": "DiffInputError",
+          "message": "Diff input must be a file, not a directory: fixtures/synthetic-dir"
+        },
+        "rust_assertion": {
+          "mode": "directory_input"
+        }
+      }
+    },
+    {
+      "id": "diff_sessions_directory_second",
+      "construct": {
+        "type": "diff_sessions_path",
+        "path_a": "fixtures/side-a.jsonl",
+        "path_b": "fixtures/synthetic-dir",
+        "rust_mode": "directory_input"
+      },
+      "expected": {
+        "pin": {
+          "raises": "DiffInputError",
+          "message": "Diff input must be a file, not a directory: fixtures/synthetic-dir"
+        },
+        "rust_assertion": {
+          "mode": "directory_input"
+        }
+      }
+    },
+    {
+      "id": "diff_sessions_resolve_format_gap",
+      "construct": {
+        "type": "diff_sessions_path",
+        "path_a": "fixtures/side-a.jsonl",
+        "path_b": "fixtures/side-b.jsonl",
+        "format_a": "claude-code-jsonl",
+        "format_b": "codex",
+        "rust_mode": "resolve_format_unavailable"
+      },
+      "expected": {
+        "pin": {
+          "raises": "DiffInputError",
+          "message": "Unknown format 'codex'. Must be one of ['auto', 'canonical', 'claude-code-jsonl', 'codex-rollout', 'openai-agents']"
+        },
+        "rust_assertion": {
+          "mode": "resolve_format_unavailable"
+        }
+      }
+    },
+    {
+      "id": "load_side_resolve_format_gap",
+      "construct": {
+        "type": "_load_side_gap",
+        "path": "fixtures/side-a.jsonl",
+        "format": "synthetic"
+      },
+      "expected": {
+        "pin": {
+          "raises": "DiffInputError",
+          "message": "Unknown format 'synthetic'. Must be one of ['auto', 'canonical', 'claude-code-jsonl', 'codex-rollout', 'openai-agents']"
+        },
+        "rust_assertion": {
+          "mode": "resolve_format_unavailable"
+        }
+      }
+    },
+    {
+      "id": "get_diff_schema_path_gap",
+      "construct": {
+        "type": "get_diff_schema_path"
+      },
+      "expected": {
+        "pin": {
+          "raises": null,
+          "path_suffix": "sesslint.diff.v1.json"
+        },
+        "rust_assertion": {
+          "mode": "schema_path_unavailable"
+        }
+      }
+    },
+    {
+      "id": "load_diff_schema_gap",
+      "construct": {
+        "type": "load_diff_schema"
+      },
+      "expected": {
+        "pin": {
+          "raises": "FileNotFoundError",
+          "message": "Diff schema not found at <synthetic>"
+        },
+        "rust_assertion": {
+          "mode": "schema_path_unavailable"
+        }
+      }
+    }
+  ]
+}

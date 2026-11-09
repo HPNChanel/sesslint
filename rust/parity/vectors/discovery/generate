@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Generate sesslint.discovery parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DISCOVERY_SHA256 = "1ddc7064f153315b414537c9880fd4567c047950a78c7c6bed507ffd88e53e5a"
+NOT_UNDER_ROOT_DISPLAY = (
+    "path is not in the subpath of root OR one path is relative and the other is absolute."
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_discovery_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "discovery.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != DISCOVERY_SHA256:
+        raise SystemExit(
+            f"discovery.py sha256 mismatch: expected {DISCOVERY_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    import sesslint.discovery as discovery  # noqa: WPS433
+
+    return discovery
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    root = "synthetic-store"
+    return [
+        {
+            "id": "claude_two_part_jsonl_accepted",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/sess.jsonl",
+                "root": root,
+                "agent": "claude",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "claude_two_part_non_jsonl_rejected",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/sess.json",
+                "root": root,
+                "agent": "claude",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "claude_subagent_accepted_when_enabled",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/proj/subagents/agent-child.jsonl",
+                "root": root,
+                "agent": "claude",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "claude_subagent_rejected_when_disabled",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/proj/subagents/agent-child.jsonl",
+                "root": root,
+                "agent": "claude",
+                "subagents": False,
+            },
+        },
+        {
+            "id": "claude_four_part_requires_subagents_dir",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/proj/other/agent-child.jsonl",
+                "root": root,
+                "agent": "claude",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "claude_four_part_requires_agent_prefix",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/proj/subagents/child.jsonl",
+                "root": root,
+                "agent": "claude",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "codex_rollout_shallow_accepted",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/rollout-a.jsonl",
+                "root": root,
+                "agent": "codex",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "codex_rollout_nested_accepted",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/sessions/2026/10/rollout-b.jsonl",
+                "root": root,
+                "agent": "codex",
+                "subagents": False,
+            },
+        },
+        {
+            "id": "codex_non_rollout_name_rejected",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/session-a.jsonl",
+                "root": root,
+                "agent": "codex",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "codex_rollout_non_jsonl_rejected",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/rollout-a.json",
+                "root": root,
+                "agent": "codex",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "unknown_agent_value_error",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": f"{root}/projects/sess.jsonl",
+                "root": root,
+                "agent": "gemini",
+                "subagents": True,
+            },
+        },
+        {
+            "id": "not_under_root_before_agent_check",
+            "construct": {
+                "type": "candidate_in_layout",
+                "path": "other-store/projects/sess.jsonl",
+                "root": root,
+                "agent": "gemini",
+                "subagents": True,
+            },
+        },
+    ]
+
+
+def build_expected(discovery: Any, spec: dict[str, Any]) -> dict[str, Any]:
+    construct = spec["construct"]
+    if construct["type"] != "candidate_in_layout":
+        raise ValueError(f"unknown construct type: {construct['type']}")
+    path = Path(construct["path"])
+    root = Path(construct["root"])
+    agent = construct["agent"]
+    subagents = construct["subagents"]
+    try:
+        result = discovery.candidate_in_layout(
+            path, root, agent, subagents=subagents
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message == "agent must be claude or codex":
+            return {
+                "raises": "ValueError",
+                "discovery_error": "InvalidAgent",
+                "message": message,
+            }
+        if "is not in the subpath of" in message or message == NOT_UNDER_ROOT_DISPLAY:
+            return {
+                "raises": "ValueError",
+                "discovery_error": "NotUnderRoot",
+                "display": NOT_UNDER_ROOT_DISPLAY,
+            }
+        raise RuntimeError(f"unexpected ValueError for {spec['id']}: {message!r}")
+    return {"result": result}
+
+
+def main() -> int:
+    discovery = load_discovery_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(discovery, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.discovery",
+        "python_commit": PYTHON_COMMIT,
+        "discovery_py_sha256": DISCOVERY_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.discovery",
+        "python_commit": PYTHON_COMMIT,
+        "discovery_py_sha256": DISCOVERY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/discovery/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic relative paths for sesslint.discovery candidate_in_layout parity.",
+        "generator": "rust/parity/vectors/discovery/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

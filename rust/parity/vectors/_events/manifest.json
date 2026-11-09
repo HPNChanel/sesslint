@@ -1,0 +1,18 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint._events",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "events_rs_sha256": "7cb5cb9aa2bf64030792490986617f06d8549d7c3293f5bc0265cb53b7301913",
+  "vector_count": 27,
+  "vectors_sha256": "0e5ebe3f78a72aa018b765e73d653631de20b5f638adc5beba3920971b37a87d",
+  "generator": "rust/parity/vectors/_events/generate",
+  "known_parity_gaps": [
+    "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error",
+    "a mapping with no usable content_hash: Python hashes the payload or the whole mapping",
+    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "sha256(str(ev))",
+    "Python str(float), str(list), and str(dict) for a getter field",
+    "the tolerant dict(ev) fallback",
+    "an int outside i64"
+  ]
+}

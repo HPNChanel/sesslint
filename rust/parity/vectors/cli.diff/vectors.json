@@ -1,0 +1,196 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.diff",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "diff_py_sha256": "877c6b44e9a4cf32316263445cf7b494c05053adde288df62f0eae72ac514a0d",
+  "diff_rs_sha256": "8128910e1196f6fa59eb1d88968fee14e98994884a86ce0e8ad4f7dcca928cb3",
+  "known_parity_gaps": [
+    "GAP-cli-diff-diff-sessions: Python run() starts with `from sesslint.diff import DiffInputError, diff_sessions` before path checks; Rust run() returns Display `sesslint.diff.diff_sessions is not available` at that import (no getattr, no path stat, no emit_text, no exit 0/1)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "diff",
+        "help": "[read-only] Structurally diff two session files.",
+        "description": "[read-only] Compare two session files by event identity (not text diff): added/removed events, kind changes, parent relinks, sequence reorders, content changes (hash only).",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "a",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to the first session file",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "b",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to the second session file",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter for both inputs (default: auto)",
+            "default_keyword": {
+              "present": {
+                "text": "auto"
+              }
+            },
+            "effective_default": {
+              "text": "auto"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter-a"
+            ],
+            "dest": "adapter_a",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Adapter override for input A only",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter-b"
+            ],
+            "dest": "adapter_b",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Adapter override for input B only",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "human",
+              "json"
+            ],
+            "metavar": null,
+            "help": "Output format (default: human)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit sesslint.diff/v1 JSON (shortcut for --format json)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "output_format",
+              "json"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

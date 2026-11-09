@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.metadata parity (has_semantic_fields and UnknownMetadataTracker flush modes).",
+  "generator": "rust/parity/vectors/adapters.metadata/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-metadata-finding-fingerprint: UnknownMetadataTracker.findings on a non-empty group buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec and does not return Finding objects. The harness drives the tracker and checks empty_ok, finding_error before the codec, or gap_fingerprint. Pin snapshots of _groups stay in the vector and are not asserted, because those fields are private."
+  ]
+}

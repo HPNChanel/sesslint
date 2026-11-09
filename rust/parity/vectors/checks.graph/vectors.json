@@ -1,0 +1,1722 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.graph",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_graph_rs_sha256": "3bdd9fa51178eb7bc7ce232cdaa01ce3b3fff5a43b7face1458e03bf1210f382",
+  "known_parity_gaps": [
+    "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python str(float), str(list), and str(mapping) for event fields; Rust returns typed errors and does not invent Python repr strings.",
+    "Python events.index on an event object inside same_compaction_segment; Rust does not emulate list identity search (PYTHON_EVENT_INDEX_UNREPRESENTABLE gap).",
+    "Evidence map lookup with borrowed/reference semantics; Rust treats Borrowed as distinct from missing key (BORROWED_LOOKUP).",
+    "Graph counts and indices that do not fit in i64 (COUNT_UNREPRESENTABLE).",
+    "Empty-string parent_id is a finding in Python; omitted from required parity vectors.",
+    "Self-loop and other cycle findings; omitted (fingerprint gap).",
+    "Two disconnected components (SL006); omitted (fingerprint gap).",
+    "Two heads on one branch (SL007); omitted (fingerprint gap).",
+    "Finding-cap overflow path; omitted (fingerprint gap)."
+  ],
+  "vectors": [
+    {
+      "id": "module_dunder_all",
+      "construct": {
+        "type": "module_dunder_all"
+      },
+      "expected": {
+        "names": [
+          "MAX_GRAPH_FINDINGS",
+          "MAX_MEMBER_SAMPLE_SIZE",
+          "cap_graph_findings",
+          "check_components",
+          "check_cycles",
+          "check_graph",
+          "check_heads",
+          "check_missing_parent",
+          "compute_graph_fingerprint",
+          "find_qualifying_parent_candidates",
+          "is_qualifying_parent_candidate",
+          "same_compaction_segment"
+        ]
+      }
+    },
+    {
+      "id": "module_constants_max_limits",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "MAX_GRAPH_FINDINGS": 500,
+        "MAX_MEMBER_SAMPLE_SIZE": 8
+      }
+    },
+    {
+      "id": "compute_graph_fingerprint_empty_ids",
+      "construct": {
+        "type": "compute_graph_fingerprint",
+        "code": "SL004",
+        "ids": []
+      },
+      "expected": {
+        "fingerprint": "d3acec36603966e7"
+      }
+    },
+    {
+      "id": "compute_graph_fingerprint_duplicate_ids_either_order",
+      "construct": {
+        "type": "compute_graph_fingerprint",
+        "code": "SL004",
+        "ids": [
+          {
+            "kind": "str",
+            "v": "z-aa-001"
+          },
+          {
+            "kind": "str",
+            "v": "a-aa-001"
+          },
+          {
+            "kind": "str",
+            "v": "m-aa-001"
+          }
+        ]
+      },
+      "expected": {
+        "fingerprint": "da772d00e33226fb"
+      }
+    },
+    {
+      "id": "compute_graph_fingerprint_duplicate_ids_reversed",
+      "construct": {
+        "type": "compute_graph_fingerprint",
+        "code": "SL004",
+        "ids": [
+          {
+            "kind": "str",
+            "v": "m-aa-001"
+          },
+          {
+            "kind": "str",
+            "v": "a-aa-001"
+          },
+          {
+            "kind": "str",
+            "v": "z-aa-001"
+          }
+        ]
+      },
+      "expected": {
+        "fingerprint": "da772d00e33226fb"
+      }
+    },
+    {
+      "id": "compute_graph_fingerprint_bool_true_vs_str_true",
+      "construct": {
+        "type": "compute_graph_fingerprint",
+        "code": "SL004",
+        "ids": [
+          {
+            "kind": "bool",
+            "v": true
+          },
+          {
+            "kind": "str",
+            "v": "True"
+          }
+        ]
+      },
+      "expected": {
+        "fingerprint": "79d3881b6ac449a6"
+      }
+    },
+    {
+      "id": "is_qualifying_parent_candidate_exact_id",
+      "construct": {
+        "type": "is_qualifying_parent_candidate",
+        "candidate": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "p-par-001"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 0
+              }
+            ]
+          ]
+        },
+        "child": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "c-par-002"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "str",
+                "v": "p-par-001"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        },
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-par-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-par-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "p-par-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "missing_parent_id": "p-par-001"
+      },
+      "expected": {
+        "qualifies": true,
+        "reason": "ok"
+      }
+    },
+    {
+      "id": "is_qualifying_parent_candidate_prefix_not_full_match",
+      "construct": {
+        "type": "is_qualifying_parent_candidate",
+        "candidate": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "p-pre-001x"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 0
+              }
+            ]
+          ]
+        },
+        "child": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "c-pre-002"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "str",
+                "v": "p-pre-001"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        },
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-pre-001x"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-pre-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "p-pre-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "missing_parent_id": null
+      },
+      "expected": {
+        "qualifies": false,
+        "reason": "no_full_match"
+      }
+    },
+    {
+      "id": "find_qualifying_parent_candidates_no_earlier_match",
+      "construct": {
+        "type": "find_qualifying_parent_candidates",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "x-fqc-000"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-fqc-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "missing-fqc-xyz"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "child": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "c-fqc-001"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "str",
+                "v": "missing-fqc-xyz"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        },
+        "target_idx": 1,
+        "missing_parent_id": "missing-fqc-xyz"
+      },
+      "expected": {
+        "qualifying_indices": [],
+        "rejected_decoys": [
+          {
+            "id": "x-fqc-000",
+            "index": 0,
+            "reason": "no_full_match"
+          }
+        ],
+        "confinement": {
+          "branch": false,
+          "segment": false
+        },
+        "reason": "no_full_match"
+      }
+    },
+    {
+      "id": "find_qualifying_parent_candidates_one_earlier_exact",
+      "construct": {
+        "type": "find_qualifying_parent_candidates",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-fqc-010"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "n-fqc-011"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-fqc-012"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "p-fqc-010"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        ],
+        "child": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "c-fqc-012"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "str",
+                "v": "p-fqc-010"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        },
+        "target_idx": 2,
+        "missing_parent_id": "p-fqc-010"
+      },
+      "expected": {
+        "qualifying_indices": [
+          0
+        ],
+        "rejected_decoys": [
+          {
+            "id": "n-fqc-011",
+            "index": 1,
+            "reason": "no_full_match"
+          }
+        ],
+        "confinement": {
+          "branch": true,
+          "segment": true
+        },
+        "reason": "ok"
+      }
+    },
+    {
+      "id": "find_qualifying_parent_candidates_two_earlier_exact",
+      "construct": {
+        "type": "find_qualifying_parent_candidates",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-fqc-020"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-fqc-020"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-fqc-022"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "p-fqc-020"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        ],
+        "child": {
+          "entries": [
+            [
+              "kind",
+              {
+                "t": "str",
+                "v": "message"
+              }
+            ],
+            [
+              "id",
+              {
+                "t": "str",
+                "v": "c-fqc-022"
+              }
+            ],
+            [
+              "parent_id",
+              {
+                "t": "str",
+                "v": "p-fqc-020"
+              }
+            ],
+            [
+              "branch_id",
+              {
+                "t": "null"
+              }
+            ],
+            [
+              "seq",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        },
+        "target_idx": 2,
+        "missing_parent_id": "p-fqc-020"
+      },
+      "expected": {
+        "qualifying_indices": [
+          0,
+          1
+        ],
+        "rejected_decoys": [],
+        "confinement": {
+          "branch": true,
+          "segment": true
+        },
+        "reason": "ambiguous"
+      }
+    },
+    {
+      "id": "same_compaction_segment_boundary_between_false",
+      "construct": {
+        "type": "same_compaction_segment",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b-scs-000"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "m-scs-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "m-scs-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ]
+            ]
+          }
+        ],
+        "endpoint_a": {
+          "kind": "seq",
+          "v": 0
+        },
+        "endpoint_b": {
+          "kind": "seq",
+          "v": 3
+        }
+      },
+      "expected": {
+        "same": false
+      }
+    },
+    {
+      "id": "same_compaction_segment_adjacent_seq_true",
+      "construct": {
+        "type": "same_compaction_segment",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b-scs-100"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 5
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "m-scs-101"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 6
+                }
+              ]
+            ]
+          }
+        ],
+        "endpoint_a": {
+          "kind": "seq",
+          "v": 5
+        },
+        "endpoint_b": {
+          "kind": "seq",
+          "v": 6
+        }
+      },
+      "expected": {
+        "same": true
+      }
+    },
+    {
+      "id": "check_missing_parent_present_parent",
+      "construct": {
+        "type": "check_missing_parent",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "r-mp-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-mp-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "r-mp-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_missing_parent_later_parent",
+      "construct": {
+        "type": "check_missing_parent",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "c-mp-101"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "p-mp-103"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "n-mp-102"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "p-mp-103"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_missing_parent_self_parent",
+      "construct": {
+        "type": "check_missing_parent",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "s-mp-201"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "s-mp-201"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_cycles_none",
+      "construct": {
+        "type": "check_cycles",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "root-cy-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "child-cy-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "root-cy-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_components_one_component",
+      "construct": {
+        "type": "check_components",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "a-cmp-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "b-cmp-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "a-cmp-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_heads_single_tip",
+      "construct": {
+        "type": "check_heads",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "h-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "h-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "h-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "check_graph_clean_chain",
+      "construct": {
+        "type": "check_graph",
+        "events": [
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "g-001"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "g-002"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "g-001"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        ],
+        "source_path": "<canonical>"
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    }
+  ]
+}

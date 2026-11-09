@@ -1,0 +1,1316 @@
+#!/usr/bin/env python3
+"""Generate proven-unique-parent-restore parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. Each blob is executed
+from a temporary file. This script does not import the checkout package.
+Expected messages are the pin's ``PreconditionFailed`` text. Fixture output,
+fingerprints, and planner results are not stored.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = ROOT / "rust" / "parity" / "recipes" / "proven-unique-parent-restore"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.repair.recipes_conservative"
+RECIPE = "proven-unique-parent-restore"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILE = "tests/repair/test_recipes_conservative.py"
+ABSTENTION_FILE = "tests/repair/test_scoped_abstention.py"
+CHALLENGER_FILE = "tests/test_challenger_stress.py"
+SL004_FILE = "tests/checks/test_sl004_hardened.py"
+CONFINEMENT_FILE = "tests/checks/test_adversarial_confinement_challenge.py"
+FIXTURE = "fixtures/repair/recipe_parent_restore.json"
+DOCS = "docs/recipes/proven-unique-parent-restore.md"
+GENERATOR = "rust/parity/recipes/proven-unique-parent-restore/generate"
+PINNED_TEST_COUNT = 35
+KNOWN_PY_SHA = "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0"
+INVALID = "proven-unique-parent-restore: missing or invalid target_index"
+MISSING = "proven-unique-parent-restore: missing parent_id"
+EARLY = frozenset({INVALID, MISSING})
+SEAM_REGION = "sesslint.policy.abstention.AffectedRegion is not available"
+SEAM_DETERMINISM = "sesslint.determinism.canonical_json_bytes is not available"
+SEAM_CODEC = "sesslint._canonical_codec.canonical_json_bytes is not available"
+SEAM_CANDIDATES = (
+    "sesslint.checks.graph.find_qualifying_parent_candidates is not available"
+)
+SEAM_FLOAT = "Python str(float) is not representable"
+SEAM_PYSTR = "Python str() of this event field is not representable"
+
+GAP_REGION = "GAP-proven-unique-parent-restore-affected-region"
+GAP_CANDIDATES = "GAP-proven-unique-parent-restore-candidates"
+GAP_CANONICAL = "GAP-proven-unique-parent-restore-canonical"
+GAP_RENDER = "GAP-proven-unique-parent-restore-render"
+GAP_PAYLOAD = "GAP-proven-unique-parent-restore-payload"
+GAP_SWEEP = "GAP-proven-unique-parent-restore-sweep"
+
+KNOWN_PARITY_GAPS: tuple[str, ...] = (
+    f"{GAP_REGION}: affected_region_proven_unique_parent_restore in the pin "
+    "returns sesslint.policy.abstention.AffectedRegion. This set does not "
+    "construct that region and does not cover a region row. "
+    "tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz "
+    "is a multi-function sweep. One function inside the sweep is not the whole test.",
+    f"{GAP_CANDIDATES}: once a parent id is ready, the pin calls "
+    "find_qualifying_parent_candidates. The published function returns a "
+    "different error. This set does not claim that refusal and does not replay "
+    "a restored parent. "
+    "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_zero_candidates, "
+    "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_self_candidate, "
+    "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_branch, "
+    "tests/repair/test_recipes_conservative.py::test_parent_restore_refusal_cross_segment, "
+    "and tests/repair/test_recipes_conservative.py::"
+    "test_parent_restore_excludes_successor_candidates are each one apply "
+    "refusal after that call. "
+    "tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture "
+    "succeeds on the happy path and then refuses ambiguous candidates. "
+    "A rust seam while the pin succeeds is not coverage. That success is not "
+    "replayed. "
+    "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_prefix_collision, "
+    "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_branch, "
+    "tests/checks/test_sl004_hardened.py::test_adversarial_decoy_cross_segment, "
+    "and tests/checks/test_sl004_hardened.py::"
+    "test_adversarial_decoy_duplicate_candidates each run a detector, a plan, "
+    "a precondition, and one apply. One apply inside that test is not the "
+    "whole test. "
+    "tests/test_challenger_stress.py::test_forged_step_nonexistent_parent, "
+    "tests/test_challenger_stress.py::test_forged_step_prefix_collision, "
+    "tests/test_challenger_stress.py::test_forged_step_cross_branch_candidate, "
+    "tests/test_challenger_stress.py::test_forged_step_cross_segment_candidate, "
+    "tests/test_challenger_stress.py::test_forged_step_duplicate_candidate, "
+    "tests/test_challenger_stress.py::test_forged_step_self_reference, "
+    "and tests/test_challenger_stress.py::"
+    "test_forged_step_post_child_candidate_causal_inversion each refuse after "
+    "the parent id is ready. "
+    "tests/test_challenger_stress.py::test_events_mutated_in_memory_before_apply "
+    "is three refusals. One refusal inside a sweep is not the whole test. "
+    "tests/checks/test_adversarial_confinement_challenge.py::"
+    "TestCrossLayerCoercionAttacks::test_apply_refuses_cross_branch_tampered_step, "
+    "test_apply_refuses_cross_segment_tampered_step, "
+    "test_apply_refuses_prefix_tampered_step, and "
+    "test_apply_refuses_ambiguous_tampered_step refuse after the parent id is "
+    "ready. An integer parent id on the event is rendered and then that walk "
+    "runs. The published function returns a different error.",
+    f"{GAP_CANONICAL}: planner.plan and execute are not run. A missing "
+    "canonical codec call is not a successful plan. The fixture apply succeeds "
+    "in the pin. That success is not replayed. "
+    "tests/repair/test_recipes_conservative.py::test_plan_and_apply_parent_restore_full_flow "
+    "plans and the apply succeeds. "
+    "tests/repair/test_scoped_abstention.py::"
+    "test_scenario_3_unknown_side_effects_on_relink_target plans and executes. "
+    "tests/repair/test_scoped_abstention.py::"
+    "test_parent_restore_disjoint_from_intermediate_mutating_tool plans and "
+    "executes. "
+    "tests/test_challenger_stress.py::test_multiple_children_sharing_same_parent "
+    "and tests/test_challenger_stress.py::test_chained_missing_parents_handling "
+    "plan and apply. The pin succeeds. A rust seam while the pin succeeds is "
+    "not coverage. That success is not replayed. "
+    "tests/test_challenger_stress.py::test_forged_step_through_executor_lifecycle "
+    "and tests/test_challenger_stress.py::test_plan_tampered_detected plan and "
+    "raise. "
+    "tests/checks/test_adversarial_confinement_challenge.py::"
+    "TestCrossLayerCoercionAttacks::test_e2e_executor_fails_closed_on_coercion_attempt "
+    "executes. Those results are not replayed. No fingerprint is hashed and "
+    "no fixture diff is stored. No output bytes are stored.",
+    f"{GAP_RENDER}: a float, list, or mapping parent id is rendered with str "
+    "in the pin and then the candidate walk runs. The published function "
+    "returns a different error. This set does not claim that pin result.",
+    f"{GAP_PAYLOAD}: tests/repair/test_recipes_conservative.py::"
+    "test_proven_unique_parent_restore_fixture carries payload on the happy "
+    "path and on the ambiguous refusal. This set does not store payload "
+    "content. A payload-free result is not that test.",
+    f"{GAP_SWEEP}: tests/test_challenger_stress.py::"
+    "test_forged_step_invalid_target_index checks several invalid indexes. "
+    "One refusal inside a sweep is not the whole test. "
+    "tests/test_challenger_stress.py::test_corrupted_params_variations is two "
+    "missing-parent refusals. One refusal is not the whole test. "
+    "tests/checks/test_adversarial_confinement_challenge.py::"
+    "TestCrossLayerCoercionAttacks::test_apply_refuses_out_of_bounds_target_index "
+    "checks several out-of-range indexes. One index inside a sweep is not the "
+    "whole test. This set does not mark those tests covered.",
+)
+
+COVERED: dict[str, str] = {}
+
+TOUCHES: frozenset[str] = frozenset(
+    {
+        "test_conservative_recipes_registration_and_handles",
+        "test_proven_unique_parent_restore_fixture",
+        "test_parent_restore_refusal_zero_candidates",
+        "test_parent_restore_refusal_self_candidate",
+        "test_parent_restore_refusal_cross_branch",
+        "test_parent_restore_refusal_cross_segment",
+        "test_no_synthetic_success_multiset_proof",
+        "test_parent_restore_excludes_successor_candidates",
+        "test_plan_and_apply_parent_restore_full_flow",
+    }
+)
+
+GRAPH_TESTS: tuple[tuple[str, str], ...] = (
+    ("test_parent_restore_refusal_zero_candidates", "zero candidates"),
+    ("test_parent_restore_refusal_self_candidate", "zero candidates"),
+    ("test_parent_restore_refusal_cross_branch", "cross_branch"),
+    ("test_parent_restore_refusal_cross_segment", "cross_segment"),
+    ("test_parent_restore_excludes_successor_candidates", "zero candidates"),
+)
+
+CHALLENGER_GRAPH_TESTS: tuple[tuple[str, str], ...] = (
+    ("test_forged_step_nonexistent_parent", "zero candidates matching"),
+    ("test_forged_step_prefix_collision", "zero candidates matching"),
+    ("test_forged_step_cross_branch_candidate", "cross_branch"),
+    ("test_forged_step_cross_segment_candidate", "cross_segment"),
+    ("test_forged_step_duplicate_candidate", "ambiguous candidates"),
+    ("test_forged_step_self_reference", "zero candidates matching"),
+    ("test_forged_step_post_child_candidate_causal_inversion", "zero candidates matching"),
+)
+
+FIXTURE_NOTE = (
+    f"{GAP_CANDIDATES} blocks the fixture apply. The happy path succeeds in "
+    "the pin. A rust seam while the pin succeeds is not coverage. That success "
+    "is not replayed. The ambiguous refusal is a different error. This set "
+    "does not claim that refusal. "
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful plan. "
+    "No fingerprint is hashed and no fixture diff is stored. "
+    f"{GAP_PAYLOAD} blocks the fixture events. They carry a payload. A "
+    "payload-free result is not this test."
+)
+CANDIDATE_NOTE = (
+    f"{GAP_CANDIDATES} blocks this refusal. The pin refuses after the parent "
+    "id is ready. The published function returns a different error. This set "
+    "does not claim that refusal."
+)
+FULL_NOTE = (
+    f"{GAP_CANONICAL} blocks the plan. It is not a successful plan. "
+    f"{GAP_CANDIDATES} blocks the apply. The pin succeeds. A rust seam while "
+    "the pin succeeds is not coverage. That success is not replayed. No "
+    "fingerprint is hashed and no output bytes are stored."
+)
+MULTISET_NOTE = (
+    f"{GAP_CANONICAL} blocks canonical_json_bytes. It is not a successful plan. "
+    "One fixture inside a sweep is not the whole test. No fingerprint is "
+    "hashed and no fixture diff is stored."
+)
+REGISTER_NOTE = (
+    "one recipe inside a registration sweep is not the whole test. "
+    "different function from apply_proven_unique_parent_restore."
+)
+DIFFERENT_NOTE = "different function from apply_proven_unique_parent_restore"
+
+PIN_CLOSURE = [
+    "errors.py",
+    "codes.py",
+    "_version.py",
+    "context.py",
+    "atomic.py",
+    "canonical.py",
+    "_canonical_codec.py",
+    "finding.py",
+    "determinism.py",
+    "_events.py",
+    "_resources.py",
+    "adapters/synthetic.py",
+    "profiles/profile.py",
+    "profiles/builtin.py",
+    "checks/graph.py",
+    "policy/abstention.py",
+    "repair/preconditions.py",
+    "repair/registry.py",
+    "repair/fingerprint.py",
+    "repair/refusals.py",
+    "repair/recipes_sl002.py",
+    "repair/planner.py",
+    "repair/recipes_conservative.py",
+]
+
+_SBP = re.compile(r"sbp_[0-9a-f]{40}")
+_BANNED_PATH = (
+    "D:\\",
+    "D:/",
+    "C:\\",
+    "C:/Users",
+    "FOR_WORK",
+    "sesslint-wt",
+    "WORK_PROJECT",
+)
+_SEAMS = (
+    SEAM_REGION,
+    SEAM_DETERMINISM,
+    SEAM_CODEC,
+    SEAM_CANDIDATES,
+    SEAM_FLOAT,
+    SEAM_PYSTR,
+)
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    """Reject any sesslint import that was not already executed from the pin."""
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    fd, tmp = tempfile.mkstemp(suffix=".py")
+    try:
+        os.write(fd, blob)
+        os.close(fd)
+        fd = -1
+        spec = importlib.util.spec_from_file_location(fullname, tmp)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"spec failed {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        Path(tmp).unlink(missing_ok=True)
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], mod)
+    file_name = getattr(mod, "__file__", None)
+    if not isinstance(file_name, str):
+        raise SystemExit(f"{fullname} has no temp file")
+    resolved = Path(file_name).resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return mod
+
+
+def assert_pin_modules() -> None:
+    temp_root = str(Path(tempfile.gettempdir())).lower()
+    for name, mod in sys.modules.items():
+        if name != "sesslint" and not name.startswith("sesslint."):
+            continue
+        file = getattr(mod, "__file__", None)
+        if file is None:
+            continue
+        if not str(file).lower().startswith(temp_root):
+            raise SystemExit(f"non-pin module {name}")
+
+
+def load_mod() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_CLOSURE:
+        if rel == "repair/recipes_conservative.py":
+            continue
+        path = f"src/sesslint/{rel}"
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{path}")
+        fullname = fullname_for(path)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    ensure_pkg("sesslint.repair")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    mod = exec_blob(py_blob, MODULE)
+    assert_pin_modules()
+    if mod.apply_proven_unique_parent_restore.__module__ != MODULE:
+        raise SystemExit("apply function is not the pin blob")
+    return mod
+
+
+def tagged(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if type(value) is bool:
+        raise SystemExit("refusing a tagged bool")
+    if type(value) is int:
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, float):
+        raise SystemExit("float is not a pinned scalar in this set")
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": [[key, tagged(inner)] for key, inner in value.items()],
+        }
+    if isinstance(value, (list, tuple)):
+        return {"t": "list", "items": [tagged(inner) for inner in value]}
+    raise SystemExit(f"unencodable {type(value)!r}")
+
+
+def require_bool(label: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise SystemExit(f"{label} is not a bool")
+    return value
+
+
+def test_functions(text: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(text)
+    return [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    ]
+
+
+def function_named(text: str, name: str) -> ast.FunctionDef:
+    for node in test_functions(text):
+        if node.name == name:
+            return node
+    raise SystemExit(f"missing {name}")
+
+
+def call_names(fn: ast.AST) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.append(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.append(node.func.attr)
+    return names
+
+
+def string_constants(fn: ast.FunctionDef) -> set[str]:
+    docstring = None
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and isinstance(fn.body[0].value.value, str)
+    ):
+        docstring = fn.body[0]
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if node is docstring:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+    return found
+
+
+def touches_recipe(fn: ast.FunctionDef) -> bool:
+    names = set(call_names(fn))
+    constants = string_constants(fn)
+    if "apply_proven_unique_parent_restore" in names:
+        return True
+    if RECIPE in constants:
+        return True
+    return any("recipe_parent_restore" in item for item in constants)
+
+
+def assigned(fn: ast.FunctionDef, name: str) -> ast.AST:
+    for stmt in fn.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if isinstance(target, ast.Name) and target.id == name:
+            return stmt.value
+    raise SystemExit(f"{fn.name} missing {name}")
+
+
+def raises_matches(fn: ast.FunctionDef) -> list[str]:
+    found: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "raises":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "match":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, str):
+                    raise SystemExit(f"{fn.name} match is not a string")
+                found.append(value)
+    return found
+
+
+def assert_whole_refusal(fn: ast.FunctionDef) -> None:
+    names = call_names(fn)
+    if names.count("apply_proven_unique_parent_restore") != 1:
+        raise SystemExit(f"{fn.name} is not one apply call")
+    if "plan" in names or "repair" in names or "canonical_json_bytes" in names:
+        raise SystemExit(f"{fn.name} is not only the refusal")
+    if names.count("raises") != 1:
+        raise SystemExit(f"{fn.name} raises count")
+    if any(isinstance(node, ast.Assert) for node in ast.walk(fn)):
+        raise SystemExit(f"{fn.name} has another assert")
+    kinds: list[str] = []
+    for stmt in fn.body:
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            continue
+        kinds.append(type(stmt).__name__)
+    if kinds != ["Assign", "Assign", "With"]:
+        raise SystemExit(f"{fn.name} shape {kinds}")
+
+
+def step_from_test(fn: ast.FunctionDef) -> dict[str, Any]:
+    value = assigned(fn, "step")
+    if not isinstance(value, ast.Call):
+        raise SystemExit(f"{fn.name} step is not a call")
+    return call_fields(fn.name, value)
+
+
+def call_fields(label: str, value: ast.Call) -> dict[str, Any]:
+    found: dict[str, Any] = {}
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            raise SystemExit(f"{label} keyword must be explicit")
+        found[keyword.arg] = ast.literal_eval(keyword.value)
+    for key in ("seq", "recipe", "target_finding_fp", "target_index", "params"):
+        if key not in found:
+            raise SystemExit(f"{label} step missing {key}")
+    return found
+
+
+def raw_events(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    raw = ast.literal_eval(assigned(fn, "events"))
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit(f"{fn.name} events are empty")
+    events: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise SystemExit(f"{fn.name} event is not a dict")
+        events.append(item)
+    return events
+
+
+def loop_indexes(fn: ast.FunctionDef) -> list[Any]:
+    loops = [node for node in ast.walk(fn) if isinstance(node, ast.For)]
+    if len(loops) != 1:
+        raise SystemExit(f"{fn.name} loop count")
+    values = ast.literal_eval(loops[0].iter)
+    if not isinstance(values, list) or not values:
+        raise SystemExit(f"{fn.name} loop is empty")
+    return list(values)
+
+
+def plan_step_calls(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Name) or func.id != "PlanStep":
+            continue
+        found.append(call_fields(fn.name, node))
+    if not found:
+        raise SystemExit(f"{fn.name} has no PlanStep")
+    return found
+
+
+def finding_evidence(fn: ast.FunctionDef) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Name) or func.id not in {
+            "make_finding",
+            "_make_test_finding",
+        }:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "evidence":
+                value = ast.literal_eval(keyword.value)
+                if not isinstance(value, dict):
+                    raise SystemExit(f"{fn.name} evidence is not a dict")
+                found.append(value)
+    if not found:
+        raise SystemExit(f"{fn.name} has no evidence")
+    return found
+
+
+def reject_payload(events: list[dict[str, Any]]) -> None:
+    for item in events:
+        if "payload" in item:
+            raise SystemExit("refusing payload content in a stored vector")
+
+
+def without_payload(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    stripped: list[dict[str, Any]] = []
+    for item in events:
+        if "payload" not in item:
+            raise SystemExit("pinned fixture event has no payload")
+        stripped.append({key: value for key, value in item.items() if key != "payload"})
+    reject_payload(stripped)
+    return stripped
+
+
+def make_step(mod: Any, step_fields: dict[str, Any]) -> Any:
+    return mod.PlanStep(
+        seq=step_fields["seq"],
+        recipe=step_fields["recipe"],
+        target_finding_fp=step_fields["target_finding_fp"],
+        target_index=step_fields["target_index"],
+        params=step_fields["params"],
+    )
+
+
+def run_apply(mod: Any, events: list[Any], step_fields: dict[str, Any]) -> str:
+    try:
+        mod.apply_proven_unique_parent_restore(events, make_step(mod, step_fields))
+    except mod.PreconditionFailed as exc:
+        return str(exc)
+    raise SystemExit("pin apply returned Ok for a refusal proof")
+
+
+def run_ok(mod: Any, events: list[Any], step_fields: dict[str, Any]) -> list[Any]:
+    try:
+        out = mod.apply_proven_unique_parent_restore(events, make_step(mod, step_fields))
+    except mod.PreconditionFailed:
+        raise SystemExit("pin success apply refused") from None
+    if not isinstance(out, list):
+        raise SystemExit("pin success apply did not return a list")
+    return out
+
+
+def run_outcome(mod: Any, events: list[Any], step_fields: dict[str, Any]) -> str | None:
+    try:
+        out = mod.apply_proven_unique_parent_restore(events, make_step(mod, step_fields))
+    except mod.PreconditionFailed as exc:
+        return str(exc)
+    if not isinstance(out, list):
+        raise SystemExit("pin apply returned a non-list")
+    return None
+
+
+def require_early(message: str) -> None:
+    if message not in EARLY:
+        raise SystemExit("pin early refusal text drifted")
+
+
+def require_later(message: str | None, label: str) -> None:
+    if message in EARLY:
+        raise SystemExit(f"{label} collapsed to an early refusal")
+
+
+def fields_for(*, target_index: Any, params: Any) -> dict[str, Any]:
+    return {
+        "seq": 0,
+        "recipe": RECIPE,
+        "target_finding_fp": "f0",
+        "target_index": target_index,
+        "params": params,
+    }
+
+
+def bare(event_id: str, seq: int = 0) -> dict[str, Any]:
+    return {"id": event_id, "kind": "message", "seq": seq}
+
+
+def refusal_vector(
+    vector_id: str,
+    *,
+    events: list[dict[str, Any]],
+    target_index: Any,
+    params: Any,
+    message: str,
+) -> dict[str, Any]:
+    if message not in EARLY:
+        raise SystemExit("refusing to store a candidate-walk message")
+    if type(target_index) is bool:
+        raise SystemExit("refusing a bool target_index in a stored vector")
+    reject_payload(events)
+    return {
+        "id": vector_id,
+        "construct": {
+            "type": "apply_refusal",
+            "fn": "apply_proven_unique_parent_restore",
+            "entire_test": False,
+            "assert_count": 1,
+            "events": [tagged(event) for event in events],
+            "step": {
+                "target_index": tagged(target_index),
+                "params": tagged(params),
+            },
+        },
+        "expected": {
+            "mode": "refusal",
+            "error_type": "PreconditionFailed",
+            "message": message,
+        },
+    }
+
+
+def recipe_vector(mod: Any) -> dict[str, Any]:
+    recipe = mod.RECIPE_PROVEN_UNIQUE_PARENT_RESTORE
+    if recipe.name != RECIPE:
+        raise SystemExit("pin recipe name mismatch")
+    if recipe.apply is not mod.apply_proven_unique_parent_restore:
+        raise SystemExit("pin apply is not the recipe apply")
+    if recipe.affected_region is not mod.affected_region_proven_unique_parent_restore:
+        raise SystemExit("pin affected region is not the recipe region")
+    handles = list(recipe.handles)
+    preconditions = list(recipe.preconditions)
+    if handles != ["SL004"]:
+        raise SystemExit("pin handles drifted")
+    if preconditions != ["no_sl203", "unique_parent_candidate"]:
+        raise SystemExit("pin preconditions drifted")
+    return {
+        "id": "recipe_proven_unique_parent_restore",
+        "construct": {
+            "type": "recipe_constant",
+            "fn": "RECIPE_PROVEN_UNIQUE_PARENT_RESTORE",
+            "entire_test": False,
+        },
+        "expected": {
+            "mode": "recipe",
+            "name": recipe.name,
+            "handles": handles,
+            "preconditions": preconditions,
+            "lossy": require_bool("lossy", recipe.lossy),
+            "salvage_only": require_bool("salvage_only", recipe.salvage_only),
+            "min_policy": recipe.min_policy,
+            "version": recipe.version,
+            "excludes_execution_dependence": require_bool(
+                "excludes_execution_dependence",
+                recipe.excludes_execution_dependence,
+            ),
+            "apply_present": require_bool("apply_present", recipe.apply is not None),
+            "affected_region_present": require_bool(
+                "affected_region_present",
+                recipe.affected_region is not None,
+            ),
+        },
+    }
+
+
+def stored_refusals(mod: Any) -> list[dict[str, Any]]:
+    one = [bare("evt-only")]
+    pair = [bare("evt-a", 0), bare("evt-b", 1)]
+    child = [bare("evt-child")]
+    null_parent = [
+        {"id": "evt-null", "kind": "message", "seq": 0, "parent_id": None},
+    ]
+    empty_parent = [
+        {"id": "evt-empty", "kind": "message", "seq": 0, "parent_id": ""},
+    ]
+    cases: list[tuple[str, list[dict[str, Any]], Any, Any, str]] = [
+        ("restore_refusal_missing_index", one, None, {}, INVALID),
+        ("restore_refusal_empty_events", [], 0, {}, INVALID),
+        ("restore_refusal_negative_index", one, -1, {}, INVALID),
+        ("restore_refusal_index_out_of_bounds", pair, 9, {}, INVALID),
+        (
+            "restore_refusal_param_index_out_of_bounds",
+            pair,
+            None,
+            {"index": 9},
+            INVALID,
+        ),
+        (
+            "restore_refusal_negative_at_index",
+            pair,
+            None,
+            {"at_index": -2},
+            INVALID,
+        ),
+        (
+            "restore_refusal_non_int_index_hides_at_index",
+            one,
+            None,
+            {"index": "skip", "at_index": 0},
+            INVALID,
+        ),
+        ("restore_refusal_params_not_mapping", one, None, None, INVALID),
+        ("restore_refusal_missing_parent", child, 0, {}, MISSING),
+        ("restore_refusal_null_parent", null_parent, 0, {}, MISSING),
+        ("restore_refusal_empty_parent_string", empty_parent, 0, {}, MISSING),
+        (
+            "restore_refusal_empty_parent_param",
+            child,
+            0,
+            {"parent_id": ""},
+            MISSING,
+        ),
+        (
+            "restore_refusal_empty_prefix",
+            child,
+            0,
+            {"parent_fingerprint_prefix": ""},
+            MISSING,
+        ),
+        (
+            "restore_refusal_zero_parent_param",
+            child,
+            0,
+            {"parent_id": 0},
+            MISSING,
+        ),
+        (
+            "restore_refusal_empty_parent_list",
+            child,
+            0,
+            {"parent_id": []},
+            MISSING,
+        ),
+        (
+            "restore_refusal_empty_parent_map",
+            child,
+            0,
+            {"parent_id": {}},
+            MISSING,
+        ),
+        (
+            "restore_refusal_at_index_zero_missing_parent",
+            child,
+            None,
+            {"index": None, "at_index": 0},
+            MISSING,
+        ),
+        ("restore_refusal_not_mapping_missing_parent", child, 0, None, MISSING),
+        (
+            "restore_refusal_param_index_zero_missing_parent",
+            child,
+            None,
+            {"index": 0},
+            MISSING,
+        ),
+    ]
+    vectors: list[dict[str, Any]] = []
+    for vector_id, events, target_index, params, message in cases:
+        got = run_apply(mod, events, fields_for(target_index=target_index, params=params))
+        require_early(got)
+        if got != message:
+            raise SystemExit(f"{vector_id} pin message drifted")
+        vectors.append(
+            refusal_vector(
+                vector_id,
+                events=events,
+                target_index=target_index,
+                params=params,
+                message=got,
+            )
+        )
+    return vectors
+
+
+def prove_index_edges(mod: Any) -> None:
+    events = [bare("evt-edge")]
+    probed = {
+        "bool-true": fields_for(target_index=True, params={}),
+        "bool-false": fields_for(target_index=False, params={}),
+        "text": fields_for(target_index="bad", params={}),
+        "float": fields_for(target_index=1.5, params={}),
+        "param-bool": fields_for(
+            target_index=None,
+            params={"index": True, "at_index": 0},
+        ),
+    }
+    for label, fields in probed.items():
+        got = run_apply(mod, events, fields)
+        if got != INVALID:
+            raise SystemExit(f"{label} was not an invalid target")
+
+
+def prove_parent_edges(mod: Any) -> None:
+    child = [bare("evt-child")]
+    false_param = run_apply(
+        mod,
+        child,
+        fields_for(target_index=0, params={"parent_id": False}),
+    )
+    if false_param != MISSING:
+        raise SystemExit("falsy parent param was not missing")
+    true_param = run_outcome(
+        mod,
+        child,
+        fields_for(target_index=0, params={"parent_id": True}),
+    )
+    require_later(true_param, "truthy parent param")
+    for label, params in (
+        ("float-param", {"parent_id": 1.5}),
+        ("list-param", {"parent_id": [1]}),
+        ("map-param", {"parent_id": {"k": 1}}),
+    ):
+        message = run_outcome(mod, child, fields_for(target_index=0, params=params))
+        require_later(message, label)
+    integer_parent = [
+        {"id": "evt-int", "kind": "message", "seq": 0, "parent_id": 0},
+    ]
+    require_later(
+        run_outcome(mod, integer_parent, fields_for(target_index=0, params={})),
+        "integer event parent",
+    )
+    float_parent = [
+        {"id": "evt-float", "kind": "message", "seq": 0, "parent_id": 1.5},
+    ]
+    require_later(
+        run_outcome(mod, float_parent, fields_for(target_index=0, params={})),
+        "float event parent",
+    )
+    ready = [
+        {"id": "evt-root", "kind": "message", "seq": 0, "parent_id": None},
+        bare("evt-child", 1),
+    ]
+    require_later(
+        run_outcome(
+            mod,
+            ready,
+            fields_for(target_index=1, params={"parent_id": "evt-root"}),
+        ),
+        "ready parent id",
+    )
+
+
+def prove_named_refusal(
+    mod: Any,
+    fn: ast.FunctionDef,
+    match: str,
+) -> None:
+    assert_whole_refusal(fn)
+    if raises_matches(fn) != [match]:
+        raise SystemExit(f"{fn.name} match drifted")
+    message = run_apply(mod, raw_events(fn), step_from_test(fn))
+    if re.search(match, message) is None:
+        raise SystemExit(f"{fn.name} pin match drifted")
+    require_later(message, fn.name)
+
+
+def prove_graph_refusals(mod: Any, text: str, challenger: str) -> None:
+    for name, match in GRAPH_TESTS:
+        prove_named_refusal(mod, function_named(text, name), match)
+    for name, match in CHALLENGER_GRAPH_TESTS:
+        prove_named_refusal(mod, function_named(challenger, name), match)
+
+
+def prove_sweeps(mod: Any, challenger: str) -> None:
+    invalid = function_named(challenger, "test_forged_step_invalid_target_index")
+    if "plan" in call_names(invalid):
+        raise SystemExit("invalid-index sweep plans")
+    indexes = loop_indexes(invalid)
+    if indexes != [-1, 999, "bad", True, False]:
+        raise SystemExit("invalid-index sweep drifted")
+    if raises_matches(invalid) != ["missing or invalid target_index"]:
+        raise SystemExit("invalid-index match drifted")
+    events = raw_events(invalid)
+    for index in indexes:
+        got = run_apply(
+            mod,
+            events,
+            fields_for(target_index=index, params={"parent_id": "e0"}),
+        )
+        if got != INVALID:
+            raise SystemExit("invalid-index sweep message drifted")
+    corrupted = function_named(challenger, "test_corrupted_params_variations")
+    if call_names(corrupted).count("apply_proven_unique_parent_restore") != 2:
+        raise SystemExit("corrupted params apply count")
+    if raises_matches(corrupted) != ["missing parent_id", "missing parent_id"]:
+        raise SystemExit("corrupted params match drifted")
+    events = raw_events(corrupted)
+    steps = plan_step_calls(corrupted)
+    if len(steps) != 2:
+        raise SystemExit("corrupted params step count")
+    for fields in steps:
+        got = run_apply(mod, events, fields)
+        if got != MISSING:
+            raise SystemExit("corrupted params message drifted")
+    mutated = function_named(challenger, "test_events_mutated_in_memory_before_apply")
+    if raises_matches(mutated) != ["no_full_match", "cross_segment", "cross_branch"]:
+        raise SystemExit("mutated sweep matches drifted")
+    if call_names(mutated).count("apply_proven_unique_parent_restore") != 3:
+        raise SystemExit("mutated sweep apply count")
+
+
+def assert_has_payload(label: str, events: list[Any]) -> None:
+    if not any(isinstance(item, dict) and "payload" in item for item in events):
+        raise SystemExit(f"{label} lost payload")
+
+
+def prove_fixture(mod: Any, text: str, fixture: dict[str, Any]) -> None:
+    fn = function_named(text, "test_proven_unique_parent_restore_fixture")
+    if call_names(fn).count("apply_proven_unique_parent_restore") != 2:
+        raise SystemExit("fixture apply count")
+    if call_names(fn).count("canonical_json_bytes") != 2:
+        raise SystemExit("fixture canonical count")
+    happy = fixture["happy_path"]
+    happy_fields = {
+        "seq": happy["step"]["seq"],
+        "recipe": happy["step"]["recipe"],
+        "target_finding_fp": happy["step"]["target_finding_fp"],
+        "target_index": happy["step"]["target_index"],
+        "params": happy["step"]["params"],
+    }
+    out = run_ok(mod, happy["input_events"], happy_fields)
+    if out != happy["expected_events"]:
+        raise SystemExit("pin fixture apply did not match expected events")
+    assert_has_payload("fixture input", happy["input_events"])
+    assert_has_payload("fixture output", out)
+    stripped_happy = run_outcome(mod, without_payload(happy["input_events"]), happy_fields)
+    del stripped_happy
+    ambig = fixture["refusal_ambiguous"]
+    ambig_fields = {
+        "seq": ambig["step"]["seq"],
+        "recipe": ambig["step"]["recipe"],
+        "target_finding_fp": ambig["step"]["target_finding_fp"],
+        "target_index": ambig["step"]["target_index"],
+        "params": ambig["step"]["params"],
+    }
+    message = run_apply(mod, ambig["input_events"], ambig_fields)
+    if "ambiguous candidates" not in message:
+        raise SystemExit("fixture ambiguous match drifted")
+    require_later(message, "fixture ambiguous")
+    assert_has_payload("fixture ambiguous", ambig["input_events"])
+    stripped = run_outcome(mod, without_payload(ambig["input_events"]), ambig_fields)
+    del stripped
+
+
+def prove_apply_success(mod: Any, fn: ast.FunctionDef) -> None:
+    if "raises" in call_names(fn):
+        raise SystemExit(f"{fn.name} is not a success")
+    if "plan" not in call_names(fn):
+        raise SystemExit(f"{fn.name} does not plan")
+    if "apply_proven_unique_parent_restore" not in call_names(fn):
+        raise SystemExit(f"{fn.name} does not apply")
+    events = raw_events(fn)
+    current: list[Any] = events
+    for evidence in finding_evidence(fn):
+        if "index" not in evidence or "parent_id" not in evidence:
+            raise SystemExit(f"{fn.name} evidence drifted")
+        current = run_ok(
+            mod,
+            current,
+            fields_for(
+                target_index=evidence["index"],
+                params={"parent_id": evidence["parent_id"]},
+            ),
+        )
+    parents = [
+        item.get("parent_id")
+        for item in current
+        if isinstance(item, dict)
+    ]
+    for evidence in finding_evidence(fn):
+        if evidence["parent_id"] not in parents:
+            raise SystemExit(f"{fn.name} restored parent drifted")
+
+
+def prove_successes(mod: Any, text: str, challenger: str) -> None:
+    prove_apply_success(mod, function_named(text, "test_plan_and_apply_parent_restore_full_flow"))
+    prove_apply_success(
+        mod,
+        function_named(challenger, "test_multiple_children_sharing_same_parent"),
+    )
+    prove_apply_success(
+        mod,
+        function_named(challenger, "test_chained_missing_parents_handling"),
+    )
+
+
+def assert_call_count(fn: ast.FunctionDef, name: str, count: int) -> None:
+    if call_names(fn).count(name) != count:
+        raise SystemExit(f"{fn.name} {name} count drifted")
+
+
+def prove_shapes(text: str, challenger: str) -> None:
+    register = function_named(text, "test_conservative_recipes_registration_and_handles")
+    if "apply_proven_unique_parent_restore" in call_names(register):
+        raise SystemExit("registration test calls apply")
+    if RECIPE not in string_constants(register):
+        raise SystemExit("registration test lost the recipe name")
+    multiset = function_named(text, "test_no_synthetic_success_multiset_proof")
+    if "apply_proven_unique_parent_restore" in call_names(multiset):
+        raise SystemExit("multiset test calls apply")
+    if "canonical_json_bytes" not in call_names(multiset):
+        raise SystemExit("multiset test lost canonical_json_bytes")
+    if not any("recipe_parent_restore" in item for item in string_constants(multiset)):
+        raise SystemExit("multiset test lost the fixture")
+    lifecycle = function_named(challenger, "test_forged_step_through_executor_lifecycle")
+    if "apply_proven_unique_parent_restore" in call_names(lifecycle):
+        raise SystemExit("executor lifecycle calls apply")
+    if "plan" not in call_names(lifecycle):
+        raise SystemExit("executor lifecycle does not plan")
+    tampered = function_named(challenger, "test_plan_tampered_detected")
+    if "apply_proven_unique_parent_restore" in call_names(tampered):
+        raise SystemExit("tampered plan calls apply")
+    if "plan" not in call_names(tampered):
+        raise SystemExit("tampered plan does not plan")
+
+
+def coverage_note(fn: ast.FunctionDef) -> str:
+    if fn.name == "test_proven_unique_parent_restore_fixture":
+        return FIXTURE_NOTE
+    if fn.name in {
+        "test_parent_restore_refusal_zero_candidates",
+        "test_parent_restore_refusal_self_candidate",
+        "test_parent_restore_refusal_cross_branch",
+        "test_parent_restore_refusal_cross_segment",
+        "test_parent_restore_excludes_successor_candidates",
+    }:
+        return CANDIDATE_NOTE
+    if fn.name == "test_plan_and_apply_parent_restore_full_flow":
+        return FULL_NOTE
+    if fn.name == "test_no_synthetic_success_multiset_proof":
+        return MULTISET_NOTE
+    if fn.name == "test_conservative_recipes_registration_and_handles":
+        return REGISTER_NOTE
+    if touches_recipe(fn):
+        raise SystemExit(f"unclassified parent-restore test {fn.name}")
+    return DIFFERENT_NOTE
+
+
+def discover_coverage(text: str) -> list[dict[str, Any]]:
+    functions = test_functions(text)
+    if len(functions) != PINNED_TEST_COUNT:
+        raise SystemExit(f"pinned test count {len(functions)}")
+    touched = {fn.name for fn in functions if touches_recipe(fn)}
+    if touched != set(TOUCHES):
+        raise SystemExit("parent-restore test set drifted")
+    rows: list[dict[str, Any]] = []
+    for fn in functions:
+        covered = fn.name in COVERED
+        rows.append(
+            {
+                "test": f"{TEST_FILE}::{fn.name}",
+                "column": "column_0",
+                "status": "covered" if covered else "not_applicable",
+                "vector_id": COVERED[fn.name] if covered else None,
+                "note": "" if covered else coverage_note(fn),
+            }
+        )
+    covered_count = sum(row["status"] == "covered" for row in rows)
+    if covered_count != len(COVERED):
+        raise SystemExit("covered count drifted")
+    return rows
+
+
+def payload_strings(node: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "payload":
+                found.extend(collect_strings(value))
+            else:
+                found.extend(payload_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(payload_strings(item))
+    return found
+
+
+def collect_strings(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node else []
+    if isinstance(node, dict):
+        found: list[str] = []
+        for value in node.values():
+            found.extend(collect_strings(value))
+        return found
+    if isinstance(node, list):
+        found = []
+        for item in node:
+            found.extend(collect_strings(item))
+        return found
+    return []
+
+
+def dump(doc: Any, banned_payload: list[str]) -> str:
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if "\r" in text or _SBP.search(text):
+        raise SystemExit("refusing CR or sbp hash in JSON")
+    if "02694d5" in text:
+        raise SystemExit("refusing the wrong pin in JSON")
+    for seam in _SEAMS:
+        if seam in text:
+            raise SystemExit("refusing a seam sentence in JSON")
+    if '"t": "bool"' in text:
+        raise SystemExit("refusing a tagged bool in JSON")
+    if '"payload"' in text:
+        raise SystemExit("refusing a payload field in JSON")
+    for banned in _BANNED_PATH:
+        if banned in text:
+            raise SystemExit("refusing a path fragment in JSON")
+    for item in banned_payload:
+        if item and item in text:
+            digest = hashlib.sha256(item.encode("utf-8")).hexdigest()
+            raise SystemExit(f"refusing fixture payload content length {len(item)} sha {digest}")
+    return text
+
+
+def write_text(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def require_function(text: str, name: str) -> None:
+    if f"def {name}" not in text:
+        raise SystemExit(f"pin test missing {name}")
+
+
+def confirm_docs_and_callers() -> None:
+    docs = git_show_bytes(f"{PYTHON_COMMIT}:{DOCS}").decode("utf-8")
+    if RECIPE not in docs or "SL004" not in docs:
+        raise SystemExit("pin recipe doc drifted")
+    if "recipe_parent_restore.json" not in docs:
+        raise SystemExit("pin recipe doc lost the fixture")
+    abstention = git_show_bytes(f"{PYTHON_COMMIT}:{ABSTENTION_FILE}").decode("utf-8")
+    for name in (
+        "def test_region_functions_totality_fuzz",
+        "def test_scenario_3_unknown_side_effects_on_relink_target",
+        "def test_parent_restore_disjoint_from_intermediate_mutating_tool",
+    ):
+        if name not in abstention:
+            raise SystemExit(f"pin abstention test missing {name}")
+    if "affected_region_proven_unique_parent_restore" not in abstention:
+        raise SystemExit("pin abstention file lost the region function")
+    if "parametrize" not in abstention:
+        raise SystemExit("pin totality test is not a sweep")
+    sl004 = git_show_bytes(f"{PYTHON_COMMIT}:{SL004_FILE}").decode("utf-8")
+    for name in (
+        "def test_adversarial_decoy_prefix_collision",
+        "def test_adversarial_decoy_cross_branch",
+        "def test_adversarial_decoy_cross_segment",
+        "def test_adversarial_decoy_duplicate_candidates",
+        "def test_exact_match_helper_plan_is_refused_when_source_finding_disagrees",
+    ):
+        require_function(sl004, name.removeprefix("def "))
+    if "apply_proven_unique_parent_restore" not in sl004:
+        raise SystemExit("pin sl004 file lost apply")
+    confinement = git_show_bytes(f"{PYTHON_COMMIT}:{CONFINEMENT_FILE}").decode("utf-8")
+    for name in (
+        "test_apply_refuses_out_of_bounds_target_index",
+        "test_apply_refuses_cross_branch_tampered_step",
+        "test_apply_refuses_cross_segment_tampered_step",
+        "test_apply_refuses_prefix_tampered_step",
+        "test_apply_refuses_ambiguous_tampered_step",
+        "test_e2e_executor_fails_closed_on_coercion_attempt",
+    ):
+        require_function(confinement, name)
+    if "class TestCrossLayerCoercionAttacks" not in confinement:
+        raise SystemExit("pin confinement class drifted")
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    confirm_docs_and_callers()
+    test_text = git_show_bytes(f"{PYTHON_COMMIT}:{TEST_FILE}").decode("utf-8")
+    challenger = git_show_bytes(f"{PYTHON_COMMIT}:{CHALLENGER_FILE}").decode("utf-8")
+    fixture = json.loads(git_show_bytes(f"{PYTHON_COMMIT}:{FIXTURE}").decode("utf-8"))
+    banned_payload = payload_strings(fixture)
+    if not banned_payload:
+        raise SystemExit("fixture payload strings missing")
+    py_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/repair/recipes_conservative.py")
+    py_sha = hashlib.sha256(py_blob).hexdigest()
+    if py_sha != KNOWN_PY_SHA:
+        raise SystemExit("recipes_conservative.py sha drifted")
+    mod = load_mod()
+    prove_shapes(test_text, challenger)
+    prove_fixture(mod, test_text, fixture)
+    prove_successes(mod, test_text, challenger)
+    prove_graph_refusals(mod, test_text, challenger)
+    prove_sweeps(mod, challenger)
+    prove_index_edges(mod)
+    prove_parent_edges(mod)
+    recipe = recipe_vector(mod)
+    extras = stored_refusals(mod)
+    if COVERED:
+        raise SystemExit("covered map must stay empty")
+    vectors = [recipe, *extras]
+    for vector in vectors:
+        if vector["construct"]["entire_test"] is not False:
+            raise SystemExit("entire_test must stay false")
+    doc = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = dump(doc, banned_payload)
+    write_text(OUT / "vectors.json", payload)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rows = discover_coverage(test_text)
+    coverage = {
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "test_file": TEST_FILE,
+        "covered_count": sum(row["status"] == "covered" for row in rows),
+        "not_applicable_count": sum(row["status"] == "not_applicable" for row in rows),
+        "rows": rows,
+    }
+    if coverage["covered_count"] != 0 or coverage["not_applicable_count"] != PINNED_TEST_COUNT:
+        raise SystemExit("coverage counts drifted")
+    write_text(OUT / "coverage.json", dump(coverage, banned_payload))
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic proven-unique-parent-restore parity. Refusal messages "
+            "come from the pinned blob. Candidate walks, fixture output, and "
+            "planner results stay uncovered. No fixture diff is stored."
+        ),
+        "generator": GENERATOR,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "PROVENANCE.json", dump(provenance, banned_payload))
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "recipe": RECIPE,
+        "python_commit": PYTHON_COMMIT,
+        "recipes_conservative_py_sha256": py_sha,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": GENERATOR,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    write_text(OUT / "manifest.json", dump(manifest, banned_payload))
+    print(
+        f"{len(vectors)} {digest} covered={coverage['covered_count']} "
+        f"not_applicable={coverage['not_applicable_count']} py={py_sha}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

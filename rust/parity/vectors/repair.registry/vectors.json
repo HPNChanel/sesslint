@@ -1,0 +1,556 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.registry",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "registry_py_sha256": "75a8a40148901f2b63a9525c9ff559624fa4d84a6af2464a0ec862354d58e126",
+  "registry_rs_sha256": "7cd1985df01024b59df044c55bef79adffab0fe7e369ec55c08ce22a93ab8acb",
+  "known_parity_gaps": [
+    "GAP-registry-live-map: Python __all__ exports REGISTRY as a live dict alias of the in-process table. Rust exposes ALL and lookup via get_recipe and list_recipes instead of handing out the map.",
+    "GAP-registry-non-string-name: Python Recipe.__post_init__ raises ValueError when name is not a str. Rust Recipe::try_new takes &str and documents NON_STRING_NAME_UNREPRESENTABLE — parity not required on that branch."
+  ],
+  "vectors": [
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "mode": "names",
+        "names": [
+          "REGISTRY",
+          "Recipe",
+          "clear_registry",
+          "get_recipe",
+          "list_recipes",
+          "recipes_for",
+          "register_recipe"
+        ]
+      }
+    },
+    {
+      "id": "recipe_empty_name",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "value_error",
+        "message": "Recipe name must be a non-empty string"
+      }
+    },
+    {
+      "id": "recipe_plain_handles_sort",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "plain",
+          "handles": [
+            "m",
+            "a",
+            "m"
+          ],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "plain",
+        "handles": [
+          "a",
+          "m",
+          "m"
+        ],
+        "preconditions": [],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_lossy_sets_salvage_flags",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "lossy-conservative",
+          "handles": [
+            "SL005"
+          ],
+          "preconditions": [],
+          "lossy": true,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "lossy-conservative",
+        "handles": [
+          "SL005"
+        ],
+        "preconditions": [],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_salvage_only_policy",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "salvage-flag",
+          "handles": [],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": true
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "salvage-flag",
+        "handles": [],
+        "preconditions": [],
+        "lossy": false,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_both_lossy_flags",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "both-flags",
+          "handles": [],
+          "preconditions": [],
+          "lossy": true,
+          "salvage_only": true
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "both-flags",
+        "handles": [],
+        "preconditions": [],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_strict_min_policy_preserved",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "lossy-strict",
+          "handles": [],
+          "preconditions": [],
+          "lossy": true,
+          "salvage_only": false,
+          "min_policy": "strict"
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "lossy-strict",
+        "handles": [],
+        "preconditions": [],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "strict",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_mixed_case_min_policy",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "lossy-mixed-case",
+          "handles": [],
+          "preconditions": [],
+          "lossy": true,
+          "salvage_only": false,
+          "min_policy": "Conservative"
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "lossy-mixed-case",
+        "handles": [],
+        "preconditions": [],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "Conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_whitespace_name_custom_version",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": " ",
+          "handles": [],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false,
+          "version": "9.9.9",
+          "excludes_execution_dependence": true
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": " ",
+        "handles": [],
+        "preconditions": [],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "9.9.9",
+        "excludes_execution_dependence": true,
+        "apply": {
+          "present": false
+        },
+        "affected_region": {
+          "present": false
+        }
+      }
+    },
+    {
+      "id": "recipe_callables_stored_not_invoked",
+      "construct": {
+        "type": "recipe_try_new",
+        "recipe": {
+          "name": "callable-stub",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false,
+          "with_callables": true
+        }
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "callable-stub",
+        "handles": [
+          "SL101"
+        ],
+        "preconditions": [],
+        "lossy": false,
+        "salvage_only": false,
+        "min_policy": "conservative",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply": {
+          "present": true
+        },
+        "affected_region": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "planner_registry_registration_and_lookup",
+      "construct": {
+        "type": "registration_lookup",
+        "recipe": {
+          "name": "stub-clean-1",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        },
+        "code": "SL101",
+        "other_code": "SL201",
+        "missing_name": "non-existent"
+      },
+      "expected": {
+        "mode": "lookup",
+        "get": {
+          "mode": "recipe",
+          "name": "stub-clean-1",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false,
+          "min_policy": "conservative",
+          "version": "1.0.0",
+          "excludes_execution_dependence": false,
+          "apply": {
+            "present": false
+          },
+          "affected_region": {
+            "present": false
+          }
+        },
+        "get_missing": null,
+        "recipes_for": [
+          {
+            "mode": "recipe",
+            "name": "stub-clean-1",
+            "handles": [
+              "SL101"
+            ],
+            "preconditions": [
+              "no_sl203"
+            ],
+            "lossy": false,
+            "salvage_only": false,
+            "min_policy": "conservative",
+            "version": "1.0.0",
+            "excludes_execution_dependence": false,
+            "apply": {
+              "present": false
+            },
+            "affected_region": {
+              "present": false
+            }
+          }
+        ],
+        "recipes_for_other": [],
+        "list_names": [
+          "stub-clean-1"
+        ]
+      }
+    },
+    {
+      "id": "planner_duplicate_name_rejected",
+      "construct": {
+        "type": "duplicate_name",
+        "initial": {
+          "name": "duplicate-stub",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        },
+        "attempt": {
+          "name": "duplicate-stub",
+          "handles": [
+            "SL201"
+          ],
+          "preconditions": [],
+          "lossy": true,
+          "salvage_only": true
+        }
+      },
+      "expected": {
+        "mode": "value_error",
+        "message": "Duplicate recipe name: 'duplicate-stub' is already registered",
+        "list_names": [
+          "duplicate-stub"
+        ],
+        "first_handles": [
+          "SL101"
+        ]
+      }
+    },
+    {
+      "id": "planner_unknown_precondition_rejected",
+      "construct": {
+        "type": "unknown_precondition",
+        "recipe": {
+          "name": "bad-precondition-stub",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203",
+            "non_existent_precondition",
+            "also_missing"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "value_error",
+        "message": "Recipe 'bad-precondition-stub' references unknown precondition: 'non_existent_precondition'",
+        "preconditions": [
+          "no_sl203",
+          "non_existent_precondition",
+          "also_missing"
+        ],
+        "list_len": 0
+      }
+    },
+    {
+      "id": "empty_precondition_list_skips_table",
+      "construct": {
+        "type": "empty_preconditions_register",
+        "recipe": {
+          "name": "empty-prec-stub",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "list_names": [
+          "empty-prec-stub"
+        ],
+        "recipe": {
+          "mode": "recipe",
+          "name": "empty-prec-stub",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false,
+          "min_policy": "conservative",
+          "version": "1.0.0",
+          "excludes_execution_dependence": false,
+          "apply": {
+            "present": false
+          },
+          "affected_region": {
+            "present": false
+          }
+        }
+      }
+    },
+    {
+      "id": "clear_registry_isolation",
+      "construct": {
+        "type": "clear_registry",
+        "recipe": {
+          "name": "synthetic-clear",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        }
+      },
+      "expected": {
+        "mode": "cleared",
+        "before": 1,
+        "after": 0,
+        "restored_names": [
+          "synthetic-clear"
+        ]
+      }
+    },
+    {
+      "id": "recipes_for_preserves_insertion_order",
+      "construct": {
+        "type": "insertion_order",
+        "first": {
+          "name": "synthetic-clean",
+          "handles": [
+            "SL201",
+            "SL10",
+            "SL101"
+          ],
+          "preconditions": [
+            "source_hash_pinned",
+            "no_sl203"
+          ],
+          "lossy": false,
+          "salvage_only": false
+        },
+        "second": {
+          "name": "aaa-later",
+          "handles": [
+            "SL101"
+          ],
+          "preconditions": [],
+          "lossy": false,
+          "salvage_only": false
+        },
+        "shared_code": "SL101"
+      },
+      "expected": {
+        "mode": "order",
+        "list_names": [
+          "synthetic-clean",
+          "aaa-later"
+        ],
+        "recipes_for_shared": [
+          "synthetic-clean",
+          "aaa-later"
+        ]
+      }
+    }
+  ]
+}

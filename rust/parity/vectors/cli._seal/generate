@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._seal parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SEAL_SHA256 = "bf42016fea0eece1a96633ce6877a785d03da0f62a870fd87a88a06637eefc1c"
+SYNTHETIC_LEDGER_BEFORE = b"synthetic-ledger-before\n"
+
+KNOWN_GAPS = [
+    "sesslint.seal and sesslint.report.minimize_path are not ported; Rust maybe_append_seal returns SealError::Unsupported when --seal is present (no successful append vector).",
+    "Python getattr(args, 'seal', None) treats seal=False as present; Rust cli_supplied treats ArgValue::Bool(false) as absent (no seal=False vector).",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_seal_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "_seal.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != SEAL_SHA256:
+        raise SystemExit(
+            f"_seal.py sha256 mismatch: expected {SEAL_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.cli._context import CliContext  # noqa: WPS433
+    from sesslint.cli._seal import _check_seal_verdict, _maybe_append_seal  # noqa: WPS433
+
+    return _check_seal_verdict, _maybe_append_seal, CliContext
+
+
+class SyntheticReport:
+    """Minimal report view for _check_seal_verdict (synthetic counts only)."""
+
+    def __init__(
+        self,
+        limitation: str,
+        by_code: dict[str, int] | None = None,
+        by_severity: dict[str, int] | None = None,
+    ) -> None:
+        self.limitation = limitation
+        self.counts = SimpleNamespace(
+            by_code=dict(by_code or {}),
+            by_severity=dict(by_severity or {}),
+        )
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "unsupported_prefix_wins_over_sl301_and_errors",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "Unsupported: synthetic-adapter",
+                "by_code": {"SL301": 1},
+                "by_severity": {"error": 3, "fatal": 1},
+            },
+        },
+        {
+            "id": "skipped_prefix_wins_over_sl301_and_errors",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "Skipped: synthetic-skip",
+                "by_code": {"SL301": 1},
+                "by_severity": {"error": 2},
+            },
+        },
+        {
+            "id": "limitation_without_colon_unsupported_not_prefix",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "Unsupported",
+                "by_code": {},
+                "by_severity": {},
+            },
+        },
+        {
+            "id": "limitation_without_colon_skipped_not_prefix",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "Skipped",
+                "by_code": {},
+                "by_severity": {},
+            },
+        },
+        {
+            "id": "sl301_nonzero_is_unsupported",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "",
+                "by_code": {"SL301": 1},
+                "by_severity": {"error": 9},
+            },
+        },
+        {
+            "id": "sl301_zero_does_not_force_unsupported",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "",
+                "by_code": {"SL301": 0},
+                "by_severity": {"error": 1},
+            },
+        },
+        {
+            "id": "sl301_missing_does_not_force_unsupported",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "",
+                "by_code": {"SL001": 2},
+                "by_severity": {},
+            },
+        },
+        {
+            "id": "error_or_fatal_greater_than_zero_is_invalid",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "",
+                "by_code": {},
+                "by_severity": {"error": 1, "fatal": 1},
+            },
+        },
+        {
+            "id": "warning_only_counts_stay_healthy",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "synthetic-ok",
+                "by_code": {"SL001": 2},
+                "by_severity": {"warning": 4, "info": 4, "error": 0, "fatal": 0},
+            },
+        },
+        {
+            "id": "healthy_empty_report",
+            "construct": {
+                "type": "check_seal_verdict",
+                "limitation": "",
+                "by_code": {},
+                "by_severity": {},
+            },
+        },
+        {
+            "id": "maybe_append_seal_absent_returns_none",
+            "construct": {"type": "maybe_append_seal_absent"},
+        },
+    ]
+
+
+def build_expected(
+    check_seal_verdict: Any,
+    maybe_append_seal: Any,
+    CliContext: type,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "check_seal_verdict":
+        report = SyntheticReport(
+            limitation=str(spec.get("limitation", "")),
+            by_code=dict(spec.get("by_code") or {}),
+            by_severity=dict(spec.get("by_severity") or {}),
+        )
+        return {"verdict": check_seal_verdict(report)}
+    if kind == "maybe_append_seal_absent":
+        with tempfile.TemporaryDirectory(prefix="synthetic-cli-seal-par-") as tmp:
+            ledger = Path(tmp) / "synthetic-ledger.jsonl"
+            ledger.write_bytes(SYNTHETIC_LEDGER_BEFORE)
+            ctx = CliContext(quiet=True, verbose=False, config_path=None, settings={})
+            args = argparse.Namespace(seal=None)
+            before = ledger.read_bytes()
+            result = maybe_append_seal(
+                ctx,
+                args,
+                tool="synthetic-check",
+                artifact_bytes=b"synthetic-artifact-bytes",
+                artifact_path=None,
+                verdict="healthy",
+                codes={"SL001": 0},
+                report_bytes=b"synthetic-report-bytes",
+            )
+            after = ledger.read_bytes()
+            if result is not None:
+                raise SystemExit("maybe_append_seal_absent: expected None result")
+            if before != after or after != SYNTHETIC_LEDGER_BEFORE:
+                raise SystemExit("maybe_append_seal_absent: ledger bytes changed")
+        return {"result": "none", "ledger_unchanged": True}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    check_seal_verdict, maybe_append_seal, CliContext = load_seal_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(
+            check_seal_verdict,
+            maybe_append_seal,
+            CliContext,
+            row["construct"],
+        )
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._seal",
+        "python_commit": PYTHON_COMMIT,
+        "seal_py_sha256": SEAL_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._seal",
+        "python_commit": PYTHON_COMMIT,
+        "seal_py_sha256": SEAL_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._seal/generate",
+        "known_gaps": KNOWN_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic cli._seal check_seal_verdict and absent --seal maybe_append_seal parity (counts only).",
+        "generator": "rust/parity/vectors/cli._seal/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

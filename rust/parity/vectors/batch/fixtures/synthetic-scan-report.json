@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "synthetic/rel.jsonl"
+    },
+    {
+      "path": "~/synthetic/home.jsonl"
+    },
+    {
+      "path": "synthetic/min.dot"
+    }
+  ]
+}

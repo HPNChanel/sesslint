@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.version parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import sys
+from contextlib import redirect_stdout
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+VERSION_SHA256 = "e9ab7e2611701c733315e40b218b70f807463f1ad35f4310b05e23b548328c30"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_version_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "cli" / "version.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != VERSION_SHA256:
+        raise SystemExit(
+            f"version.py sha256 mismatch: expected {VERSION_SHA256}, got {digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.cli._context import CliContext  # noqa: WPS433
+    import sesslint.cli.version as version  # noqa: WPS433
+
+    return version, CliContext
+
+
+def configure_expected(version: Any) -> dict[str, Any]:
+    parser = argparse.ArgumentParser(prog="sesslint")
+    subparsers = parser.add_subparsers()
+    sub = version.configure(subparsers)
+    json_help = None
+    for action in sub._actions:
+        if action.option_strings == ["--json"]:
+            json_help = action.help
+    subcommand_help = None
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == version.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if json_help is None or subcommand_help is None:
+        raise SystemExit("failed to introspect configure() metadata")
+    return {
+        "name": version.NAME,
+        "help": subcommand_help,
+        "description": sub.description,
+        "json_help": json_help,
+    }
+
+
+def run_stdout(version: Any, CliContext: type, *, json_mode: bool) -> tuple[str, int]:
+    ctx = CliContext(quiet=False, verbose=False, config_path=None, settings={})
+    args = argparse.Namespace(json=json_mode)
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        code = version.run(ctx, args, None)
+    return buffer.getvalue(), code
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "configure_name_and_json_flag_metadata",
+            "construct": {"type": "configure"},
+        },
+        {
+            "id": "run_text_stdout_bytes",
+            "construct": {"type": "run", "json": False},
+        },
+        {
+            "id": "run_json_stdout_bytes",
+            "construct": {"type": "run", "json": True},
+        },
+    ]
+
+
+def build_expected(
+    version: Any, CliContext: type, spec: dict[str, Any]
+) -> dict[str, Any]:
+    kind = spec["type"]
+    if kind == "configure":
+        return configure_expected(version)
+    if kind == "run":
+        json_mode = bool(spec["json"])
+        stdout, code = run_stdout(version, CliContext, json_mode=json_mode)
+        return {"stdout": stdout, "exit_code": code}
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def main() -> int:
+    version, CliContext = load_version_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(version, CliContext, row["construct"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli.version",
+        "python_commit": PYTHON_COMMIT,
+        "version_py_sha256": VERSION_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli.version",
+        "python_commit": PYTHON_COMMIT,
+        "version_py_sha256": VERSION_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli.version/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic cli.version configure metadata and run() stdout parity (literal version table only).",
+        "generator": "rust/parity/vectors/cli.version/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

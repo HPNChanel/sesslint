@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.claude_code parity (prefix helpers, detection, loader seams, and documented line-processor gaps).",
+  "generator": "rust/parity/vectors/adapters.claude_code/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-claude-secret-scan-tracker: _load_claude_code_internal stops at sesslint.checks.hygiene.SecretScanTracker for bytes and streams. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
+    "GAP-claude-open-byte-source: a path that passes stat checks stops at sesslint.adapters.claude_code._open_byte_source. Rust does not read the file or construct SecretScanTracker on that arm.",
+    "GAP-claude-session-envelope: load_claude_code_session calls _load_claude_code_internal only. Rust does not build a Session envelope.",
+    "GAP-claude-line-fingerprint: _process_claude_line stops at the fingerprint codec when make_finding would run in the pin. Findings are not appended.",
+    "GAP-claude-line-canonical: a classified record that would reach sha256(canonical_bytes(obj)) stops at sesslint._canonical_codec.canonical_json_bytes. Events the pin would append after that hash are not appended.",
+    "GAP-claude-line-secret-feed: _process_claude_line with a supplied secret_tracker stops at SecretScanTracker.feed. Rust returns the tracker seam without scanning."
+  ]
+}

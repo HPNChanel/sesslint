@@ -1,0 +1,12 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "vector_count": 11,
+  "vectors_sha256": "95ab68d4cb28d530e399c6cbaf8e4a7c9ad12351653d000953a7c0b77605acbc",
+  "generator": "rust/parity/vectors/repair.recipes_salvage/generate",
+  "known_parity_gaps": [
+    "GAP-recipes-salvage-affected-region-orphan: Python affected_region_orphan_result_drop returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts Rust Display only."
+  ]
+}

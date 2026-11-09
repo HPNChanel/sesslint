@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair.refusals parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+REFUSALS_PY_SHA256 = "e5ca3d4e355ce833098b25157cbb3cd7414eebf0c16e2af25b4f40bfdf4649d3"
+REFUSALS_RS_SHA256 = (
+    "0b534e8290a41b4f8363d535f693eb9845f2b9b50da1ce2a1962ff1091b5ee03"
+)
+
+KNOWN_PARITY_GAPS = [
+    (
+        "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); "
+        "Rust accepts ASCII digits only — parity not required for those citations."
+    ),
+    (
+        "RefusalRationale with a non-str rationale: Python __post_init__ raises ValueError; "
+        "Rust RefusalRationale::try_new takes &str — parity not required for that branch."
+    ),
+    (
+        "REFUSAL_CODES: Python frozenset iteration order is not a contract; vectors record "
+        "sorted membership only — parity not required on iteration order."
+    ),
+    (
+        "refusal_rationale_for: Python returns Optional; invalid rows fail at import. "
+        "Rust returns Result because a bad registered row must not become None — parity on "
+        "that API shape is not required here."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_refusals_module() -> Any:
+    root = repo_root()
+    py_path = root / "src" / "sesslint" / "repair" / "refusals.py"
+    digest = hashlib.sha256(py_path.read_bytes()).hexdigest()
+    if digest != REFUSALS_PY_SHA256:
+        raise SystemExit(
+            "sesslint/repair/refusals.py sha256 mismatch: "
+            f"expected {REFUSALS_PY_SHA256}, got {digest}"
+        )
+    rs_path = root / "rust" / "crates" / "repair" / "src" / "refusals.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != REFUSALS_RS_SHA256:
+        raise SystemExit(
+            "repair refusals.rs sha256 mismatch: "
+            f"expected {REFUSALS_RS_SHA256}, got {rs_digest}"
+        )
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.repair import refusals  # noqa: WPS433
+
+    return refusals
+
+
+def row_to_json(rr: Any) -> dict[str, Any]:
+    return {
+        "code": rr.code,
+        "rationale": rr.rationale,
+        "demand_citation": rr.demand_citation,
+        "salvage_path": rr.salvage_path,
+    }
+
+
+def vemsg(fn: Any) -> str:
+    try:
+        fn()
+    except ValueError as exc:
+        return str(exc)
+    raise SystemExit("expected ValueError")
+
+
+def build_vectors(refusals: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    vectors.append(
+        {
+            "id": "module_all_export_order",
+            "construct": {"type": "module_all"},
+            "expected": {"names": list(refusals.__all__)},
+        }
+    )
+
+    rows: list[dict[str, Any]] = []
+    for _code, rr in refusals.REFUSAL_REGISTRY.items():
+        rows.append(row_to_json(rr))
+    vectors.append(
+        {
+            "id": "registry_insertion_order",
+            "construct": {"type": "registry_rows"},
+            "expected": {"rows": rows},
+        }
+    )
+
+    vectors.append(
+        {
+            "id": "refusal_codes_sorted_membership",
+            "construct": {"type": "refusal_codes_sorted"},
+            "expected": {"codes": sorted(refusals.REFUSAL_CODES)},
+        }
+    )
+
+    for code in ("SL001", "SL101", "SL203", "SL999", "SL003"):
+        got = refusals.refusal_rationale_for(code)
+        if got is None:
+            expected: dict[str, Any] = {"kind": "none"}
+        else:
+            expected = {"kind": "some", "row": row_to_json(got)}
+        vectors.append(
+            {
+                "id": f"refusal_rationale_for_{code}",
+                "construct": {"type": "refusal_rationale_for", "code": code},
+                "expected": expected,
+            }
+        )
+
+    rr101 = refusals.refusal_rationale_for("SL101")
+    vectors.append(
+        {
+            "id": "sl101_render_default_path",
+            "construct": {"type": "render", "code": "SL101", "path": None},
+            "expected": {"text": rr101.render()},
+        }
+    )
+    vectors.append(
+        {
+            "id": "sl101_render_session_jsonl",
+            "construct": {"type": "render", "code": "SL101", "path": "session.jsonl"},
+            "expected": {"text": rr101.render(path="session.jsonl")},
+        }
+    )
+
+    rr203 = refusals.refusal_rationale_for("SL203")
+    vectors.append(
+        {
+            "id": "sl203_render",
+            "construct": {"type": "render", "code": "SL203", "path": None},
+            "expected": {"text": rr203.render()},
+        }
+    )
+
+    sl001_rationale = refusals.refusal_rationale_for("SL001").rationale
+
+    vectors.append(
+        {
+            "id": "try_new_unknown_code_sl999",
+            "construct": {
+                "type": "try_new_error",
+                "code": "SL999",
+                "rationale": "x",
+                "demand_citation": "AC-004",
+                "salvage_path": None,
+            },
+            "expected": {
+                "message": vemsg(
+                    lambda: refusals.RefusalRationale(
+                        code="SL999", rationale="x", demand_citation="AC-004"
+                    )
+                )
+            },
+        }
+    )
+    vectors.append(
+        {
+            "id": "try_new_empty_rationale",
+            "construct": {
+                "type": "try_new_error",
+                "code": "SL001",
+                "rationale": "   ",
+                "demand_citation": "AC-004",
+                "salvage_path": None,
+            },
+            "expected": {
+                "message": vemsg(
+                    lambda: refusals.RefusalRationale(
+                        code="SL001", rationale="   ", demand_citation="AC-004"
+                    )
+                )
+            },
+        }
+    )
+    vectors.append(
+        {
+            "id": "try_new_unrecognized_citation",
+            "construct": {
+                "type": "try_new_error",
+                "code": "SL001",
+                "rationale": sl001_rationale,
+                "demand_citation": "some docs",
+                "salvage_path": None,
+            },
+            "expected": {
+                "message": vemsg(
+                    lambda: refusals.RefusalRationale(
+                        code="SL001",
+                        rationale=sl001_rationale,
+                        demand_citation="some docs",
+                    )
+                )
+            },
+        }
+    )
+    vectors.append(
+        {
+            "id": "try_new_empty_salvage_path",
+            "construct": {
+                "type": "try_new_error",
+                "code": "SL001",
+                "rationale": sl001_rationale,
+                "demand_citation": "AC-004",
+                "salvage_path": "   ",
+            },
+            "expected": {
+                "message": vemsg(
+                    lambda: refusals.RefusalRationale(
+                        code="SL001",
+                        rationale=sl001_rationale,
+                        demand_citation="AC-004",
+                        salvage_path="   ",
+                    )
+                )
+            },
+        }
+    )
+
+    return vectors
+
+
+def main() -> int:
+    refusals = load_refusals_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = build_vectors(refusals)
+
+    document: dict[str, Any] = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.refusals",
+        "python_commit": PYTHON_COMMIT,
+        "refusals_rs_sha256": REFUSALS_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.repair.refusals",
+        "python_commit": PYTHON_COMMIT,
+        "refusals_rs_sha256": REFUSALS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/repair.refusals/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair.refusals parity (module __all__, registry rows, "
+            "REFUSAL_CODES sorted membership, refusal_rationale_for, render, try_new errors)."
+        ),
+        "generator": "rust/parity/vectors/repair.refusals/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

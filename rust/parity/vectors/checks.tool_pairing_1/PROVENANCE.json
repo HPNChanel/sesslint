@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.checks.tool_pairing_1 parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",
+    "A mapping tool_result payload calls compute_content_hash. Rust returns sesslint._canonical_codec.payload_content_hash is not available and does not hash. Python hashes the payload.",
+    "Empty input with max_findings -1 takes the overflow path. Rust returns the codec error. Python emits an overflow finding.",
+    "Float and list ids or payloads are typed errors in Rust. Python uses str().",
+    "Null tool_call correlation is still dangling on codex-rollout (SL102 finding). That case belongs in known_parity_gaps, not silent vectors."
+  ]
+}

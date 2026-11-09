@@ -1,0 +1,435 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.repair",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "repair_py_sha256": "1db39d74e6af7d3e7150ad15bb04bf4b16556c2b1dfe7f32c7340689b1cc3ce1",
+  "repair_rs_sha256": "55a98a38a75630c6d4575f88916326f258752894475d5a06ba8cff92671fa500",
+  "known_parity_gaps": [
+    "GAP-cli-repair-run-stops: `CliContext::progress_callback` is not called because it takes self by value; batch mode stops with Display `sesslint.batch.BatchRepairReport is not available`; stdin stops with Display `sesslint.io.DEFAULT_MAX_FILE_BYTES is not available` before any read; and an existing file stops with Display `sesslint.adapters.detect.VALID_FORMAT_OPTIONS is not available`. The progress-callback seam and the three import stops are gaps, not covered rows."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "repair",
+        "help": "[writes: output file and manifest, lossy under --policy salvage] Safely repair a session file.",
+        "description": "[writes: output file and manifest, lossy under --policy salvage] Safely repair a session file with atomic execution.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": "*",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path(s) to source session file(s) or directories. Directories and multiple paths batch-repair into --output-dir (mirroring input structure). '-' reads the source from stdin (max 100 MB; still requires --output unless --dry-run).",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to output repaired session file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--dry-run"
+            ],
+            "dest": "dry_run",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Plan-only mode; do not write any files",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--preview"
+            ],
+            "dest": "preview",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Render the structural repair preview (sesslint.preview/v1): content-free delta rows per plan step, then exit without writing. Incompatible with --output/--plan-out/--apply-plan/batch modes.",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--policy"
+            ],
+            "dest": "policy",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "conservative",
+              "salvage"
+            ],
+            "metavar": null,
+            "help": "Repair policy (choices: conservative, salvage; default: conservative)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--emit"
+            ],
+            "dest": "emit",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "vendor"
+            ],
+            "metavar": null,
+            "help": "Output artifact format. 'auto' (default) emits the input's own format: vendor input produces a drop-only line-verbatim write-back; 'canonical' always emits the canonical session stream.",
+            "default_keyword": {
+              "present": {
+                "text": "auto"
+              }
+            },
+            "effective_default": {
+              "text": "auto"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--profile"
+            ],
+            "dest": "profile",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Replay validation profile (default: neutral)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Output manifest or plan in JSON format",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--progress-json"
+            ],
+            "dest": "progress_json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit NDJSON progress events to stderr (stdout stays the result channel)",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--no-progress"
+            ],
+            "dest": "no_progress",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Disable interactive progress output on stderr",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--plan",
+              "--apply-plan"
+            ],
+            "dest": "plan",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Apply a previously exported plan JSON (sesslint.plan/v1) without re-planning. The plan is authoritative: --policy/--profile/--adapter overrides are refused, and execution still re-validates the plan fingerprint and source binding.",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--plan-out"
+            ],
+            "dest": "plan_out",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Export the computed repair plan (sesslint.plan/v1) to PATH for review or later --apply-plan. Plan-only when --output is absent; with --output the exported plan is executed in the same run. ",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--from-scan"
+            ],
+            "dest": "from_scan",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "REPORT.json",
+            "help": "Batch-repair files listed in a sesslint scan JSON report; only '~/'-minimized and absolute paths resolve — '.._<hash>' entries are reported skipped.",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--output-dir"
+            ],
+            "dest": "output_dir",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "DIR",
+            "help": "Output root for batch repair modes (mirrors input structure).",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--manifest-dir"
+            ],
+            "dest": "manifest_dir",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "DIR",
+            "help": "Manifest root for batch modes; manifests are named <sha8-of-source-path>.manifest.json. Default: adjacent to each output.",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--acknowledge-side-effects"
+            ],
+            "dest": "acknowledge_side_effects",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Acknowledge tool side-effects for salvage policy",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--include-content"
+            ],
+            "dest": "include_content",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Embed raw transcript content in manifests (warning: emits raw sensitive data)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--config"
+            ],
+            "dest": "config",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "PATH",
+            "help": "Explicit config file path (overrides [tool.sesslint] discovery)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal"
+            ],
+            "dest": "seal",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "LEDGER",
+            "help": "Append a tamper-evident seal line to LEDGER (append-only hash-chained verdict record; 'sesslint seal --verify' re-checks it)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-no-path"
+            ],
+            "dest": "seal_no_path",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Omit the artifact path from the seal line (multi-machine ledgers)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-genesis-of"
+            ],
+            "dest": "seal_genesis_of",
+            "action": "store",
+            "nargs": null,
+            "type_name": "str",
+            "choices": null,
+            "metavar": "HEX",
+            "help": "Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

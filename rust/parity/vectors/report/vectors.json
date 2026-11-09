@@ -1,0 +1,430 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.report",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "report_py_sha256": "ac5cfc7f9d3f177faf3d9bc0f0cdc6c988b5d3c9fa5b354c81bf36469b97bac0",
+  "report_rs_sha256": "56d9593175f4d0a4932fa2364d882fd52aff23ba13648491f5e2cd84333c503a",
+  "known_parity_gaps": [
+    "GAP-report-refusal-rationale: render_human with findings calls sesslint.repair.refusals.refusal_rationale_for in Python; Rust returns sesslint.repair.refusals.refusal_rationale_for is not available before emitting finding detail lines.",
+    "GAP-report-json-dumps: dump_report and render_json call json.dumps in Python; Rust returns json.dumps is not available and does not emit JSON.",
+    "GAP-report-json-loads: parse_report and parse_manifest on JSON strings call json.loads in Python; Rust returns json.loads is not available.",
+    "GAP-report-hashlib-sha1: minimize_path outside home hashes the parent with hashlib.sha1 in Python; Rust returns hashlib.sha1 is not available.",
+    "GAP-report-default-coverage: build_report with omitted coverage calls sesslint.profiles.builtin.ALL_RULES in Python; Rust returns sesslint.profiles.builtin.ALL_RULES is not available."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "ASSURANCE_DESCRIPTIONS",
+          "ASSURANCE_LIMITATIONS",
+          "KNOWN_MANIFEST_FIELDS",
+          "KNOWN_REPORT_FIELDS",
+          "MANIFEST_SCHEMA_VERSION",
+          "REPORT_DEFAULT_FINDING_KEYS",
+          "REPORT_FINDING_KEYS",
+          "REPORT_FORBIDDEN_FINDING_KEYS",
+          "REPORT_ROOT_KEYS",
+          "REPORT_SCHEMA_VERSION",
+          "REQUIRED_MANIFEST_FIELDS",
+          "REQUIRED_REPORT_FIELDS",
+          "REQUIRED_SEVERITIES",
+          "VALID_ASSURANCE_LEVELS",
+          "VALID_COVERAGE_SKIP_REASONS",
+          "VALID_POLICIES",
+          "Assurance",
+          "Counts",
+          "Coverage",
+          "CoverageSkip",
+          "Policy",
+          "RepairAction",
+          "RepairManifest",
+          "Report",
+          "ReproMetadata",
+          "RevalidationSummary",
+          "apply_plan_assurance",
+          "build_manifest",
+          "build_report",
+          "build_repro_metadata",
+          "cap_assurance",
+          "compute_assurance",
+          "compute_manifest_idempotency_key",
+          "dump_manifest",
+          "dump_report",
+          "enforce_content_free",
+          "finding_report_sort_key",
+          "format_finding_content_free",
+          "get_finding_remediation",
+          "hint_path",
+          "get_manifest_schema_path",
+          "get_report_schema_path",
+          "load_manifest_schema",
+          "load_report_schema",
+          "minimize_id",
+          "minimize_path",
+          "parse_manifest",
+          "parse_report",
+          "render_human",
+          "render_json",
+          "short_hash"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "report_schema_version": "sesslint.report/v1",
+        "required_severities": [
+          "fatal",
+          "error",
+          "warning",
+          "info"
+        ],
+        "assurance_levels": [
+          "A0",
+          "A1",
+          "A2",
+          "A3",
+          "A4"
+        ]
+      }
+    },
+    {
+      "id": "compute_assurance_none_empty",
+      "construct": {
+        "type": "compute_assurance",
+        "events": null,
+        "findings": []
+      },
+      "expected": {
+        "level": "A0",
+        "limitation": "No structural conclusion."
+      }
+    },
+    {
+      "id": "compute_assurance_nonempty_a3",
+      "construct": {
+        "type": "compute_assurance",
+        "events": "nonempty",
+        "findings": [],
+        "has_profile_replay": true
+      },
+      "expected": {
+        "level": "A3",
+        "limitation": "Does not prove semantic equivalence or external side effects."
+      }
+    },
+    {
+      "id": "dump_report_gap",
+      "construct": {
+        "type": "dump_report",
+        "report_kind": "empty_clean",
+        "session_id": "sess_healthy",
+        "source_fingerprint": "fp_clean_123",
+        "tool_version": "0.1.0",
+        "assurance": "A2",
+        "limitation": "Graph invariants validated.",
+        "performed": [
+          "SL001",
+          "SL002",
+          "SL003",
+          "SL004",
+          "SL005",
+          "SL006",
+          "SL007",
+          "SL008",
+          "SL009",
+          "SL010",
+          "SL011",
+          "SL101",
+          "SL102",
+          "SL103",
+          "SL104",
+          "SL105",
+          "SL106",
+          "SL107",
+          "SL108",
+          "SL201",
+          "SL202",
+          "SL203",
+          "SL204",
+          "SL205",
+          "SL206",
+          "SL207",
+          "SL208",
+          "SL301",
+          "SL302",
+          "SL303",
+          "SL304",
+          "SL305",
+          "SL306",
+          "SL401",
+          "SL402"
+        ]
+      },
+      "expected": {
+        "pin": {
+          "json_prefix": "{\"assurance\":\"A2\",\"counts\":{\"by_code\":{},\"by_sev"
+        },
+        "rust_assertion": {
+          "mode": "gap_json_dumps"
+        }
+      }
+    },
+    {
+      "id": "parse_report_json_string_gap",
+      "construct": {
+        "type": "parse_report",
+        "input_kind": "json_string",
+        "json": "{\"assurance\":\"A2\",\"counts\":{\"by_code\":{},\"by_severity\":{\"error\":0,\"fatal\":0,\"info\":0,\"warning\":0},\"total\":0},\"coverage\":{\"adapter\":{\"id\":\"canonical\",\"version\":\"1.0.0\"},\"performed\":[\"SL001\",\"SL002\",\"SL003\",\"SL004\",\"SL005\",\"SL006\",\"SL007\",\"SL008\",\"SL009\",\"SL010\",\"SL011\",\"SL101\",\"SL102\",\"SL103\",\"SL104\",\"SL105\",\"SL106\",\"SL107\",\"SL108\",\"SL201\",\"SL202\",\"SL203\",\"SL204\",\"SL205\",\"SL206\",\"SL207\",\"SL208\",\"SL301\",\"SL302\",\"SL303\",\"SL304\",\"SL305\",\"SL306\",\"SL401\",\"SL402\"],\"profile\":{\"id\":\"neutral\",\"version\":\"1.0.0\"},\"skipped\":[]},\"findings\":[],\"limitation\":\"Graph invariants validated.\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"sess_healthy\",\"source_fingerprint\":\"fp_clean_123\",\"tool_version\":\"0.1.0\"}"
+      },
+      "expected": {
+        "pin": {
+          "session_id": "sess_healthy",
+          "counts_total": 0
+        },
+        "rust_assertion": {
+          "mode": "gap_json_loads"
+        }
+      }
+    },
+    {
+      "id": "parse_report_bool_total",
+      "construct": {
+        "type": "parse_report",
+        "input_kind": "mapping_bool_total"
+      },
+      "expected": {
+        "display": "counts.total must be a non-negative integer, got True"
+      }
+    },
+    {
+      "id": "build_report_empty_gap",
+      "construct": {
+        "type": "build_report",
+        "findings_count": 0
+      },
+      "expected": {
+        "pin": {
+          "session_id": "sess_healthy",
+          "counts_total": 0
+        },
+        "rust_assertion": {
+          "mode": "gap_all_rules"
+        }
+      }
+    },
+    {
+      "id": "render_human_healthy_header",
+      "construct": {
+        "type": "render_human",
+        "report_kind": "empty_clean",
+        "color": false,
+        "adapter": "canonical",
+        "profile": "neutral",
+        "session_id": "sess_healthy",
+        "source_fingerprint": "fp_clean_123",
+        "tool_version": "0.1.0",
+        "assurance": "A2",
+        "limitation": "Graph invariants validated.",
+        "performed": [
+          "SL001",
+          "SL002",
+          "SL003",
+          "SL004",
+          "SL005",
+          "SL006",
+          "SL007",
+          "SL008",
+          "SL009",
+          "SL010",
+          "SL011",
+          "SL101",
+          "SL102",
+          "SL103",
+          "SL104",
+          "SL105",
+          "SL106",
+          "SL107",
+          "SL108",
+          "SL201",
+          "SL202",
+          "SL203",
+          "SL204",
+          "SL205",
+          "SL206",
+          "SL207",
+          "SL208",
+          "SL301",
+          "SL302",
+          "SL303",
+          "SL304",
+          "SL305",
+          "SL306",
+          "SL401",
+          "SL402"
+        ]
+      },
+      "expected": {
+        "text": "[read-only] Session is healthy (verdict: healthy / errors: 0 / warnings: 0 / files: H=1 I=0 U=0 R=0 S=0 / profile: neutral / adapter: canonical)\nNext Action: No repair needed.\nAssurance: A2 - Graph invariants validated.\nLimitation: Graph invariants validated.\nSource fingerprint: fp_clean_123\nCoverage: 35 checks performed (SL001, SL002, SL003, SL004, SL005, SL006, SL007, SL008, SL009, SL010, SL011, SL101, SL102, SL103, SL104, SL105, SL106, SL107, SL108, SL201, SL202, SL203, SL204, SL205, SL206, SL207, SL208, SL301, SL302, SL303, SL304, SL305, SL306, SL401, SL402)"
+      }
+    },
+    {
+      "id": "render_human_with_finding_gap",
+      "construct": {
+        "type": "render_human",
+        "report_kind": "one_error",
+        "color": false,
+        "adapter": "claude-code-jsonl",
+        "profile": "claude-strict",
+        "session_id": "sess_bad",
+        "source_fingerprint": "fp_bad_123",
+        "tool_version": "0.1.0",
+        "assurance": "A0",
+        "limitation": "No conclusion.",
+        "performed": [
+          "SL001",
+          "SL002",
+          "SL003",
+          "SL004",
+          "SL005",
+          "SL006",
+          "SL007",
+          "SL008",
+          "SL009",
+          "SL010",
+          "SL011",
+          "SL101",
+          "SL102",
+          "SL103",
+          "SL104",
+          "SL105",
+          "SL106",
+          "SL107",
+          "SL108",
+          "SL201",
+          "SL202",
+          "SL203",
+          "SL204",
+          "SL205",
+          "SL206",
+          "SL207",
+          "SL208",
+          "SL301",
+          "SL302",
+          "SL303",
+          "SL304",
+          "SL305",
+          "SL306",
+          "SL401",
+          "SL402"
+        ],
+        "finding_path": "synthetic/bad.jsonl"
+      },
+      "expected": {
+        "pin": {
+          "text_prefix": "[read-only] Integrity check failed (verdict: invalid / errors: 1 / warnings: 0 / files: H=0 I=1 U=0 R=0 S=0 / profile: claude-strict / adapter: claude-code-jsonl)"
+        },
+        "rust_assertion": {
+          "mode": "gap_refusal_rationale"
+        }
+      }
+    },
+    {
+      "id": "minimize_path_under_home",
+      "construct": {
+        "type": "minimize_path",
+        "path": "C:/SyntheticHomeParity/work/sessions/agent.jsonl",
+        "home": "C:/SyntheticHomeParity"
+      },
+      "expected": {
+        "path": "~/work/sessions/agent.jsonl"
+      }
+    },
+    {
+      "id": "minimize_path_home_self",
+      "construct": {
+        "type": "minimize_path",
+        "path": "C:/SyntheticHomeParity",
+        "home": "C:/SyntheticHomeParity"
+      },
+      "expected": {
+        "path": "~"
+      }
+    },
+    {
+      "id": "minimize_path_passthrough_tilde",
+      "construct": {
+        "type": "minimize_path",
+        "path": "~/work/file.jsonl",
+        "home": null
+      },
+      "expected": {
+        "path": "~/work/file.jsonl"
+      }
+    },
+    {
+      "id": "minimize_path_passthrough_dotdot",
+      "construct": {
+        "type": "minimize_path",
+        "path": ".._12345678/file.jsonl",
+        "home": null
+      },
+      "expected": {
+        "path": ".._12345678/file.jsonl"
+      }
+    },
+    {
+      "id": "minimize_path_passthrough_home",
+      "construct": {
+        "type": "minimize_path",
+        "path": "~",
+        "home": null
+      },
+      "expected": {
+        "path": "~"
+      }
+    },
+    {
+      "id": "minimize_path_outside_gap",
+      "construct": {
+        "type": "minimize_path",
+        "path": "C:/SyntheticOutside/agent.jsonl",
+        "home": "C:/SyntheticHomeParity"
+      },
+      "expected": {
+        "pin": {
+          "path": ".._a0053532/agent.jsonl",
+          "parent_hash_prefix": "a0053532"
+        },
+        "rust_assertion": {
+          "mode": "gap_hashlib_sha1"
+        }
+      }
+    },
+    {
+      "id": "compute_assurance_warning_a2",
+      "construct": {
+        "type": "compute_assurance",
+        "events": "nonempty",
+        "findings": [
+          {
+            "code": "SL003",
+            "severity": "warning"
+          }
+        ],
+        "has_profile_replay": true
+      },
+      "expected": {
+        "level": "A2",
+        "limitation": "Provider/runtime replay has not been independently exercised."
+      }
+    }
+  ]
+}

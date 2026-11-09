@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.planner parity (constants, parsing, policy rejection, schema and register_all seams).",
+  "generator": "rust/parity/vectors/repair.planner/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-planner-schema-path: get_plan_schema_path and load_plan_schema import sesslint._resources.schema_path. Rust displays sesslint._resources.schema_path is not available and does not read schemas/sesslint.plan.v1.json.",
+    "GAP-planner-register-all: plan after policy, source_hash, and profile checks imports sesslint.repair.recipes_conservative.register_all. Rust displays sesslint.repair.recipes_conservative.register_all is not available and does not return a RepairPlan on the pin success path."
+  ]
+}

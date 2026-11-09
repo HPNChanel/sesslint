@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.scan parity: module constants, aggregate_scan views, SessionLink wire shape, rollout_uuid, looks_pathy, and documented minimize_path and threshold gaps.",
+  "generator": "rust/parity/vectors/scan/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-scan-minimize-path: FileResult.to_dict, WorstFileRow.to_dict, ScanReport.to_dict, scan_single_file, scan_path, and reconcile paths call sesslint.report.minimize_path in Python. Rust stops with sesslint.report.minimize_path is not available and does not return formatted findings or scan reports.",
+    "GAP-scan-validate-thresholds: scan_bytes and scan_path call sesslint.adapters.detect.validate_detection_thresholds after integer guards. Rust stops at that import and does not return ScanReport.",
+    "GAP-scan-safe-discriminator: resolve_cross_file_links and reconcile helpers call sesslint.adapters.safe_value.safe_discriminator. Rust stops at that seam.",
+    "GAP-scan-fingerprint: scan_single_source make_finding paths require sesslint.determinism.canonical_json_bytes for fingerprints. Rust propagates FINGERPRINT_CODEC_UNAVAILABLE instead of findings.",
+    "GAP-scan-json-loads: load_scan_schema on an existing schema file calls json.loads in Python. Rust stops with json.loads is not available."
+  ]
+}

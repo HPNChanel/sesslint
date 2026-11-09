@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.report parity: early gates, path minimization, and documented json/refusal/sha1/all_rules seams.",
+  "generator": "rust/parity/vectors/report/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-report-refusal-rationale: render_human with findings calls sesslint.repair.refusals.refusal_rationale_for in Python; Rust returns sesslint.repair.refusals.refusal_rationale_for is not available before emitting finding detail lines.",
+    "GAP-report-json-dumps: dump_report and render_json call json.dumps in Python; Rust returns json.dumps is not available and does not emit JSON.",
+    "GAP-report-json-loads: parse_report and parse_manifest on JSON strings call json.loads in Python; Rust returns json.loads is not available.",
+    "GAP-report-hashlib-sha1: minimize_path outside home hashes the parent with hashlib.sha1 in Python; Rust returns hashlib.sha1 is not available.",
+    "GAP-report-default-coverage: build_report with omitted coverage calls sesslint.profiles.builtin.ALL_RULES in Python; Rust returns sesslint.profiles.builtin.ALL_RULES is not available."
+  ]
+}

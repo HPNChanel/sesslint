@@ -1,0 +1,142 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.exporter",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "exporter_py_sha256": "d5386b1c85b9ff596e5a6e014d1acaff8e6ad74c9c956d04e9aa0a9e7a4d8ea5",
+  "exporter_rs_sha256": "fdc599ed26bfaeed99c784b5a8547e81c5fbd1d044ad63766b92cb208fe1f40c",
+  "known_parity_gaps": [
+    "GAP-evidence-exporter-live-store: export_to_canonical on a regular file calls sesslint.repair.executor.is_live_store_path in Python; Rust returns sesslint.repair.executor.is_live_store_path is not available before the output path is statted, compared, or written."
+  ],
+  "vectors": [
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "python_all": [
+          "ExportRefused",
+          "ExportSummary",
+          "export_to_canonical"
+        ]
+      }
+    },
+    {
+      "id": "export_refused",
+      "construct": {
+        "type": "export_refused"
+      },
+      "expected": {
+        "default_code": "EXPORT_REFUSED",
+        "message_only": "refused synthetic export",
+        "custom_code": "CUSTOM",
+        "custom_message": "other"
+      }
+    },
+    {
+      "id": "export_summary_to_dict",
+      "construct": {
+        "type": "export_summary_to_dict"
+      },
+      "expected": {
+        "dict": {
+          "dropped_unknown_fields": 1,
+          "event_count": 3,
+          "findings_by_severity": {
+            "fatal": 1,
+            "info": 0,
+            "warning": 2
+          },
+          "input_format": "canonical",
+          "input_path": "in.jsonl",
+          "input_sha256": "aa",
+          "output_path": "out.jsonl",
+          "output_sha256": "bb"
+        }
+      }
+    },
+    {
+      "id": "export_missing_source_path",
+      "construct": {
+        "type": "export_to_canonical",
+        "source_path": "fixtures/synthetic_absent.jsonl",
+        "output_path": "fixtures/synthetic_out.jsonl",
+        "format": "canonical"
+      },
+      "expected": {
+        "raises": "FileNotFoundError",
+        "message": "Source file not found: fixtures/synthetic_absent.jsonl"
+      }
+    },
+    {
+      "id": "export_directory_source",
+      "construct": {
+        "type": "export_to_canonical",
+        "source_path": "fixtures/synthetic_dir",
+        "output_path": "fixtures/synthetic_out.jsonl"
+      },
+      "expected": {
+        "raises": "FileNotFoundError",
+        "message": "Source file not found: fixtures/synthetic_dir"
+      }
+    },
+    {
+      "id": "export_broken_symlink",
+      "construct": {
+        "type": "export_to_canonical",
+        "source_path": "fixtures/broken_link.jsonl",
+        "output_path": "fixtures/synthetic_out.jsonl",
+        "format": "auto"
+      },
+      "expected": {
+        "raises": "FileNotFoundError",
+        "message": "Source file not found: fixtures/broken_link.jsonl"
+      }
+    },
+    {
+      "id": "export_empty_source_path",
+      "construct": {
+        "type": "export_to_canonical",
+        "source_path": "",
+        "output_path": "fixtures/synthetic_out.jsonl"
+      },
+      "expected": {
+        "raises": "FileNotFoundError",
+        "message": "Source file not found: ."
+      }
+    },
+    {
+      "id": "export_regular_file_gap",
+      "construct": {
+        "type": "export_to_canonical_gap",
+        "source_path": "fixtures/synthetic_source.jsonl",
+        "output_path": "fixtures/synthetic_out.jsonl"
+      },
+      "expected": {
+        "pin": {
+          "source_is_file": true
+        },
+        "rust_assertion": {
+          "mode": "live_store_path_unavailable"
+        }
+      }
+    },
+    {
+      "id": "export_regular_file_symlink_gap",
+      "construct": {
+        "type": "export_to_canonical_gap",
+        "source_path": "fixtures/via_link.jsonl",
+        "output_path": "fixtures/synthetic_out.jsonl",
+        "format": "canonical"
+      },
+      "expected": {
+        "pin": {
+          "source_is_file": true
+        },
+        "rust_assertion": {
+          "mode": "live_store_path_unavailable"
+        }
+      }
+    }
+  ]
+}

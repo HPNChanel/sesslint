@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.hook-result/v1 documents from the pinned emitter. Optional top_code and session_id are omitted when the emitter omits them. No transcript bytes are stored.",
+  "generator": "rust/parity/schemas/sesslint.hook-result.v1/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-hook-result-import: a non-empty session_id imports sesslint.report, and a transcript check imports sesslint.api. Those imports are refused, so those tests are not executed and finding counts are not invented.",
+    "GAP-hook-result-cli: subprocess hook tests are not the schema validator."
+  ]
+}

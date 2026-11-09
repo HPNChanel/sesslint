@@ -1,0 +1,1174 @@
+#!/usr/bin/env python3
+"""Generate sesslint.repair-manifest.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The manifest emitter is
+executed from a temporary file. This script does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import math
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = ROOT / "rust" / "crates" / "model" / "src" / "schema" / "sesslint.repair-manifest.v1.rs"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.repair-manifest.v1.json"
+REPORT_GIT = f"{PYTHON_COMMIT}:src/sesslint/report.py"
+PIN_FILES = (
+    "src/sesslint/errors.py",
+    "src/sesslint/codes.py",
+    "src/sesslint/_version.py",
+    "src/sesslint/context.py",
+    "src/sesslint/finding.py",
+    "src/sesslint/atomic.py",
+    "src/sesslint/canonical.py",
+    "src/sesslint/repair/assurance.py",
+    "src/sesslint/report.py",
+)
+GENERATOR = "rust/parity/schemas/sesslint.repair-manifest.v1/generate"
+IDEMPOTENCY_PATTERN = "^[0-9a-f]{64}$"
+SCHEMA_TESTS = (
+    "tests/test_manifest.py::test_manifest_schema_anti_drift",
+    "tests/test_manifest.py::test_manifest_schema_loader_file_not_found",
+    "tests/test_manifest.py::test_get_manifest_schema_path_prefix_resolution",
+    "tests/repair/test_executor.py::test_manifest_schema_validation",
+)
+NOTES = {
+    "tests/test_manifest.py::test_manifest_schema_anti_drift": (
+        "get_manifest_schema_path and load_manifest_schema open the schema file, then "
+        "compare the required set, the property set, the policy enum, and the idempotency "
+        "pattern with the RepairManifest model. validate_repair_manifest_json checks one "
+        "instance. Recording those names in facts is not that loader call."
+    ),
+    "tests/test_manifest.py::test_manifest_schema_loader_file_not_found": (
+        "load_manifest_schema raises FileNotFoundError when the schema path is missing. "
+        "validate_repair_manifest_json does not open a path."
+    ),
+    "tests/test_manifest.py::test_get_manifest_schema_path_prefix_resolution": (
+        "get_manifest_schema_path follows the prefix share directory when the repo schema "
+        "is hidden. No vector resolves a schema path."
+    ),
+    "tests/repair/test_executor.py::test_manifest_schema_validation": (
+        "execute repairs a fixture and then checks that the emitted object contains the "
+        "required names, the schema_version const, a matching idempotency pattern, and a "
+        "policy enum member. validate_repair_manifest_json does not execute a repair. "
+        "emitter_to_dict is one synthetic object, not that execution."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "uniqueItems",
+}
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class Unproven(Exception):
+    """A comparison or keyword cannot be proven."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        module = types.ModuleType(name)
+        module.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = module
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    handle = tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False)
+    handle.write(blob)
+    handle.close()
+    tmp = Path(handle.name)
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(f"spec failed {fullname}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = module
+    resolved = tmp.resolve()
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], module)
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return module
+
+
+def load_emitter() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_FILES:
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{rel}")
+        fullname = fullname_for(rel)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    module = sys.modules["sesslint.report"]
+    if module.RepairManifest.__module__ != "sesslint.report":
+        raise SystemExit("RepairManifest is not the pin blob")
+    if module.RepairManifest.to_dict.__module__ != "sesslint.report":
+        raise SystemExit("to_dict is not the pin blob")
+    return module
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'REPAIR_MANIFEST_SCHEMA_JSON: &str = r#"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"#;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def schema_test_names(path: str) -> list[str]:
+    source = git_show_bytes(f"{PYTHON_COMMIT}:{path}").decode("utf-8")
+    tree = ast.parse(source)
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
+        and "schema" in node.name
+    ]
+
+
+def assert_test_list() -> None:
+    by_file: dict[str, list[str]] = {}
+    for test_id in SCHEMA_TESTS:
+        path, name = test_id.split("::", 1)
+        by_file.setdefault(path, []).append(name)
+    for path, names in by_file.items():
+        actual = schema_test_names(path)
+        if actual != names:
+            raise SystemExit(f"schema test list mismatch for {path}: {actual}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right, strict=True))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            raise Unproven()
+        return left_int == right_int
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def check(schema: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path)
+    if failure is not None:
+        return failure
+    return check_array(schema, value, path)
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            return ("unsupported", path, "pattern")
+        try:
+            matched = pattern_match(pattern, value)
+        except Unproven:
+            return ("unsupported", path, "pattern")
+        if not matched:
+            return ("pattern", path, "")
+    return None
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        flag = schema["additionalProperties"]
+        if flag is False or isinstance(flag, dict):
+            props = schema.get("properties", {})
+            if not isinstance(props, dict):
+                return ("unsupported", path, "properties")
+            for key, item in value.items():
+                if key in props:
+                    continue
+                if flag is False:
+                    return ("additionalProperties", path, str(key))
+                failure = check(flag, item, pointer(path, str(key)))
+                if failure is not None:
+                    return failure
+        elif flag is not True:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)))
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_array(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}")
+            if failure is not None:
+                return failure
+    if schema.get("uniqueItems") is True:
+        for right in range(1, len(value)):
+            for left in range(right):
+                compared = equal_result(value[left], value[right])
+                if compared is None:
+                    return ("unsupported", path, "uniqueItems")
+                if compared:
+                    return ("uniqueItems", path, "")
+    elif "uniqueItems" in schema and schema["uniqueItems"] is not False:
+        return ("unsupported", path, "uniqueItems")
+    return None
+
+
+def pattern_match(pattern: str, text: str) -> bool:
+    return match_here(list(pattern), 0, list(text), 0)
+
+
+def match_here(pattern: list[str], index: int, text: list[str], text_index: int) -> bool:
+    if index == len(pattern):
+        return text_index == len(text)
+    if pattern[index] == "^":
+        if text_index != 0:
+            return False
+        return match_here(pattern, index + 1, text, text_index)
+    if pattern[index] == "$":
+        if text_index != len(text):
+            return False
+        return match_here(pattern, index + 1, text, text_index)
+    atom, next_index = parse_atom(pattern, index)
+    minimum, maximum, after = parse_quant(pattern, next_index)
+    return match_quant(atom, minimum, maximum, pattern, after, text, text_index)
+
+
+def parse_atom(pattern: list[str], index: int) -> tuple[tuple[str, object], int]:
+    if index >= len(pattern):
+        raise Unproven()
+    ch = pattern[index]
+    if ch == "\\":
+        if index + 1 >= len(pattern):
+            raise Unproven()
+        return (("char", pattern[index + 1]), index + 2)
+    if ch in "^$|*+?(){}].":
+        raise Unproven()
+    if ch == "[":
+        return parse_class(pattern, index)
+    return (("char", ch), index + 1)
+
+
+def parse_class(pattern: list[str], index: int) -> tuple[tuple[str, object], int]:
+    cursor = index + 1
+    if cursor < len(pattern) and pattern[cursor] == "^":
+        raise Unproven()
+    ranges: list[tuple[str, str]] = []
+    while cursor < len(pattern) and pattern[cursor] != "]":
+        if cursor + 2 < len(pattern) and pattern[cursor + 1] == "-" and pattern[cursor + 2] != "]":
+            start = pattern[cursor]
+            end = pattern[cursor + 2]
+            if start > end:
+                raise Unproven()
+            ranges.append((start, end))
+            cursor += 3
+        else:
+            ranges.append((pattern[cursor], pattern[cursor]))
+            cursor += 1
+    if cursor >= len(pattern) or pattern[cursor] != "]" or not ranges:
+        raise Unproven()
+    return (("class", ranges), cursor + 1)
+
+
+def parse_quant(pattern: list[str], index: int) -> tuple[int, int, int]:
+    if index >= len(pattern):
+        return (1, 1, index)
+    ch = pattern[index]
+    if ch == "*":
+        return (0, sys.maxsize, index + 1)
+    if ch == "+":
+        return (1, sys.maxsize, index + 1)
+    if ch == "?":
+        return (0, 1, index + 1)
+    if ch == "{":
+        return parse_brace(pattern, index)
+    return (1, 1, index)
+
+
+def parse_brace(pattern: list[str], index: int) -> tuple[int, int, int]:
+    cursor = index + 1
+    start = cursor
+    while cursor < len(pattern) and pattern[cursor].isdigit():
+        cursor += 1
+    if cursor == start:
+        raise Unproven()
+    minimum = parse_usize(pattern[start:cursor])
+    if cursor < len(pattern) and pattern[cursor] == "}":
+        return (minimum, minimum, cursor + 1)
+    if cursor >= len(pattern) or pattern[cursor] != ",":
+        raise Unproven()
+    cursor += 1
+    if cursor < len(pattern) and pattern[cursor] == "}":
+        return (minimum, sys.maxsize, cursor + 1)
+    max_start = cursor
+    while cursor < len(pattern) and pattern[cursor].isdigit():
+        cursor += 1
+    if cursor == max_start or cursor >= len(pattern) or pattern[cursor] != "}":
+        raise Unproven()
+    maximum = parse_usize(pattern[max_start:cursor])
+    if maximum < minimum:
+        raise Unproven()
+    return (minimum, maximum, cursor + 1)
+
+
+def parse_usize(chars: list[str]) -> int:
+    value = 0
+    for ch in chars:
+        value = value * 10 + int(ch)
+    return value
+
+
+def match_quant(
+    atom: tuple[str, object],
+    minimum: int,
+    maximum: int,
+    pattern: list[str],
+    after: int,
+    text: list[str],
+    text_index: int,
+) -> bool:
+    ends = [text_index]
+    cursor = text_index
+    limit = min(maximum, len(text))
+    while len(ends) - 1 < limit and cursor < len(text) and atom_matches(atom, text[cursor]):
+        cursor += 1
+        ends.append(cursor)
+    have = len(ends) - 1
+    if have < minimum:
+        return False
+    for count in range(have, minimum - 1, -1):
+        if match_here(pattern, after, text, ends[count]):
+            return True
+    return False
+
+
+def atom_matches(atom: tuple[str, object], ch: str) -> bool:
+    kind, payload = atom
+    if kind == "char":
+        return ch == payload
+    ranges = payload
+    if not isinstance(ranges, list):
+        raise Unproven()
+    return any(start <= ch <= end for start, end in ranges)
+
+
+def assert_pattern_engine() -> None:
+    good = "0123456789abcdef" * 4
+    samples = {
+        good: True,
+        good.upper(): False,
+        good[:-1]: False,
+        good + "0": False,
+        "": False,
+        "g" + ("0" * 63): False,
+    }
+    for text, expected in samples.items():
+        direct = len(text) == 64 and all(ch in "0123456789abcdef" for ch in text)
+        if direct != expected or pattern_match(IDEMPOTENCY_PATTERN, text) != expected:
+            raise SystemExit("idempotency pattern engine mismatch")
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "")
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword == "unsupported":
+        raise SystemExit(f"oracle unsupported at {path} ({detail})")
+    return {"ok": False, "detail": detail, "keyword": keyword, "path": path}
+
+
+def dumps(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False)
+    return text + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "02694d5" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def clone_doc(value: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(value))
+    if not isinstance(cloned, dict):
+        raise SystemExit("emitter document is not an object")
+    return cloned
+
+
+def child(document: dict[str, Any], key: str) -> dict[str, Any]:
+    value = document[key]
+    if not isinstance(value, dict):
+        raise SystemExit(f"{key} is not an object")
+    return value
+
+
+def raw_count(document: dict[str, Any], token: str) -> str:
+    text = json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    needle = '"error_count": 0,'
+    if needle not in text:
+        raise SystemExit("error_count field missing from raw rewrite")
+    return text.replace(needle, f'"error_count": {token},', 1)
+
+
+def plain_value_type(node: dict[str, Any], label: str) -> str:
+    extra = set(node) - ANNOTATIONS - {"type"}
+    kind = node.get("type")
+    if extra or not isinstance(kind, str):
+        raise SystemExit(f"{label} additionalProperties schema changed")
+    return kind
+
+
+def build_vectors(schema: dict[str, Any], emitted: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    revalidation_required = schema["properties"]["revalidation"]["required"]
+
+    def add(vector_id: str, instance: object = None, raw: str | None = None) -> None:
+        if raw is None:
+            vectors.append(
+                {"expected": expect(schema, instance), "id": vector_id, "instance": instance}
+            )
+            return
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    add("emitter_to_dict", clone_doc(emitted))
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_bool", True)
+    add("root_number", 1)
+    for name in schema["required"]:
+        document = clone_doc(emitted)
+        document.pop(name)
+        add(f"missing_{name}", document)
+    extra = clone_doc(emitted)
+    extra["extra"] = 1
+    add("root_additional_property", extra)
+    const_bad = clone_doc(emitted)
+    const_bad["schema_version"] = "nope"
+    add("schema_version_const", const_bad)
+    const_number = clone_doc(emitted)
+    const_number["schema_version"] = 1
+    add("schema_version_number", const_number)
+    policy_bad = clone_doc(emitted)
+    policy_bad["policy"] = "nope"
+    add("policy_enum", policy_bad)
+    policy_type = clone_doc(emitted)
+    policy_type["policy"] = 1
+    add("policy_type", policy_type)
+    policy_salvage = clone_doc(emitted)
+    policy_salvage["policy"] = "salvage"
+    add("policy_salvage", policy_salvage)
+    ceiling_bad = clone_doc(emitted)
+    ceiling_bad["assurance_ceiling"] = "nope"
+    add("assurance_ceiling_enum", ceiling_bad)
+    ceiling_type = clone_doc(emitted)
+    ceiling_type["assurance_ceiling"] = 1
+    add("assurance_ceiling_type", ceiling_type)
+    for level in ("A0", "A2", "A3", "A4"):
+        document = clone_doc(emitted)
+        document["assurance_ceiling"] = level
+        add(f"assurance_ceiling_{level.lower()}", document)
+    input_empty = clone_doc(emitted)
+    input_empty["input_fingerprint"] = ""
+    add("input_fingerprint_min_length", input_empty)
+    input_type = clone_doc(emitted)
+    input_type["input_fingerprint"] = 1
+    add("input_fingerprint_type", input_type)
+    input_unicode = clone_doc(emitted)
+    input_unicode["input_fingerprint"] = "caf\u00e9"
+    add("input_fingerprint_unicode", input_unicode)
+    output_empty = clone_doc(emitted)
+    output_empty["output_fingerprint"] = ""
+    add("output_fingerprint_min_length", output_empty)
+    output_type = clone_doc(emitted)
+    output_type["output_fingerprint"] = 1
+    add("output_fingerprint_type", output_type)
+    idem_short = clone_doc(emitted)
+    idem_short["idempotency_key"] = "0" * 63
+    add("idempotency_short", idem_short)
+    idem_upper = clone_doc(emitted)
+    idem_upper["idempotency_key"] = "A" * 64
+    add("idempotency_uppercase", idem_upper)
+    idem_long = clone_doc(emitted)
+    idem_long["idempotency_key"] = "0" * 65
+    add("idempotency_long", idem_long)
+    idem_hex = clone_doc(emitted)
+    idem_hex["idempotency_key"] = "g" + ("0" * 63)
+    add("idempotency_non_hex", idem_hex)
+    idem_empty = clone_doc(emitted)
+    idem_empty["idempotency_key"] = ""
+    add("idempotency_empty", idem_empty)
+    actions_type = clone_doc(emitted)
+    actions_type["actions"] = "k"
+    add("actions_type", actions_type)
+    actions_item = clone_doc(emitted)
+    actions_item["actions"] = ["k"]
+    add("actions_item_type", actions_item)
+    actions_second = clone_doc(emitted)
+    actions_second["actions"] = [{"kind": "k"}, "x"]
+    add("actions_second_item_type", actions_second)
+    actions_kind = clone_doc(emitted)
+    actions_kind["actions"] = [{}]
+    add("actions_missing_kind", actions_kind)
+    actions_empty_kind = clone_doc(emitted)
+    actions_empty_kind["actions"] = [{"kind": ""}]
+    add("actions_kind_min_length", actions_empty_kind)
+    actions_kind_type = clone_doc(emitted)
+    actions_kind_type["actions"] = [{"kind": 1}]
+    add("actions_kind_type", actions_kind_type)
+    actions_extra = clone_doc(emitted)
+    actions_extra["actions"] = [{"kind": "k", "z": 1}]
+    add("actions_additional_property", actions_extra)
+    actions_null = clone_doc(emitted)
+    actions_null["actions"] = [{"detail": "d", "kind": "k", "record_id": None}]
+    add("actions_record_id_null", actions_null)
+    actions_record = clone_doc(emitted)
+    actions_record["actions"] = [{"kind": "k", "record_id": 1}]
+    add("actions_record_id_type", actions_record)
+    actions_detail = clone_doc(emitted)
+    actions_detail["actions"] = [{"detail": 1, "kind": "k"}]
+    add("actions_detail_type", actions_detail)
+    actions_only = clone_doc(emitted)
+    actions_only["actions"] = [{"kind": "k"}]
+    add("actions_kind_only", actions_only)
+    actions_empty = clone_doc(emitted)
+    actions_empty["actions"] = []
+    add("actions_empty", actions_empty)
+    loss_type = clone_doc(emitted)
+    loss_type["declared_loss"] = "gap"
+    add("declared_loss_type", loss_type)
+    loss_item = clone_doc(emitted)
+    loss_item["declared_loss"] = ["gap", 1]
+    add("declared_loss_item_type", loss_item)
+    loss_blank = clone_doc(emitted)
+    loss_blank["declared_loss"] = [""]
+    add("declared_loss_empty_string", loss_blank)
+    loss_empty = clone_doc(emitted)
+    loss_empty["declared_loss"] = []
+    add("declared_loss_empty", loss_empty)
+    loss_dup = clone_doc(emitted)
+    loss_dup["declared_loss"] = ["gap", "gap"]
+    add("declared_loss_duplicate", loss_dup)
+    report_string = clone_doc(emitted)
+    report_string["revalidate_report"] = "r.json"
+    add("revalidate_report_string", report_string)
+    report_empty = clone_doc(emitted)
+    report_empty["revalidate_report"] = ""
+    add("revalidate_report_empty", report_empty)
+    report_type = clone_doc(emitted)
+    report_type["revalidate_report"] = 1
+    add("revalidate_report_type", report_type)
+    reval_type = clone_doc(emitted)
+    reval_type["revalidation"] = []
+    add("revalidation_type", reval_type)
+    for name in revalidation_required:
+        document = clone_doc(emitted)
+        child(document, "revalidation").pop(name)
+        add(f"revalidation_missing_{name}", document)
+    reval_extra = clone_doc(emitted)
+    child(reval_extra, "revalidation")["z"] = 1
+    add("revalidation_additional_property", reval_extra)
+    reval_enum = clone_doc(emitted)
+    child(reval_enum, "revalidation")["assurance"] = "nope"
+    add("revalidation_assurance_enum", reval_enum)
+    reval_assurance_type = clone_doc(emitted)
+    child(reval_assurance_type, "revalidation")["assurance"] = 1
+    add("revalidation_assurance_type", reval_assurance_type)
+    for level in ("A0", "A2", "A3", "A4"):
+        document = clone_doc(emitted)
+        child(document, "revalidation")["assurance"] = level
+        add(f"revalidation_assurance_{level.lower()}", document)
+    error_negative = clone_doc(emitted)
+    child(error_negative, "revalidation")["error_count"] = -1
+    add("error_count_negative", error_negative)
+    error_bool = clone_doc(emitted)
+    child(error_bool, "revalidation")["error_count"] = True
+    add("error_count_boolean", error_bool)
+    error_one = clone_doc(emitted)
+    child(error_one, "revalidation")["error_count"] = 1.0
+    add("error_count_one_point_zero", error_one)
+    error_fraction = clone_doc(emitted)
+    child(error_fraction, "revalidation")["error_count"] = 1.5
+    add("error_count_one_point_five", error_fraction)
+    error_zero = clone_doc(emitted)
+    child(error_zero, "revalidation")["error_count"] = 0.0
+    add("error_count_zero_point_zero", error_zero)
+    error_null = clone_doc(emitted)
+    child(error_null, "revalidation")["error_count"] = None
+    add("error_count_null", error_null)
+    add("error_count_exponent_integer", raw=raw_count(clone_doc(emitted), "1e1"))
+    add("error_count_exponent_fraction", raw=raw_count(clone_doc(emitted), "1e-1"))
+    add("error_count_negative_zero", raw=raw_count(clone_doc(emitted), "-0"))
+    warning_negative = clone_doc(emitted)
+    child(warning_negative, "revalidation")["warning_count"] = -1
+    add("warning_count_negative", warning_negative)
+    profile_empty = clone_doc(emitted)
+    child(profile_empty, "revalidation")["profile_id"] = ""
+    add("profile_id_min_length", profile_empty)
+    profile_type = clone_doc(emitted)
+    child(profile_type, "revalidation")["profile_id"] = 1
+    add("profile_id_type", profile_type)
+    version_empty = clone_doc(emitted)
+    child(version_empty, "revalidation")["profile_version"] = ""
+    add("revalidation_profile_version_min_length", version_empty)
+    version_type = clone_doc(emitted)
+    child(version_type, "revalidation")["profile_version"] = 1
+    add("revalidation_profile_version_type", version_type)
+    fingerprint_null = clone_doc(emitted)
+    child(fingerprint_null, "revalidation")["report_fingerprint"] = None
+    add("report_fingerprint_null", fingerprint_null)
+    fingerprint_type = clone_doc(emitted)
+    child(fingerprint_type, "revalidation")["report_fingerprint"] = 1
+    add("report_fingerprint_type", fingerprint_type)
+    fingerprint_string = clone_doc(emitted)
+    child(fingerprint_string, "revalidation")["report_fingerprint"] = "f"
+    add("report_fingerprint_string", fingerprint_string)
+    fingerprint_empty = clone_doc(emitted)
+    child(fingerprint_empty, "revalidation")["report_fingerprint"] = ""
+    add("report_fingerprint_empty", fingerprint_empty)
+    optional = clone_doc(emitted)
+    optional["adapter_id"] = "a"
+    optional["adapter_version"] = "1"
+    optional["assurance"] = "A1"
+    optional["byte_counts"] = {"n": 1}
+    optional["plan_fingerprint"] = "p"
+    optional["profile_version"] = "1"
+    optional["recipe_versions"] = {"drop": "1"}
+    optional["record_counts"] = {"n": 0}
+    add("optional_fields", optional)
+    plan_type = clone_doc(emitted)
+    plan_type["plan_fingerprint"] = 1
+    add("plan_fingerprint_type", plan_type)
+    plan_empty = clone_doc(emitted)
+    plan_empty["plan_fingerprint"] = ""
+    add("plan_fingerprint_empty", plan_empty)
+    assurance_free = clone_doc(emitted)
+    assurance_free["assurance"] = "nope"
+    add("assurance_unconstrained", assurance_free)
+    assurance_type = clone_doc(emitted)
+    assurance_type["assurance"] = 1
+    add("assurance_type", assurance_type)
+    recipe_type = clone_doc(emitted)
+    recipe_type["recipe_versions"] = []
+    add("recipe_versions_type", recipe_type)
+    recipe_string = clone_doc(emitted)
+    recipe_string["recipe_versions"] = {"k": "v"}
+    add("recipe_versions_string", recipe_string)
+    recipe_value = clone_doc(emitted)
+    recipe_value["recipe_versions"] = {"k": 1}
+    add("recipe_versions_value_type", recipe_value)
+    recipe_empty = clone_doc(emitted)
+    recipe_empty["recipe_versions"] = {}
+    add("recipe_versions_empty", recipe_empty)
+    recipe_slash = clone_doc(emitted)
+    recipe_slash["recipe_versions"] = {"a/b": 1}
+    add("recipe_versions_slash_key", recipe_slash)
+    recipe_tilde = clone_doc(emitted)
+    recipe_tilde["recipe_versions"] = {"m~n": 1}
+    add("recipe_versions_tilde_key", recipe_tilde)
+    profile_top_empty = clone_doc(emitted)
+    profile_top_empty["profile_version"] = ""
+    add("profile_version_empty", profile_top_empty)
+    profile_top_type = clone_doc(emitted)
+    profile_top_type["profile_version"] = 1
+    add("profile_version_type", profile_top_type)
+    adapter_type = clone_doc(emitted)
+    adapter_type["adapter_id"] = 1
+    add("adapter_id_type", adapter_type)
+    adapter_version_type = clone_doc(emitted)
+    adapter_version_type["adapter_version"] = 1
+    add("adapter_version_type", adapter_version_type)
+    byte_type = clone_doc(emitted)
+    byte_type["byte_counts"] = []
+    add("byte_counts_type", byte_type)
+    byte_int = clone_doc(emitted)
+    byte_int["byte_counts"] = {"n": 1}
+    add("byte_counts_integer", byte_int)
+    byte_string = clone_doc(emitted)
+    byte_string["byte_counts"] = {"n": "1"}
+    add("byte_counts_string", byte_string)
+    byte_bool = clone_doc(emitted)
+    byte_bool["byte_counts"] = {"n": True}
+    add("byte_counts_boolean", byte_bool)
+    byte_fraction = clone_doc(emitted)
+    byte_fraction["byte_counts"] = {"n": 1.5}
+    add("byte_counts_fraction", byte_fraction)
+    byte_one = clone_doc(emitted)
+    byte_one["byte_counts"] = {"n": 1.0}
+    add("byte_counts_one_point_zero", byte_one)
+    byte_negative = clone_doc(emitted)
+    byte_negative["byte_counts"] = {"n": -1}
+    add("byte_counts_negative", byte_negative)
+    record_string = clone_doc(emitted)
+    record_string["record_counts"] = {"n": "0"}
+    add("record_counts_string", record_string)
+    record_negative = clone_doc(emitted)
+    record_negative["record_counts"] = {"n": -1}
+    add("record_counts_negative", record_negative)
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def emitter_document(report: Any) -> dict[str, Any]:
+    action = report.RepairAction(kind="drop", record_id="r1", detail="d")
+    revalidation = report.RevalidationSummary(
+        assurance="A1",
+        error_count=0,
+        warning_count=0,
+        profile_id="neutral",
+        profile_version="1",
+    )
+    item = report.RepairManifest(
+        schema_version="sesslint.repair-manifest/v1",
+        input_fingerprint="in",
+        output_fingerprint="out",
+        policy="conservative",
+        actions=(action,),
+        declared_loss=("gap",),
+        revalidate_report=None,
+        idempotency_key="0" * 64,
+        revalidation=revalidation,
+        assurance_ceiling="A1",
+    )
+    document = item.to_dict()
+    if not isinstance(document, dict):
+        raise SystemExit("to_dict did not return an object")
+    return document
+
+
+def assert_emitter_shape(schema: dict[str, Any], emitted: dict[str, Any]) -> None:
+    for name in schema["required"]:
+        if name not in emitted:
+            raise SystemExit(f"emitter omitted required {name}")
+    if emitted["input_fingerprint"] != "in" or emitted["output_fingerprint"] != "out":
+        raise SystemExit("emitter document is not the synthetic manifest")
+    if emitted["idempotency_key"] != "0" * 64:
+        raise SystemExit("emitter document key is not the synthetic key")
+    actions = emitted["actions"]
+    if not isinstance(actions, list) or len(actions) != 1 or not isinstance(actions[0], dict):
+        raise SystemExit("emitter actions shape changed")
+    if actions[0].get("kind") != "drop":
+        raise SystemExit("emitter action kind changed")
+    revalidation = emitted["revalidation"]
+    if not isinstance(revalidation, dict) or revalidation.get("error_count") != 0:
+        raise SystemExit("emitter revalidation shape changed")
+    assert_clean(json.dumps(emitted, ensure_ascii=True, sort_keys=True))
+
+
+def facts_from(schema: dict[str, Any], report: Any, emitted: dict[str, Any]) -> dict[str, Any]:
+    properties = schema["properties"]
+    actions = properties["actions"]["items"]
+    revalidation = properties["revalidation"]
+    policies = set(report.VALID_POLICIES)
+    levels = set(report.VALID_ASSURANCE_LEVELS)
+    if policies != set(properties["policy"]["enum"]):
+        raise SystemExit("emitter policies disagree with the pinned schema")
+    if levels != set(properties["assurance_ceiling"]["enum"]):
+        raise SystemExit("emitter assurance ceiling disagrees with the pinned schema")
+    if levels != set(revalidation["properties"]["assurance"]["enum"]):
+        raise SystemExit("emitter revalidation assurance disagrees with the pinned schema")
+    if report.MANIFEST_SCHEMA_VERSION != properties["schema_version"]["const"]:
+        raise SystemExit("emitter schema_version disagrees with the pinned const")
+    if properties["idempotency_key"]["pattern"] != IDEMPOTENCY_PATTERN:
+        raise SystemExit("pinned idempotency pattern changed")
+    if schema["additionalProperties"] is not False:
+        raise SystemExit("root additionalProperties is not false")
+    if actions["additionalProperties"] is not False:
+        raise SystemExit("action additionalProperties is not false")
+    if revalidation["additionalProperties"] is not False:
+        raise SystemExit("revalidation additionalProperties is not false")
+    recipe_type = plain_value_type(properties["recipe_versions"]["additionalProperties"], "recipe")
+    byte_type = plain_value_type(properties["byte_counts"]["additionalProperties"], "byte_counts")
+    record_type = plain_value_type(
+        properties["record_counts"]["additionalProperties"], "record_counts"
+    )
+    if recipe_type != "string" or byte_type != "integer" or record_type != "integer":
+        raise SystemExit("additionalProperties value types changed")
+    return {
+        "action_additional_properties": actions["additionalProperties"],
+        "action_kind_min_length": actions["properties"]["kind"]["minLength"],
+        "action_property_names": list(actions["properties"].keys()),
+        "action_required": actions["required"],
+        "additional_properties": schema["additionalProperties"],
+        "assurance_enum": properties["assurance_ceiling"]["enum"],
+        "byte_counts_value_type": byte_type,
+        "emitter_assurance_levels": sorted(levels),
+        "emitter_keys": sorted(emitted.keys()),
+        "emitter_policies": sorted(policies),
+        "emitter_schema_version": report.MANIFEST_SCHEMA_VERSION,
+        "error_count_minimum": revalidation["properties"]["error_count"]["minimum"],
+        "id": schema["$id"],
+        "idempotency_pattern": properties["idempotency_key"]["pattern"],
+        "input_min_length": properties["input_fingerprint"]["minLength"],
+        "output_min_length": properties["output_fingerprint"]["minLength"],
+        "policy_enum": properties["policy"]["enum"],
+        "profile_id_min_length": revalidation["properties"]["profile_id"]["minLength"],
+        "profile_version_min_length": revalidation["properties"]["profile_version"]["minLength"],
+        "property_names": list(properties.keys()),
+        "recipe_versions_value_type": recipe_type,
+        "record_counts_value_type": record_type,
+        "required": schema["required"],
+        "revalidation_additional_properties": revalidation["additionalProperties"],
+        "revalidation_assurance_enum": revalidation["properties"]["assurance"]["enum"],
+        "revalidation_property_names": list(revalidation["properties"].keys()),
+        "revalidation_required": revalidation["required"],
+        "schema_version_const": properties["schema_version"]["const"],
+        "warning_count_minimum": revalidation["properties"]["warning_count"]["minimum"],
+    }
+
+
+def coverage_doc() -> dict[str, Any]:
+    rows = [
+        {
+            "note": NOTES[test_id],
+            "status": "not_applicable",
+            "test": test_id,
+            "vector_id": None,
+        }
+        for test_id in SCHEMA_TESTS
+    ]
+    return {
+        "covered_count": 0,
+        "module": "sesslint.report",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.repair-manifest.v1.json",
+    }
+
+
+def assert_oracle_samples(schema: dict[str, Any]) -> None:
+    properties = schema["properties"]
+    samples = (
+        (properties["recipe_versions"], {"k": 1}, ("type", "/recipe_versions/k", "")),
+        (properties["recipe_versions"], {"k": "v"}, None),
+        (properties["byte_counts"], {"n": True}, ("type", "/byte_counts/n", "")),
+        (properties["byte_counts"], {"n": -1}, None),
+        (properties["assurance_ceiling"], "A9", ("enum", "/assurance_ceiling", "")),
+        (properties["idempotency_key"], "0" * 64, None),
+        (properties["idempotency_key"], "0" * 63, ("pattern", "/idempotency_key", "")),
+    )
+    for node, value, expected in samples:
+        failure = check(node, value, "")
+        if node is properties["recipe_versions"]:
+            failure = check(node, value, "/recipe_versions")
+        elif node is properties["byte_counts"]:
+            failure = check(node, value, "/byte_counts")
+        elif node is properties["assurance_ceiling"]:
+            failure = check(node, value, "/assurance_ceiling")
+        elif node is properties["idempotency_key"]:
+            failure = check(node, value, "/idempotency_key")
+        if failure != expected:
+            raise SystemExit(f"oracle sample mismatch: {failure} != {expected}")
+
+
+def main() -> None:
+    assert_pattern_engine()
+    assert_test_list()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    report_bytes = git_show_bytes(REPORT_GIT)
+    if b"\r" in schema_bytes or b"\r" in report_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    assert_oracle_samples(schema)
+    report = load_emitter()
+    emitted = emitter_document(report)
+    assert_emitter_shape(schema, emitted)
+    if expect(schema, emitted) != {"ok": True}:
+        raise SystemExit("emitter to_dict is not valid for the pinned schema")
+    vectors = build_vectors(schema, emitted)
+    document = {
+        "facts": facts_from(schema, report, emitted),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "report_py_sha256": hashlib.sha256(report_bytes).hexdigest(),
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.repair-manifest.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.repair-manifest.v1 schema parity. Constraints and expected "
+            "rejections come from the pinned schema. One object comes from "
+            "RepairManifest.to_dict on the pinned emitter. No session text is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            "Schema path resolution and the missing-file loader are not this validator.",
+            "Fixture repair execution and the model anti-drift set comparison are not one "
+            "accepted or rejected instance.",
+            "Content-free checks and computed idempotency bytes are not produced.",
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage_doc()))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={vectors_sha}")
+
+
+if __name__ == "__main__":
+    main()

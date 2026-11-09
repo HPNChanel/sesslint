@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters.links parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+LINKS_PY_SHA256 = "c6b42b707b99fce9dc7623522817f5ffcfc28d78b6c1c876b8026aef17cb140c"
+
+SYN_PARENT = "syn-parent-01"
+SYN_PARENT_B = "syn-parent-02"
+SYN_HEAD = "syn-head-01"
+SYN_RECORD = "syn-rec-01"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "python_int_outside_i64: Python int is unbounded; values outside i64 are not "
+        "representable in Rust ObjectValue::Int — no required vector."
+    ),
+    (
+        "lone_surrogate_target: a lone UTF-16 surrogate cannot be stored in Rust str — "
+        "no required vector."
+    ),
+    (
+        "unicode_line_separator_strip: pinned Rust python_str_strip omits U+2028/U+2029 from "
+        "strip; Python str.strip removes them — documented gap, not a required vector."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_links_module():
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "adapters" / "links.py"
+    digest = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    if digest != LINKS_PY_SHA256:
+        raise SystemExit(f"links.py sha256 mismatch: expected {LINKS_PY_SHA256}, got {digest}")
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.adapters import links as links_mod  # noqa: WPS433
+
+    return links_mod
+
+
+def link_row(link: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": link["kind"],
+        "target": link["target"],
+        "record_id": link["record_id"],
+        "line": link["line"],
+    }
+
+
+def run_extract(
+    links_mod: Any,
+    obj: dict[str, Any],
+    *,
+    initial_links: list[dict[str, Any]] | None = None,
+    record_id: str | None = None,
+    line: int | None = None,
+) -> list[dict[str, Any]]:
+    links: list[dict[str, Any]] = list(initial_links or [])
+    links_mod.extract_links(obj, links=links, record_id=record_id, line=line)
+    return [link_row(row) for row in links]
+
+
+def vector_specs(links_mod: Any) -> list[dict[str, Any]]:
+    session_keys = links_mod.SESSION_LINK_KEYS
+    head_keys = links_mod.HEAD_LINK_KEYS
+    max_links = links_mod.MAX_CROSS_LINKS
+
+    specs: list[dict[str, Any]] = []
+
+    def add(
+        vector_id: str,
+        construct: dict[str, Any],
+        expected: dict[str, Any],
+    ) -> None:
+        specs.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    def extract_construct(
+        obj: dict[str, Any],
+        *,
+        initial_links: list[dict[str, Any]] | None = None,
+        record_id: str | None = None,
+        line: int | None = None,
+    ) -> dict[str, Any]:
+        out: dict[str, Any] = {"type": "extract_links", "obj": obj}
+        if initial_links is not None:
+            out["initial_links"] = initial_links
+        if record_id is not None:
+            out["record_id"] = record_id
+        if line is not None:
+            out["line"] = line
+        return out
+
+    add(
+        "happy_path_session_then_head_with_record_and_line",
+        extract_construct(
+            {
+                "resume_head_id": SYN_HEAD,
+                "parent_session_id": SYN_PARENT,
+            },
+            record_id=SYN_RECORD,
+            line=7,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "resume_head_id": SYN_HEAD,
+                    "parent_session_id": SYN_PARENT,
+                },
+                record_id=SYN_RECORD,
+                line=7,
+            )
+        },
+    )
+
+    add(
+        "declaration_order_not_input_or_btree_order",
+        extract_construct(
+            {
+                "resume_head_id": SYN_HEAD,
+                "parentSessionId": SYN_PARENT_B,
+                "parent_session_id": SYN_PARENT,
+            },
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "resume_head_id": SYN_HEAD,
+                    "parentSessionId": SYN_PARENT_B,
+                    "parent_session_id": SYN_PARENT,
+                },
+            )
+        },
+    )
+
+    add(
+        "string_strip_int_decimal_bool_and_other_ignored",
+        extract_construct(
+            {
+                "parent_session_id": f"  {SYN_PARENT}  ",
+                "parentSessionId": -42,
+                "resume_from": True,
+                "resumeFrom": False,
+                "source_session_id": ["not-scalar"],
+                "sourceSessionId": 0,
+            },
+            record_id=SYN_RECORD,
+            line=-1,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "parent_session_id": f"  {SYN_PARENT}  ",
+                    "parentSessionId": -42,
+                    "resume_from": True,
+                    "resumeFrom": False,
+                    "source_session_id": ["not-scalar"],
+                    "sourceSessionId": 0,
+                },
+                record_id=SYN_RECORD,
+                line=-1,
+            )
+        },
+    )
+
+    add(
+        "empty_after_strip_ignored",
+        extract_construct(
+            {
+                "parent_session_id": "   ",
+                "parentSessionId": "",
+            },
+            record_id=SYN_RECORD,
+            line=1,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "parent_session_id": "   ",
+                    "parentSessionId": "",
+                },
+                record_id=SYN_RECORD,
+                line=1,
+            )
+        },
+    )
+
+    kept_512 = "é" * 512
+    dropped_513 = "é" * 513
+    add(
+        "target_len_512_kept_513_ignored",
+        extract_construct(
+            {
+                "parent_session_id": kept_512,
+                "parentSessionId": dropped_513,
+            },
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "parent_session_id": kept_512,
+                    "parentSessionId": dropped_513,
+                },
+            )
+        },
+    )
+
+    add(
+        "duplicate_kind_target_ignored_different_kind_kept",
+        extract_construct(
+            {
+                "parent_session_id": SYN_PARENT,
+                "parentSessionId": SYN_PARENT,
+                "resume_head_id": SYN_PARENT,
+            },
+            line=3,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "parent_session_id": SYN_PARENT,
+                    "parentSessionId": SYN_PARENT,
+                    "resume_head_id": SYN_PARENT,
+                },
+                line=3,
+            )
+        },
+    )
+
+    add(
+        "extra_input_fields_not_copied",
+        extract_construct(
+            {
+                "parent_session_id": SYN_PARENT,
+                "payload": "not-copied",
+                "record_id": "obj-rec",
+                "line": 99,
+                "kind": "forged",
+                "target": "forged-target",
+            },
+            record_id=SYN_RECORD,
+            line=4,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {
+                    "parent_session_id": SYN_PARENT,
+                    "payload": "not-copied",
+                    "record_id": "obj-rec",
+                    "line": 99,
+                    "kind": "forged",
+                    "target": "forged-target",
+                },
+                record_id=SYN_RECORD,
+                line=4,
+            )
+        },
+    )
+
+    cap_obj: dict[str, Any] = {}
+    for index, key in enumerate(session_keys):
+        cap_obj[key] = f"syn-session-{index:02}"
+    cap_obj["resume_head_id"] = SYN_HEAD
+    add(
+        "cap_sixteen_session_before_head",
+        extract_construct(cap_obj),
+        {"links": run_extract(links_mod, cap_obj)},
+    )
+
+    prior_links = [
+        {
+            "kind": "session_ref",
+            "target": f"syn-prior-{index:02}",
+            "record_id": None,
+            "line": None,
+        }
+        for index in range(15)
+    ]
+    add(
+        "cap_allows_head_when_one_slot_remains",
+        extract_construct(
+            {"resume_head_id": SYN_HEAD},
+            initial_links=list(prior_links),
+            record_id=SYN_RECORD,
+            line=2,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {"resume_head_id": SYN_HEAD},
+                initial_links=list(prior_links),
+                record_id=SYN_RECORD,
+                line=2,
+            )
+        },
+    )
+
+    full_links = [
+        {
+            "kind": "session_ref",
+            "target": f"syn-full-{index:02}",
+            "record_id": None,
+            "line": None,
+        }
+        for index in range(max_links)
+    ]
+    add(
+        "already_at_cap_no_lookup",
+        extract_construct(
+            {"parent_session_id": SYN_PARENT},
+            initial_links=list(full_links),
+            record_id=SYN_RECORD,
+            line=9,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {"parent_session_id": SYN_PARENT},
+                initial_links=list(full_links),
+                record_id=SYN_RECORD,
+                line=9,
+            )
+        },
+    )
+
+    preloaded = [
+        {
+            "kind": "session_ref",
+            "target": SYN_PARENT,
+            "record_id": "syn-old",
+            "line": 1,
+        }
+    ]
+    add(
+        "preloaded_duplicate_pair_skipped",
+        extract_construct(
+            {"parent_session_id": SYN_PARENT},
+            initial_links=list(preloaded),
+            record_id=SYN_RECORD,
+            line=8,
+        ),
+        {
+            "links": run_extract(
+                links_mod,
+                {"parent_session_id": SYN_PARENT},
+                initial_links=list(preloaded),
+                record_id=SYN_RECORD,
+                line=8,
+            )
+        },
+    )
+
+    _ = head_keys  # referenced for documentation parity with module tables
+    return specs
+
+
+def main() -> int:
+    links_mod = load_links_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(links_mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.adapters.links",
+        "python_commit": PYTHON_COMMIT,
+        "links_py_sha256": LINKS_PY_SHA256,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.adapters.links",
+        "python_commit": PYTHON_COMMIT,
+        "links_py_sha256": LINKS_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/adapters.links/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters.links parity (extract_links only, structural IDs)."
+        ),
+        "generator": "rust/parity/vectors/adapters.links/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

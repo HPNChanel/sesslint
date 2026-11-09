@@ -1,0 +1,393 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.triage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "triage_py_sha256": "752447136a9443f92a2a274985f0ff0eda44d998bb2f78ca1ac56879c3d5f975",
+  "triage_rs_sha256": "a0a903c868b679c1de0e88031378f65f59c7eb6dec058d91f35e36d82e0e17df",
+  "known_parity_gaps": [
+    "GAP-cli-triage-latest-session: Python run() imports sesslint.discovery.latest_session and sesslint.triage.triage, then usage checks, discovery, triage(), and emit_text; Rust run() returns Display `sesslint.discovery.latest_session is not available` immediately after evaluating the first import name (no stderr, no exit 2, no triage, no emit_text)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "triage",
+        "help": "[read-only] Diagnose a session and explain the next steps.",
+        "description": "Content-free evidence and repair previews; never repairs or resumes.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": "?",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": null,
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex"
+            ],
+            "metavar": null,
+            "help": null,
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--latest"
+            ],
+            "dest": "latest",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": null,
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": null,
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--profile"
+            ],
+            "dest": "profile",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": null,
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--policy"
+            ],
+            "dest": "policy",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "conservative",
+              "salvage"
+            ],
+            "metavar": null,
+            "help": "Explicit salvage opt-in compares both policies; never acknowledges side effects.",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--state-copy"
+            ],
+            "dest": "state_copy",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Optional closed Codex registry copy outside live agent storage (no WAL).",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--max-file-bytes"
+            ],
+            "dest": "max_file_bytes",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_positive_int",
+            "choices": null,
+            "metavar": null,
+            "help": null,
+            "default_keyword": {
+              "present": {
+                "int": 104857600
+              }
+            },
+            "effective_default": {
+              "int": 104857600
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--include-content"
+            ],
+            "dest": "include_content",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "[Invalid for triage] Triage never emits transcript content.",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "human",
+              "json"
+            ],
+            "metavar": null,
+            "help": "Output format (default: human)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": null,
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "output_format",
+              "json"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "run_defaults_empty",
+      "construct": {
+        "type": "run",
+        "args": {}
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: choose a file OR --agent claude|codex --latest.\n"
+        }
+      }
+    },
+    {
+      "id": "run_latest_only",
+      "construct": {
+        "type": "run",
+        "args": {
+          "latest": true
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: choose a file OR --agent claude|codex --latest.\n"
+        }
+      }
+    },
+    {
+      "id": "run_agent_codex_only",
+      "construct": {
+        "type": "run",
+        "args": {
+          "agent": "codex"
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: choose a file OR --agent claude|codex --latest.\n"
+        }
+      }
+    },
+    {
+      "id": "run_path_with_latest",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "synthetic-session.jsonl",
+          "latest": true
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: choose a file OR --agent claude|codex --latest.\n"
+        }
+      }
+    },
+    {
+      "id": "run_path_with_agent",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "synthetic-session.jsonl",
+          "agent": "codex"
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: choose a file OR --agent claude|codex --latest.\n"
+        }
+      }
+    },
+    {
+      "id": "run_include_content",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "synthetic-session.jsonl",
+          "include_content": true
+        }
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "gap_id": "GAP-cli-triage-latest-session",
+        "seam": "sesslint.discovery.latest_session is not available",
+        "imports_evaluated": [
+          "sesslint.discovery.latest_session"
+        ],
+        "pin": {
+          "exit_code": 2,
+          "stdout": "",
+          "stderr": "Error: triage does not support --include-content.\n"
+        }
+      }
+    }
+  ]
+}

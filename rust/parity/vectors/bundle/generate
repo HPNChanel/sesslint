@@ -1,0 +1,591 @@
+#!/usr/bin/env python3
+"""Generate sesslint.bundle parity vectors from pinned git blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BUNDLE_PY_SHA256 = (
+    "3c5f7df93eaa410d6ccfc83c17b49ac1f85e45e2007fc9076635bec40965b133"
+)
+BUNDLE_RS_SHA256 = (
+    "30a0ecf9c7c6ffc6ca001d1a31cfa158fc514adcfab891ff0617303148529564"
+)
+MODULE = "sesslint.bundle"
+RECORD_CHUNK_BYTES = 65536
+FIXTURE_TEMPLATE_SHA256 = (
+    "10d54eb7416be822c1b29e46bcb039c7e685d636a62c07e97a6361cc53cec2d7"
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/test_bundle.py",
+    "tests/test_plan_bundle_schemas.py",
+    "tests/test_wave1_correctness.py",
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-bundle-build: build_bundle runs validate_detection_thresholds then path, hash, "
+    "check_file, and render_json in Python; Rust returns "
+    "sesslint.adapters.detect.validate_detection_thresholds is not available and builds no Bundle.",
+    "GAP-bundle-schema-path: get_bundle_schema_path and load_bundle_schema import "
+    "sesslint._resources.schema_path in Python; Rust returns "
+    "sesslint._resources.schema_path is not available.",
+    "GAP-bundle-version-info: _build_created_by calls sesslint._version.get_version_info in "
+    "Python; Rust returns sesslint._version.get_version_info is not available.",
+    "GAP-bundle-short-hash: _sanitize_evidence imports sesslint.report.short_hash in Python; "
+    "Rust returns sesslint.report.short_hash is not available.",
+    "GAP-bundle-safe-discriminator: _extract_kinds_fallback calls safe_discriminator on string "
+    "kinds in Python; Rust returns sesslint.adapters.safe_value.safe_discriminator is not available.",
+    "GAP-bundle-integration: CLI, api.build_bundle, and schema validation tests do not map to "
+    "isolated bundle.rs helpers byte-for-byte here.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/test_bundle.py::test_count_records_bounded_io_error": (
+        "count_records_bounded_io_error_pin",
+    ),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/bundle.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != BUNDLE_PY_SHA256:
+        raise SystemExit(
+            f"bundle.py pin sha256 mismatch: expected {BUNDLE_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "bundle.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != BUNDLE_RS_SHA256:
+        raise SystemExit(
+            f"bundle.rs sha256 mismatch: expected {BUNDLE_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (b"sesslint-wt-", b"FOR_WORK"):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def install_stubs() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    version = types.ModuleType("sesslint._version")
+    version.CLI_VERSION = "0.0.0-synthetic"
+    version.MANIFEST_SCHEMA_VERSION = "sesslint.manifest/v1"
+    version.REPORT_SCHEMA_VERSION = "sesslint.report/v1"
+    version.SESSION_SCHEMA_VERSION = "sesslint.session/v1"
+
+    def get_version_info() -> dict[str, Any]:
+        return {"adapters": {}, "profiles": {}}
+
+    version.get_version_info = get_version_info
+    sys.modules["sesslint._version"] = version
+    pkg._version = version
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+
+    def validate_detection_thresholds(
+        confidence_min: float | None, margin_min: float | None
+    ) -> None:
+        return None
+
+    def resolve_format(
+        fmt: str | None,
+        path: Path,
+        *,
+        confidence_min: float | None = None,
+        margin_min: float | None = None,
+    ) -> tuple[str, Any, list[Any]]:
+        return "unknown", None, []
+
+    def to_source_block(detection_res: Any, *, requested: str | None) -> dict[str, Any]:
+        return {"format": "unknown"}
+
+    detect.validate_detection_thresholds = validate_detection_thresholds
+    detect.resolve_format = resolve_format
+    detect.to_source_block = to_source_block
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.detect = detect
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    safe_value = types.ModuleType("sesslint.adapters.safe_value")
+
+    def safe_discriminator(text: str) -> tuple[str, bool]:
+        return text, False
+
+    safe_value.safe_discriminator = safe_discriminator
+    sys.modules["sesslint.adapters.safe_value"] = safe_value
+    adapters.safe_value = safe_value
+
+    errors = types.ModuleType("sesslint.errors")
+
+    class FileTooLargeError(OSError):
+        pass
+
+    class SourceChangedError(OSError):
+        pass
+
+    errors.FileTooLargeError = FileTooLargeError
+    errors.SourceChangedError = SourceChangedError
+    sys.modules["sesslint.errors"] = errors
+    pkg.errors = errors
+
+    report = types.ModuleType("sesslint.report")
+
+    def short_hash(text: str, length: int) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:length]
+
+    report.short_hash = short_hash
+    sys.modules["sesslint.report"] = report
+    pkg.report = report
+
+
+def load_bundle_module() -> types.ModuleType:
+    verify_pin_hashes()
+    install_stubs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/bundle.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("sesslint.bundle", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned bundle.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["sesslint.bundle"] = mod
+        sys.modules["sesslint"].bundle = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.resolve().relative_to(base.resolve()).as_posix()
+
+
+def ensure_fixtures(out_dir: Path) -> None:
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+
+    split = fixtures / "split.jsonl"
+    payload = b"q" * RECORD_CHUNK_BYTES + b" \n"
+    split.write_bytes(payload)
+
+    carried = fixtures / "carry.jsonl"
+    carried.write_bytes(b"q" * RECORD_CHUNK_BYTES + b" " * RECORD_CHUNK_BYTES + b"\n")
+
+    plain = fixtures / "plain.jsonl"
+    plain.write_bytes(b"a\n \n\x0c\n \t\r\n")
+
+    empty = fixtures / "empty.jsonl"
+    empty.write_bytes(b"")
+
+    session = fixtures / "synthetic_session.jsonl"
+    session.write_text(
+        '{"kind":"synthetic","actor":"user"}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    kind_str = fixtures / "kind_string.jsonl"
+    kind_str.write_bytes(b'{"kind":"synth-kind"}\n')
+
+    io_dir = fixtures / "io_dir"
+    io_dir.mkdir(exist_ok=True)
+    keep = io_dir / ".keep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8", newline="\n")
+
+
+def sanitize_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "sanitize_simple_path",
+            "remediation": "run 'sesslint repair path/to/file'",
+            "basename": "file.jsonl",
+        },
+        {
+            "id": "sanitize_two_clauses",
+            "remediation": (
+                "please run 'sesslint repair a.json ; run 'sesslint repair b.json"
+            ),
+            "basename": "base.name",
+        },
+        {
+            "id": "sanitize_quote_in_basename",
+            "remediation": "run 'sesslint repair old",
+            "basename": "base'.name",
+        },
+        {
+            "id": "sanitize_only_first_token",
+            "remediation": "run 'sesslint repair foo bar",
+            "basename": "B",
+        },
+        {
+            "id": "sanitize_no_whitespace_after_prefix",
+            "remediation": "run 'sesslint repair'",
+            "basename": "B",
+        },
+        {
+            "id": "sanitize_whitespace_before_token",
+            "remediation": "run 'sesslint repair\n\told-path next",
+            "basename": "base",
+        },
+        {
+            "id": "sanitize_nbsp_separator",
+            "remediation": "run 'sesslint repair\u00a0tok end",
+            "basename": "B",
+        },
+        {
+            "id": "sanitize_literal_basename",
+            "remediation": "run 'sesslint repair old",
+            "basename": "run 'sesslint repair evil",
+        },
+    ]
+
+
+def count_specs(out_dir: Path) -> list[dict[str, Any]]:
+    fixtures = out_dir / "fixtures"
+    return [
+        {"id": "count_split_chunk", "path": rel_posix(out_dir, fixtures / "split.jsonl")},
+        {"id": "count_carried_whitespace", "path": rel_posix(out_dir, fixtures / "carry.jsonl")},
+        {"id": "count_plain_strips", "path": rel_posix(out_dir, fixtures / "plain.jsonl")},
+        {"id": "count_empty_file", "path": rel_posix(out_dir, fixtures / "empty.jsonl")},
+        {
+            "id": "count_missing_file",
+            "path": rel_posix(out_dir, fixtures / "absent-synth.jsonl"),
+        },
+    ]
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    out: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+    text = json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(text)
+    (out_dir / "coverage.json").write_text(text, encoding="utf-8", newline="\n")
+    return covered, not_applicable
+
+
+def module_constants_expected(bundle: Any) -> dict[str, Any]:
+    digest = hashlib.sha256(bundle.FIXTURE_TEMPLATE.encode("utf-8")).hexdigest()
+    assertions = [
+        "BUNDLE_SCHEMA_VERSION",
+        "Bundle",
+        "FIXTURE_TEMPLATE",
+        "build_bundle",
+        "get_bundle_schema_path",
+        "load_bundle_schema",
+    ]
+    return {
+        "BUNDLE_SCHEMA_VERSION": bundle.BUNDLE_SCHEMA_VERSION,
+        "FIXTURE_TEMPLATE_sha256": digest,
+        "DEFAULT_JSON_INDENT": 2,
+        "MAX_PROBE_LINES": 1000,
+        "RECORD_CHUNK_BYTES": RECORD_CHUNK_BYTES,
+        "MAX_READLINE_BYTES": 1_000_000,
+        "python_exports": assertions,
+    }
+
+
+def pin_error(exc: BaseException) -> dict[str, str]:
+    return {"raises": exc.__class__.__name__, "message": str(exc)}
+
+
+def build_vectors(bundle: Any, out_dir: Path) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    vectors.append(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": module_constants_expected(bundle),
+        }
+    )
+
+    for row in sanitize_specs():
+        got = bundle._sanitize_remediation(row["remediation"], row["basename"])
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": {
+                    "type": "sanitize_remediation",
+                    "remediation": row["remediation"],
+                    "basename": row["basename"],
+                },
+                "expected": {"text": got},
+            }
+        )
+
+    for row in count_specs(out_dir):
+        rel = row["path"]
+        prev = os.getcwd()
+        try:
+            os.chdir(out_dir)
+            got = bundle._count_records_bounded(Path(rel))
+        finally:
+            os.chdir(prev)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": {"type": "count_records_bounded", "path": rel},
+                "expected": {"count": got},
+            }
+        )
+
+    io_dir_rel = rel_posix(out_dir, out_dir / "fixtures" / "io_dir")
+    missing_rel = rel_posix(out_dir, out_dir / "fixtures" / "absent-io.jsonl")
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        dir_count = bundle._count_records_bounded(Path(io_dir_rel))
+        miss_count = bundle._count_records_bounded(Path(missing_rel))
+    finally:
+        os.chdir(prev)
+    vectors.append(
+        {
+            "id": "count_records_bounded_io_error_pin",
+            "construct": {
+                "type": "count_records_bounded_io_error",
+                "directory_path": io_dir_rel,
+                "missing_path": missing_rel,
+            },
+            "expected": {
+                "directory_count": dir_count,
+                "missing_count": miss_count,
+            },
+        }
+    )
+
+    empty_rel = rel_posix(out_dir, out_dir / "fixtures" / "empty.jsonl")
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        empty_counter = bundle._extract_kinds_fallback(Path(empty_rel))
+    finally:
+        os.chdir(prev)
+    vectors.append(
+        {
+            "id": "extract_kinds_empty_file",
+            "construct": {"type": "extract_kinds_fallback", "path": empty_rel},
+            "expected": {"kinds": dict(sorted(empty_counter.items()))},
+        }
+    )
+
+    kind_rel = rel_posix(out_dir, out_dir / "fixtures" / "kind_string.jsonl")
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        pin_kinds = dict(
+            sorted(bundle._extract_kinds_fallback(Path(kind_rel)).items())
+        )
+    finally:
+        os.chdir(prev)
+    vectors.append(
+        {
+            "id": "extract_kinds_string_kind_gap",
+            "construct": {"type": "extract_kinds_fallback", "path": kind_rel},
+            "expected": {
+                "pin": {"kinds": pin_kinds},
+                "rust_assertion": {"mode": "safe_discriminator_unavailable"},
+            },
+        }
+    )
+
+    session_rel = rel_posix(out_dir, out_dir / "fixtures" / "synthetic_session.jsonl")
+    prev = os.getcwd()
+    try:
+        os.chdir(out_dir)
+        try:
+            bundle.build_bundle(session_rel)
+            build_pin = {"status": "returned_bundle"}
+        except Exception as err:
+            build_pin = pin_error(err)
+    finally:
+        os.chdir(prev)
+    vectors.append(
+        {
+            "id": "build_bundle_import_gap",
+            "construct": {"type": "build_bundle", "path": session_rel, "profile": "neutral"},
+            "expected": {
+                "pin": build_pin,
+                "rust_assertion": {"mode": "validate_detection_thresholds_unavailable"},
+            },
+        }
+    )
+
+    try:
+        bundle.get_bundle_schema_path()
+        schema_pin: dict[str, Any] = {"status": "returned_path"}
+    except Exception as err:
+        schema_pin = pin_error(err)
+    vectors.append(
+        {
+            "id": "get_bundle_schema_path_gap",
+            "construct": {"type": "get_bundle_schema_path"},
+            "expected": {
+                "pin": schema_pin,
+                "rust_assertion": {"mode": "schema_path_unavailable"},
+            },
+        }
+    )
+
+    try:
+        bundle.load_bundle_schema()
+        load_pin: dict[str, Any] = {"status": "returned_schema"}
+    except Exception as err:
+        load_pin = pin_error(err)
+    vectors.append(
+        {
+            "id": "load_bundle_schema_gap",
+            "construct": {"type": "load_bundle_schema"},
+            "expected": {
+                "pin": load_pin,
+                "rust_assertion": {"mode": "schema_path_unavailable"},
+            },
+        }
+    )
+
+    created = bundle._build_created_by()
+    vectors.append(
+        {
+            "id": "build_created_by_version_gap",
+            "construct": {"type": "build_created_by"},
+            "expected": {
+                "pin": {"created_by": created},
+                "rust_assertion": {"mode": "version_info_unavailable"},
+            },
+        }
+    )
+
+    evidence = {"field_path": "synth/secret-note"}
+    sanitized = bundle._sanitize_evidence(evidence, "synth-base")
+    vectors.append(
+        {
+            "id": "sanitize_evidence_short_hash_gap",
+            "construct": {
+                "type": "sanitize_evidence",
+                "evidence": evidence,
+                "basename": "synth-base",
+            },
+            "expected": {
+                "pin": {"evidence": sanitized},
+                "rust_assertion": {"mode": "short_hash_unavailable"},
+            },
+        }
+    )
+
+    return vectors
+
+
+def main() -> int:
+    bundle = load_bundle_module()
+    out_dir = Path(__file__).resolve().parent
+    ensure_fixtures(out_dir)
+    vectors = build_vectors(bundle, out_dir)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "bundle_py_sha256": BUNDLE_PY_SHA256,
+        "bundle_rs_sha256": BUNDLE_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.bundle parity: constants, sanitize_remediation, "
+            "bounded record counting, kind probe gaps, build and schema seams."
+        ),
+        "generator": "rust/parity/vectors/bundle/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(prov_text, encoding="utf-8", newline="\n")
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"vectors.json sha256={digest}")
+    print(f"vector_count={len(vectors)}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

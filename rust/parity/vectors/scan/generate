@@ -1,0 +1,720 @@
+#!/usr/bin/env python3
+"""Generate sesslint.scan parity vectors (stdlib only; pinned git show of scan.py)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCAN_PY_SHA256 = (
+    "a28c6948127652aaa02f521d8f7e46f75f8ea0352f05d2a2096a0664580bdf28"
+)
+SCAN_RS_SHA256 = (
+    "2ef4c60774e568680d0f0047ba250030140bcc2332cd112453fe4b1366e07f0c"
+)
+MODULE = "sesslint.scan"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-scan-minimize-path: FileResult.to_dict, WorstFileRow.to_dict, "
+    "ScanReport.to_dict, scan_single_file, scan_path, and reconcile paths "
+    "call sesslint.report.minimize_path in Python. Rust stops with "
+    "sesslint.report.minimize_path is not available and does not return "
+    "formatted findings or scan reports.",
+    "GAP-scan-validate-thresholds: scan_bytes and scan_path call "
+    "sesslint.adapters.detect.validate_detection_thresholds after integer "
+    "guards. Rust stops at that import and does not return ScanReport.",
+    "GAP-scan-safe-discriminator: resolve_cross_file_links and reconcile "
+    "helpers call sesslint.adapters.safe_value.safe_discriminator. Rust stops "
+    "at that seam.",
+    "GAP-scan-fingerprint: scan_single_source make_finding paths require "
+    "sesslint.determinism.canonical_json_bytes for fingerprints. Rust "
+    "propagates FINGERPRINT_CODEC_UNAVAILABLE instead of findings.",
+    "GAP-scan-json-loads: load_scan_schema on an existing schema file calls "
+    "json.loads in Python. Rust stops with json.loads is not available.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/cli/test_cli_presentation.py",
+    "tests/cli/test_stdin_input.py",
+    "tests/io/test_dup_keys.py",
+    "tests/report/test_html.py",
+    "tests/report/test_paths.py",
+    "tests/scan/test_aggregate.py",
+    "tests/scan/test_cross_file_links.py",
+    "tests/scan/test_dedupe.py",
+    "tests/scan/test_incremental.py",
+    "tests/scan/test_index_divergence.py",
+    "tests/scan/test_parallel.py",
+    "tests/scan/test_probe_bounded.py",
+    "tests/scan/test_read_errors.py",
+    "tests/scan/test_scan_summary.py",
+    "tests/scan/test_special_files.py",
+    "tests/scan/test_state_db.py",
+    "tests/scan/test_symlink.py",
+    "tests/test_api_surface.py",
+    "tests/test_codex_dispatch.py",
+    "tests/test_scan_filters.py",
+    "tests/test_scan_schema.py",
+    "tests/test_wave1_scan.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/scan/test_scan_summary.py::test_aggregate_by_code_exact": (
+        "aggregate_by_code_exact",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_by_code_sort_order": (
+        "aggregate_by_code_sort_order",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_worst_files_exact": (
+        "aggregate_worst_files_exact",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_worst_files_excludes_healthy": (
+        "aggregate_worst_files_excludes_healthy",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_top_limits_and_zero": (
+        "aggregate_top_one",
+        "aggregate_top_zero",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_top_negative_rejected": (
+        "aggregate_top_negative",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_group_by_none": (
+        "aggregate_group_by_none",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_group_by_invalid_rejected": (
+        "aggregate_group_by_invalid",
+    ),
+    "tests/scan/test_scan_summary.py::test_aggregate_deterministic": (
+        "aggregate_deterministic",
+    ),
+    "tests/scan/test_cross_file_links.py::test_links_bounded_and_structural": (
+        "session_link_wire_round_trip",
+    ),
+}
+
+SKIP_CLOSURE_MODULES: Final[frozenset[str]] = frozenset(
+    {
+        "sesslint.api",
+        "sesslint.cli",
+        "sesslint.batch",
+        "sesslint.bundle",
+        "sesslint.html_report",
+        "sesslint.sarif",
+        "sesslint.stats",
+        "sesslint.doctor",
+        "sesslint.watch",
+        "sesslint.triage",
+        "sesslint.assessment",
+        "sesslint.audit",
+        "sesslint._accel",
+    }
+)
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/scan.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != SCAN_PY_SHA256:
+        raise SystemExit(
+            f"scan.py pin sha256 mismatch: expected {SCAN_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "scan" / "src" / "scan.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != SCAN_RS_SHA256:
+        raise SystemExit(
+            f"scan.rs sha256 mismatch: expected {SCAN_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    names = (
+        "sesslint",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.io",
+        "sesslint.scan",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.determinism",
+        *SKIP_CLOSURE_MODULES,
+    )
+    for pkg in names:
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str, *, temp_main: bool = False) -> None:
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    if temp_main and mod == "sesslint.scan":
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".py", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(source)
+            path = handle.name
+        code = compile(source, path, "exec")
+    else:
+        code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_pinned_scan() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    mods = [
+        m
+        for m in closure("sesslint.scan")
+        if m != "sesslint.scan" and m not in SKIP_CLOSURE_MODULES
+    ]
+    pending = list(mods)
+    for _ in range(400):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod, temp_main=False)
+                progress = True
+            except Exception:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:12]}")
+    load_module("sesslint.scan", temp_main=True)
+    return sys.modules["sesslint.scan"]
+
+
+def encode_summary(summary: Any) -> dict[str, Any]:
+    return {
+        "by_code": [
+            {
+                "code": row.code,
+                "severity": row.severity,
+                "count": row.count,
+                "files": row.files,
+            }
+            for row in summary.by_code
+        ],
+        "worst_files": [
+            {
+                "path": row.path,
+                "error_count": row.error_count,
+                "warning_count": row.warning_count,
+            }
+            for row in summary.worst_files
+        ],
+    }
+
+
+def pin_aggregate_error(scan: Any, files: list[Any], **kwargs: Any) -> dict[str, Any]:
+    try:
+        scan.aggregate_scan(files, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        return {"error_type": type(exc).__name__, "message": str(exc)}
+    raise SystemExit("expected aggregate_scan error")
+
+
+def summary_finding(scan_mod: Any, code: str, severity: str, path: str) -> Any:
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    return make_finding(
+        code=code,
+        severity=severity,
+        message_template="synthetic",
+        source=SourceRef(path),
+    )
+
+
+def files_for_summary_tests(scan_mod: Any) -> tuple[Any, ...]:
+    f203 = summary_finding(scan_mod, "SL203", "error", "a.jsonl")
+    f302 = summary_finding(scan_mod, "SL302", "error", "b.jsonl")
+    f101 = summary_finding(scan_mod, "SL101", "warning", "a.jsonl")
+    return (
+        scan_mod.FileResult(
+            path="a.jsonl",
+            verdict="invalid",
+            findings=(f203, f203, f101),
+            error_count=2,
+            warning_count=1,
+        ),
+        scan_mod.FileResult(
+            path="b.jsonl",
+            verdict="invalid",
+            findings=(f302, f203),
+            error_count=3,
+            warning_count=0,
+        ),
+        scan_mod.FileResult(path="ok.jsonl", verdict="healthy"),
+    )
+
+
+def encode_file_spec(fr: Any) -> dict[str, Any]:
+    findings = [
+        {"code": f.code, "severity": f.severity.value}
+        for f in fr.findings
+    ]
+    out: dict[str, Any] = {
+        "path": fr.path,
+        "verdict": fr.verdict,
+        "error_count": fr.error_count,
+        "warning_count": fr.warning_count,
+        "findings": findings,
+    }
+    return out
+
+
+def build_file_results(scan: Any, specs: list[dict[str, Any]]) -> list[Any]:
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    rows: list[Any] = []
+    for spec in specs:
+        findings = tuple(
+            make_finding(
+                code=item["code"],
+                severity=item["severity"],
+                message_template="synthetic",
+                source=SourceRef(spec["path"]),
+            )
+            for item in spec.get("findings", [])
+        )
+        rows.append(
+            scan.FileResult(
+                path=spec["path"],
+                verdict=spec.get("verdict", "healthy"),
+                findings=findings,
+                error_count=spec.get("error_count", 0),
+                warning_count=spec.get("warning_count", 0),
+            )
+        )
+    return rows
+
+
+def vector_specs(scan: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        specs.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "default_max_files": scan.DEFAULT_MAX_FILES,
+            "default_max_bytes": scan.DEFAULT_MAX_BYTES,
+            "scan_schema_version": scan.SCAN_SCHEMA_VERSION,
+        },
+    )
+
+    base_files = files_for_summary_tests(scan)
+    add(
+        "aggregate_by_code_exact",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+        },
+        {"summary": encode_summary(scan.aggregate_scan(base_files))},
+    )
+
+    sort_files = build_file_results(
+        scan,
+        [
+            {
+                "path": "x.jsonl",
+                "verdict": "invalid",
+                "error_count": 1,
+                "warning_count": 3,
+                "findings": [
+                    {"code": "SL007", "severity": "warning"},
+                    {"code": "SL006", "severity": "warning"},
+                    {"code": "SL006", "severity": "warning"},
+                    {"code": "SL001", "severity": "error"},
+                ],
+            }
+        ],
+    )
+    add(
+        "aggregate_by_code_sort_order",
+        {"type": "aggregate_scan", "files": [encode_file_spec(sort_files[0])]},
+        {"summary": encode_summary(scan.aggregate_scan(sort_files))},
+    )
+
+    add(
+        "aggregate_worst_files_exact",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+        },
+        {
+            "worst_files": [
+                {"path": r.path, "error_count": r.error_count, "warning_count": r.warning_count}
+                for r in scan.aggregate_scan(base_files).worst_files
+            ]
+        },
+    )
+
+    healthy_only = build_file_results(
+        scan,
+        [
+            {"path": "ok.jsonl", "verdict": "healthy"},
+            {"path": "also_ok.jsonl", "verdict": "healthy"},
+        ],
+    )
+    empty_summary = scan.aggregate_scan(healthy_only)
+    add(
+        "aggregate_worst_files_excludes_healthy",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in healthy_only],
+        },
+        {
+            "worst_files_empty": len(empty_summary.worst_files) == 0,
+            "by_code_empty": len(empty_summary.by_code) == 0,
+        },
+    )
+
+    top_one = scan.aggregate_scan(base_files, top=1)
+    top_zero = scan.aggregate_scan(base_files, top=0)
+    add(
+        "aggregate_top_one",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+            "top": 1,
+        },
+        {"worst_files_len": len(top_one.worst_files)},
+    )
+    add(
+        "aggregate_top_zero",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+            "top": 0,
+        },
+        {"worst_files_len": len(top_zero.worst_files)},
+    )
+
+    add(
+        "aggregate_top_negative",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+            "top": -1,
+        },
+        pin_aggregate_error(scan, list(base_files), top=-1),
+    )
+
+    none_summary = scan.aggregate_scan(base_files, group_by="none")
+    add(
+        "aggregate_group_by_none",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+            "group_by": "none",
+        },
+        {
+            "by_code_empty": len(none_summary.by_code) == 0,
+            "worst_files_len": len(none_summary.worst_files),
+        },
+    )
+
+    add(
+        "aggregate_group_by_invalid",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+            "group_by": "file",
+        },
+        pin_aggregate_error(scan, list(base_files), group_by="file"),
+    )
+
+    first = scan.aggregate_scan(base_files)
+    second = scan.aggregate_scan(base_files)
+    add(
+        "aggregate_deterministic",
+        {
+            "type": "aggregate_scan",
+            "files": [encode_file_spec(fr) for fr in base_files],
+        },
+        {"equal": first == second, "summary": encode_summary(first)},
+    )
+
+    link = scan.SessionLink(kind="session_ref", target="sess-b", record_id="c1", line=1)
+    wire = link.to_dict()
+    restored = scan.SessionLink.from_dict(wire)
+    add(
+        "session_link_wire_round_trip",
+        {
+            "type": "session_link",
+            "kind": "session_ref",
+            "target": "sess-b",
+            "record_id": "c1",
+            "line": 1,
+        },
+        {
+            "wire": wire,
+            "equal_after_round_trip": restored == link,
+        },
+    )
+
+    rollout_cases = [
+        ("", None),
+        (
+            "rollout-2026-01-01-01234567-89ab-cdef-0123-456789abcdef",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        (
+            "rollout-2026-01-01-01234567-89ab-cdef-0123-456789abcdef\n",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ),
+        ("not-a-rollout-stem", None),
+    ]
+    for index, (stem, want) in enumerate(rollout_cases):
+        got = scan._rollout_uuid(stem)
+        add(
+            f"rollout_uuid_{index:02d}",
+            {"type": "rollout_uuid", "stem": stem},
+            {"value": got, "want": want},
+        )
+
+    pathy_rows = [
+        ("sess-a", False),
+        ("dir/sess.json", True),
+        ("dir\\sess.jsonl", True),
+        ("plain.json", True),
+        ("plain.JSON", False),
+    ]
+    for index, (target, want) in enumerate(pathy_rows):
+        got = scan._looks_pathy(target)
+        add(
+            f"looks_pathy_{index:02d}",
+            {"type": "looks_pathy", "target": target},
+            {"value": got, "want": want},
+        )
+
+    return specs
+
+
+def imports_module(rel: str) -> bool:
+    try:
+        source = subprocess.check_output(
+            ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+            cwd=repo_root(),
+            text=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return "sesslint.scan" in source
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        if not imports_module(rel):
+            continue
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def main() -> int:
+    scan = load_pinned_scan()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(scan)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "scan_py_sha256": SCAN_PY_SHA256,
+        "scan_rs_sha256": SCAN_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.scan parity: module constants, aggregate_scan "
+            "views, SessionLink wire shape, rollout_uuid, looks_pathy, and "
+            "documented minimize_path and threshold gaps."
+        ),
+        "generator": "rust/parity/vectors/scan/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "scan_py_sha256": SCAN_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/scan/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

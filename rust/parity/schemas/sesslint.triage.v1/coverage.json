@@ -1,0 +1,124 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.triage",
+  "not_applicable_count": 19,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "api.triage, the helper validate, and triage().to_json. Status, bytes, mtime, and exports are also asserted. Several functions. One document is not the whole test.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_healthy_pure_and_api_parity",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over five payloads. triage, the helper validate, status, and exit_code. A sweep of modes.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_states_are_not_silently_healthy",
+      "vector_id": null
+    },
+    {
+      "note": "triage of a byte limit, a missing path, and a directory. skipped and unreadable are two modes.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_limit_and_unreadable_are_distinct",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over two skip reasons. Monkeypatched assess_source, then status, assurance, previews, and missing_evidence.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_incomplete_coverage_never_checked",
+      "vector_id": null
+    },
+    {
+      "note": "triage runs twice, then preview policy, sha256, and step_count are asserted. Two calls.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_torn_preview_same_snapshot_and_explicit_comparison",
+      "vector_id": null
+    },
+    {
+      "note": "Counts load_events_for_format. No triage document is checked.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_only_one_decode_and_no_preview_reopen",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over restore_metadata. Asserts status, previews, and assurance.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_source_changed_after_load_withholds_preview",
+      "vector_id": null
+    },
+    {
+      "note": "by_code, impact inequalities, a privacy sweep, and limitation text. Session text is not stored.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_graph_impact_and_private_output",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over checkpoint_loss. The cases expect different statuses.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_unknown_side_effects_do_not_offer_execution",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over two agents. latest_session and main. No schema document.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_latest_excludes_auxiliary_and_subagents",
+      "vector_id": null
+    },
+    {
+      "note": "triage returns membership-matches, then unverified after a sidecar write. Two modes.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_registry_copy_membership_no_writes",
+      "vector_id": null
+    },
+    {
+      "note": "One native_state assert. The function is triage, not schema validate.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_live_registry_refused",
+      "vector_id": null
+    },
+    {
+      "note": "native_state and status. Two asserts. The function is triage.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_crosswired_registry_rows_do_not_match",
+      "vector_id": null
+    },
+    {
+      "note": "One native_state assert. The function is triage.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_registry_hard_link_is_not_a_closed_copy",
+      "vector_id": null
+    },
+    {
+      "note": "state_db.read_codex_state. No triage document.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_registry_query_work_is_bounded",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over suffix and during_read. native_state and status.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_incomplete_registry_copy_never_verified",
+      "vector_id": null
+    },
+    {
+      "note": "state_db.read_codex_state. No triage document.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_registry_auxiliary_tables_bounded",
+      "vector_id": null
+    },
+    {
+      "note": "Parametrized over five argv lists. main returns 2.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_cli_usage_refused",
+      "vector_id": null
+    },
+    {
+      "note": "main stdout equals triage().to_dict(). Two functions. Equality is not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/test_triage.py::test_cli_json_parity",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.triage.v1.json",
+  "test_file": "tests/test_triage.py"
+}

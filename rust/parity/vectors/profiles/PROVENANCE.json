@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.profiles package parity (stdlib-only vectors; no session payload text).",
+  "generator": "rust/parity/vectors/profiles/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "get_profile and list_profiles are re-exported but not wired to REGISTRY. Rust returns sesslint.profiles.builtin is not available. Python get_profile(\"neutral\") returns the neutral profile."
+  ]
+}

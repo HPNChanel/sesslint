@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._errors parity vectors from the pinned worktree module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SYNTHETIC = "synthetic-check-ok"
+UNICODE_MESSAGE = "synthetic-phiên-bản-không-hỗ-trợ"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_cli_errors_module():
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint.cli._errors import CliError  # noqa: WPS433
+
+    return CliError
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "cli_error_exit_2_synthetic",
+            "construct": {"type": "CliError", "exit_code": 2, "message": SYNTHETIC},
+        },
+        {
+            "id": "cli_error_exit_0_synthetic",
+            "construct": {"type": "CliError", "exit_code": 0, "message": SYNTHETIC},
+        },
+        {
+            "id": "cli_error_exit_130_synthetic",
+            "construct": {"type": "CliError", "exit_code": 130, "message": SYNTHETIC},
+        },
+        {
+            "id": "cli_error_exit_negative_synthetic",
+            "construct": {"type": "CliError", "exit_code": -1, "message": SYNTHETIC},
+        },
+        {
+            "id": "cli_error_empty_message",
+            "construct": {"type": "CliError", "exit_code": 2, "message": ""},
+        },
+        {
+            "id": "cli_error_unicode_message",
+            "construct": {
+                "type": "CliError",
+                "exit_code": 2,
+                "message": UNICODE_MESSAGE,
+            },
+        },
+    ]
+
+
+def main() -> int:
+    CliError = load_cli_errors_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        spec = row["construct"]
+        exc = CliError(spec["exit_code"], spec["message"])
+        expected = {
+            "display": str(exc),
+            "exit_code": exc.exit_code,
+        }
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": spec,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._errors",
+        "python_commit": PYTHON_COMMIT,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint.cli._errors",
+        "python_commit": PYTHON_COMMIT,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._errors/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": "Synthetic constructor parity vectors for sesslint.cli._errors Display and exit_code.",
+        "generator": "rust/parity/vectors/cli._errors/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

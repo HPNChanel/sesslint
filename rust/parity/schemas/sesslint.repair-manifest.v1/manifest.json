@@ -1,0 +1,10 @@
+{
+  "generator": "rust/parity/schemas/sesslint.repair-manifest.v1/generate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "report_py_sha256": "ac5cfc7f9d3f177faf3d9bc0f0cdc6c988b5d3c9fa5b354c81bf36469b97bac0",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.repair-manifest.v1.json",
+  "schema_sha256": "165236fedd040325502e62e48e52d93e7959bc33592cda2e5ed687d7d4769156",
+  "vector_count": 114,
+  "vectors_sha256": "a9d1e402a9043deb5b2590a49f07d0a2f282fbf8249ea12c47b97abaf2e5f636"
+}

@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair.assurance parity (cap_assurance lattice and compute_assurance_ceiling only).",
+  "generator": "rust/parity/vectors/repair.assurance/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "cap_assurance: when plan has attribute 'steps' whose value is not iterable, Python raises TypeError; Rust Plan::AttributeSteps only accepts a slice."
+  ]
+}

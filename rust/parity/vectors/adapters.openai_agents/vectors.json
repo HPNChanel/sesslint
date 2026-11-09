@@ -1,0 +1,806 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.openai_agents",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "openai_agents_py_sha256": "7c262765d0525156ad8fae34e16c11895f553500d8056aa5921d86d7d2fc8ac6",
+  "openai_agents_rs_sha256": "3275db6e3593345969d25707f4460b91d56f5920c6662220b62731001a54e8c4",
+  "known_parity_gaps": [
+    "GAP-openai-secret-scan-tracker: load_openai_agents stops at sesslint.checks.hygiene.SecretScanTracker after classifying JSON or JSONL. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
+    "GAP-openai-feed-blob: load_openai_agents_json stops at SecretScanTracker.feed_blob. Rust returns the feed_blob display for every document.",
+    "GAP-openai-tail-tracker: load_openai_agents_jsonl stops at sesslint.io.MalformedTailTracker before the line loop.",
+    "GAP-openai-session-envelope: load_openai_agents_session calls load_openai_agents and stops at MalformedTailTracker. Rust does not build a Session envelope.",
+    "GAP-openai-content-hash: process_openai_item stops at compute_content_hash and does not append a SessionEvent. Unsupported versions and unknown types stop at sesslint.determinism.canonical_json_bytes when make_finding would run in the pin.",
+    "GAP-openai-finding-fingerprint: size-limit and SQLite refusal gates call make_finding in the pin. Rust stops at the fingerprint codec for those findings."
+  ],
+  "vectors": [
+    {
+      "id": "module_exports",
+      "construct": {
+        "type": "module_exports"
+      },
+      "expected": {
+        "python_all": [
+          "CRITICAL_KEYS",
+          "CanonicalEvent",
+          "EventList",
+          "ITEM_TYPE_MAP",
+          "KNOWN_RECORD_KEYS",
+          "MAX_PROJECTED_CHECKPOINTS",
+          "MAX_PROJECTED_RUN_STATE_KEYS",
+          "SQLITE_MAGIC",
+          "SUPPORTED_OPENAI_AGENTS_VERSIONS",
+          "SourceMetadata",
+          "detect_openai_agents",
+          "load_openai_agents",
+          "load_openai_agents_session",
+          "normalize_version",
+          "project_run_state"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "supported_versions": [
+          "0.1",
+          "0.1.0",
+          "0.2",
+          "0.2.0",
+          "1",
+          "1.0",
+          "1.0.0",
+          "openai-agents-v1"
+        ],
+        "max_projected_run_state_keys": 32,
+        "max_projected_checkpoints": 8,
+        "sqlite_magic_hex": "53514c69746520666f726d6174203300",
+        "critical_keys": [
+          "call_id",
+          "parent_id",
+          "prev_id",
+          "tool_call_id",
+          "type",
+          "unknown_critical_field"
+        ],
+        "known_record_keys": [
+          "agent",
+          "agent_sdk_version",
+          "args",
+          "arguments",
+          "call_id",
+          "checkpoint_id",
+          "checkpoints",
+          "content",
+          "created_at",
+          "error",
+          "export_version",
+          "function",
+          "handoff_to",
+          "id",
+          "input",
+          "is_error",
+          "item_id",
+          "items",
+          "metadata",
+          "model",
+          "name",
+          "output",
+          "parent_id",
+          "prev_id",
+          "reason",
+          "result",
+          "role",
+          "run_state",
+          "sdk_version",
+          "state",
+          "target",
+          "thread_id",
+          "timestamp",
+          "tool_call_id",
+          "tool_name",
+          "ts",
+          "type",
+          "usage",
+          "user"
+        ],
+        "item_type_map": [
+          {
+            "key": "message",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "user",
+            "actor": "user",
+            "kind": "message"
+          },
+          {
+            "key": "assistant",
+            "actor": "assistant",
+            "kind": "message"
+          },
+          {
+            "key": "system",
+            "actor": "system",
+            "kind": "message"
+          },
+          {
+            "key": "tool_call",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "function_call",
+            "actor": "assistant",
+            "kind": "tool_call"
+          },
+          {
+            "key": "tool_result",
+            "actor": "tool",
+            "kind": "tool_result"
+          },
+          {
+            "key": "function_call_output",
+            "actor": "tool",
+            "kind": "tool_result"
+          },
+          {
+            "key": "handoff",
+            "actor": "assistant",
+            "kind": "handoff"
+          },
+          {
+            "key": "checkpoint",
+            "actor": "system",
+            "kind": "checkpoint"
+          },
+          {
+            "key": "compaction",
+            "actor": "system",
+            "kind": "compaction_boundary"
+          },
+          {
+            "key": "compaction_boundary",
+            "actor": "system",
+            "kind": "compaction_boundary"
+          }
+        ]
+      }
+    },
+    {
+      "id": "normalize_plain",
+      "construct": {
+        "type": "normalize_version",
+        "text": "1.0.0"
+      },
+      "expected": {
+        "text": "1.0.0"
+      }
+    },
+    {
+      "id": "normalize_v_prefix",
+      "construct": {
+        "type": "normalize_version",
+        "text": "v1.0.0"
+      },
+      "expected": {
+        "text": "1.0.0"
+      }
+    },
+    {
+      "id": "normalize_whitespace_case",
+      "construct": {
+        "type": "normalize_version",
+        "text": "  V0.2.0  "
+      },
+      "expected": {
+        "text": "0.2.0"
+      }
+    },
+    {
+      "id": "normalize_openai_label",
+      "construct": {
+        "type": "normalize_version",
+        "text": "openai-agents-v1"
+      },
+      "expected": {
+        "text": "openai-agents-v1"
+      }
+    },
+    {
+      "id": "detect_export_json",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b226974656d73223a205b7b226964223a202231222c202263616c6c5f6964223a20226331222c202274797065223a2022746f6f6c5f63616c6c227d5d7d",
+        "filename": "export.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_run_state_wrapper",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b2272756e5f7374617465223a207b7d2c2022636865636b706f696e7473223a205b5d7d",
+        "filename": "state.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_sqlite_sqlite_name",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "53514c69746520666f726d6174203300",
+        "filename": "session.sqlite"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_sqlite_json_name",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "53514c69746520666f726d6174203300",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 0.5
+      }
+    },
+    {
+      "id": "detect_unrelated_txt",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b2272616e646f6d223a203132337d",
+        "filename": "other.txt"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_empty_json",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "",
+        "filename": "empty.json"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_function_call_tokens",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b2274797065223a202266756e6374696f6e5f63616c6c222c20226e616d65223a2022646f5f7461736b222c202268616e646f6666223a20747275657d",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_notes_txt",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b226974656d73223a5b5d7d",
+        "filename": "notes.txt"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "detect_call_id_only",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b2263616c6c5f6964223a2263227d",
+        "filename": "a.json"
+      },
+      "expected": {
+        "score": 0.8
+      }
+    },
+    {
+      "id": "detect_run_state_jsonl",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b2272756e5f7374617465223a7b7d7d",
+        "filename": "a.jsonl"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_items_and_call",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b226974656d73223a5b5d2c2263616c6c5f6964223a2263227d",
+        "filename": "a.json"
+      },
+      "expected": {
+        "score": 1.0
+      }
+    },
+    {
+      "id": "detect_tool_fields",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "7b22746f6f6c5f63616c6c223a312c22746f6f6c5f726573756c74223a327d",
+        "filename": "a.json"
+      },
+      "expected": {
+        "score": 0.8
+      }
+    },
+    {
+      "id": "detect_hello_session_json",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "68656c6c6f",
+        "filename": "session.json"
+      },
+      "expected": {
+        "score": 0.2
+      }
+    },
+    {
+      "id": "detect_hello_session_db",
+      "construct": {
+        "type": "detect_openai_agents",
+        "bytes_hex": "68656c6c6f",
+        "filename": "session.db"
+      },
+      "expected": {
+        "score": 0.0
+      }
+    },
+    {
+      "id": "run_state_none",
+      "construct": {
+        "type": "project_run_state",
+        "source": {
+          "kind": "null"
+        }
+      },
+      "expected": {
+        "projection": {
+          "checkpoints": [],
+          "keys": [],
+          "shapes": {},
+          "truncated": false
+        }
+      }
+    },
+    {
+      "id": "run_state_empty_dict",
+      "construct": {
+        "type": "project_run_state",
+        "source": {
+          "kind": "map",
+          "entries": []
+        }
+      },
+      "expected": {
+        "projection": {
+          "checkpoints": [],
+          "keys": [],
+          "shapes": {},
+          "truncated": false
+        }
+      }
+    },
+    {
+      "id": "run_state_irrelevant",
+      "construct": {
+        "type": "project_run_state",
+        "source": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "irrelevant_field"
+              },
+              "value": {
+                "kind": "int",
+                "value": 123
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "projection": {
+          "checkpoints": [],
+          "keys": [],
+          "shapes": {},
+          "truncated": false
+        }
+      }
+    },
+    {
+      "id": "safe_type_str",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "str",
+          "text": "abc"
+        }
+      },
+      "expected": {
+        "text": "<str:len=3>"
+      }
+    },
+    {
+      "id": "safe_type_none",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "null"
+        }
+      },
+      "expected": {
+        "text": "<NoneType>"
+      }
+    },
+    {
+      "id": "safe_type_list",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "int",
+              "value": 1
+            },
+            {
+              "kind": "int",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "<list:len=2>"
+      }
+    },
+    {
+      "id": "safe_type_dict",
+      "construct": {
+        "type": "safe_type_value",
+        "val": {
+          "kind": "map",
+          "entries": []
+        }
+      },
+      "expected": {
+        "text": "<dict:len=0>"
+      }
+    },
+    {
+      "id": "load_empty_bytes",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": ""
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "mode": "ok_empty"
+      }
+    },
+    {
+      "id": "load_whitespace_bytes",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "20090d0a0b0c20"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "mode": "ok_empty"
+      }
+    },
+    {
+      "id": "load_bom_only",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "efbbbf"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "mode": "ok_empty"
+      }
+    },
+    {
+      "id": "gap_load_items_json",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226974656d73223a205b5d7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker",
+          "document_kind": "json"
+        }
+      }
+    },
+    {
+      "id": "gap_load_jsonl_line",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226964223a226d31222c2274797065223a226d657373616765227d0a"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker",
+          "document_kind": "jsonl"
+        }
+      }
+    },
+    {
+      "id": "gap_load_bytes_input",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226974656d73223a205b7b226964223a20226d31222c202274797065223a20226d657373616765222c2022636f6e74656e74223a202278227d5d7d"
+        }
+      },
+      "expected": {
+        "pin": {
+          "event_count": 1,
+          "finding_count": 0,
+          "finding_codes": []
+        },
+        "rust_assertion": {
+          "mode": "gap_secret_scan_tracker",
+          "document_kind": "json"
+        }
+      }
+    },
+    {
+      "id": "gap_sqlite_bytes",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "53514c69746520666f726d61742033004d41524b4552"
+        },
+        "max_file_bytes": 64
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_fingerprint_codec",
+          "gate": "sqlite"
+        }
+      }
+    },
+    {
+      "id": "gap_size_bytes",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "4d41524b45524d41524b45524d41524b45524d41524b45524d41524b45524d41524b45524d41524b45524d41524b4552"
+        },
+        "max_file_bytes": 8
+      },
+      "expected": {
+        "pin": {
+          "event_count": 0,
+          "finding_count": 1,
+          "finding_codes": [
+            "SL001"
+          ]
+        },
+        "rust_assertion": {
+          "mode": "gap_fingerprint_codec",
+          "gate": "size"
+        }
+      }
+    },
+    {
+      "id": "gap_json_feed_blob",
+      "construct": {
+        "type": "load_openai_agents_json",
+        "bytes_hex": "7b7d"
+      },
+      "expected": {
+        "pin_mode": "error",
+        "rust_assertion": {
+          "mode": "gap_feed_blob"
+        }
+      }
+    },
+    {
+      "id": "gap_json_nul",
+      "construct": {
+        "type": "load_openai_agents_json",
+        "bytes_hex": "00"
+      },
+      "expected": {
+        "pin_mode": "error",
+        "rust_assertion": {
+          "mode": "gap_feed_blob"
+        }
+      }
+    },
+    {
+      "id": "gap_jsonl_tail",
+      "construct": {
+        "type": "load_openai_agents_jsonl",
+        "bytes_hex": ""
+      },
+      "expected": {
+        "pin_mode": "error",
+        "rust_assertion": {
+          "mode": "gap_tail_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_jsonl_object",
+      "construct": {
+        "type": "load_openai_agents_jsonl",
+        "bytes_hex": "7b7d"
+      },
+      "expected": {
+        "pin_mode": "error",
+        "rust_assertion": {
+          "mode": "gap_tail_tracker"
+        }
+      }
+    },
+    {
+      "id": "gap_session_envelope",
+      "construct": {
+        "type": "load_openai_agents_session",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": "7b226974656d73223a205b5d7d"
+        }
+      },
+      "expected": {
+        "pin_event_count": 0,
+        "rust_assertion": {
+          "mode": "gap_session_tail"
+        }
+      }
+    },
+    {
+      "id": "load_bool_cap_true",
+      "construct": {
+        "type": "load_openai_agents",
+        "source": {
+          "kind": "bytes_hex",
+          "hex": ""
+        },
+        "max_file_bytes_bool": true
+      },
+      "expected": {
+        "message": "max_file_bytes must be a positive integer, got True"
+      }
+    },
+    {
+      "id": "gap_process_message_item",
+      "construct": {
+        "type": "process_openai_item",
+        "item": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "id"
+              },
+              "value": {
+                "kind": "str",
+                "text": "msg_01"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "type"
+              },
+              "value": {
+                "kind": "str",
+                "text": "message"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "role"
+              },
+              "value": {
+                "kind": "str",
+                "text": "user"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "content"
+              },
+              "value": {
+                "kind": "str",
+                "text": "hello"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "sdk_version"
+              },
+              "value": {
+                "kind": "str",
+                "text": "1.0.0"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "pin_reached_event": true,
+        "rust_assertion": {
+          "mode": "gap_content_hash"
+        }
+      }
+    }
+  ]
+}

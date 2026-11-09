@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.hook parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from argparse import Namespace
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HOOK_PY_SHA256 = (
+    "9eb2e36d2f8be47a1df7345fcfeb9d5af16353ea0f65fe76c094a60e6e4da449"
+)
+HOOK_RS_SHA256 = (
+    "3e0c54d95452724c3c2078b82a8dcf1bbb5cb3dcf68ea53781a59c77e5cfb600"
+)
+MODULE = "sesslint.cli.hook"
+
+GAP_INIT_HOOKS_DOC = "GAP-cli-hook-init-hooks-doc"
+GAP_RUN_HOOK = "GAP-cli-hook-run-hook"
+
+KNOWN_PARITY_GAPS = [
+    (
+        f"{GAP_INIT_HOOKS_DOC}: Python run() with --init calls "
+        "sesslint.hooks.init_hooks_doc and prints hook snippets with exit 0; "
+        "Rust run() returns Display `sesslint.hooks.init_hooks_doc is not "
+        "available` (no print, no exit 0)."
+    ),
+    (
+        f"{GAP_RUN_HOOK}: Python run() reads stdin and calls "
+        "sesslint.hook_event.run_hook; Rust run() returns Display "
+        "`sesslint.hook_event.run_hook is not available` before reading stdin."
+    ),
+]
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|sesslint-wt-|FOR_WORK)"
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+    detect.VALID_FORMAT_OPTIONS = frozenset(
+        {
+            "auto",
+            "canonical",
+            "claude-code-jsonl",
+            "codex-rollout",
+            "openai-agents",
+        }
+    )
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters.detect = detect
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    context = types.ModuleType("sesslint.cli._context")
+
+    class CliContext:  # noqa: D101
+        pass
+
+    context.CliContext = CliContext
+    sys.modules["sesslint.cli._context"] = context
+    cli_pkg._context = context
+
+    hooks_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/hooks.py")
+    hooks = exec_blob(hooks_blob, "sesslint.hooks")
+    sys.modules["sesslint.hooks"] = hooks
+    pkg.hooks = hooks
+
+    hook_event_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/hook_event.py")
+    hook_event = exec_blob(hook_event_blob, "sesslint.hook_event")
+    sys.modules["sesslint.hook_event"] = hook_event
+    pkg.hook_event = hook_event
+
+
+def load_hook_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/hook.py")
+    verify_digest(blob, HOOK_PY_SHA256, "cli/hook.py")
+    hook = exec_blob(blob, "sesslint.cli.hook")
+    sys.modules["sesslint.cli"].hook = hook
+    return hook
+
+
+def encode_action(action: argparse.Action) -> str:
+    if action.const is True and action.nargs == 0:
+        return "store_true"
+    return "store"
+
+
+def encode_default_keyword(action: argparse.Action) -> Any:
+    if action.dest == "event":
+        return "absent"
+    if action.const is True and action.default is False:
+        return {"present": "false"}
+    if action.dest == "agent" and action.default == "all":
+        return {"present": {"text": "all"}}
+    if action.default is None:
+        return {"present": "none"}
+    if action.default is False:
+        return {"present": "false"}
+    if isinstance(action.default, str):
+        return {"present": {"text": action.default}}
+    raise SystemExit(f"unexpected default for {action.dest}: {action.default!r}")
+
+
+def encode_effective_default(action: argparse.Action) -> Any:
+    if action.dest == "event":
+        return "none"
+    if action.const is True and action.default is False:
+        return "false"
+    if action.dest == "agent" and action.default == "all":
+        return {"text": "all"}
+    if action.default is None:
+        return "none"
+    if action.default is False:
+        return "false"
+    if isinstance(action.default, str):
+        return {"text": action.default}
+    raise SystemExit(f"unexpected effective for {action.dest}: {action.default!r}")
+
+
+def encode_argument(action: argparse.Action) -> dict[str, Any]:
+    if not action.option_strings:
+        raise SystemExit(f"unexpected positional action dest={action.dest}")
+    choices = list(action.choices) if action.choices is not None else None
+    if action.dest == "adapter" and choices is not None:
+        choices = sorted(choices)
+    return {
+        "option_strings": list(action.option_strings),
+        "dest": action.dest,
+        "action": encode_action(action),
+        "type_name": None,
+        "choices": choices,
+        "metavar": action.metavar,
+        "help": action.help or "",
+        "default_keyword": encode_default_keyword(action),
+        "effective_default": encode_effective_default(action),
+    }
+
+
+def find_exclusive_groups(
+    parser: argparse.ArgumentParser,
+) -> list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]]:
+    out: list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]] = []
+    for group in parser._mutually_exclusive_groups:
+        members = [a for a in group._group_actions if a.option_strings]
+        if members:
+            out.append((group, members))
+    return out
+
+
+def configure_expected(hook: types.ModuleType) -> dict[str, Any]:
+    root = argparse.ArgumentParser(prog="sesslint")
+    subparsers = root.add_subparsers()
+    sub = hook.configure(subparsers)
+
+    subcommand_help = None
+    for action in root._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == hook.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if subcommand_help is None:
+        raise SystemExit("failed to introspect subcommand help from configure()")
+
+    arguments: list[dict[str, Any]] = []
+    for action in sub._actions:
+        if not action.option_strings:
+            continue
+        if action.dest in {"help", "version"}:
+            continue
+        arguments.append(encode_argument(action))
+
+    groups: list[dict[str, Any]] = []
+    for group, members in find_exclusive_groups(sub):
+        groups.append(
+            {
+                "required_keyword": True if group.required else None,
+                "required": bool(group.required),
+                "member_dests": [action.dest for action in members],
+            }
+        )
+
+    return {
+        "name": hook.NAME,
+        "help": subcommand_help or "",
+        "description": sub.description or "",
+        "arguments": arguments,
+        "groups": groups,
+    }
+
+
+def namespace_from_spec(attrs: dict[str, Any]) -> Namespace:
+    defaults: dict[str, Any] = {
+        "init": False,
+        "json": False,
+        "agent": "all",
+        "output_format": None,
+        "adapter": None,
+        "profile": None,
+        "fail_on": None,
+    }
+    defaults.update(attrs)
+    return Namespace(**defaults)
+
+
+def computed_output_format(args: Namespace) -> str | None:
+    if getattr(args, "json", False):
+        return "json"
+    return getattr(args, "output_format", None)
+
+
+class _StdinBuffer:
+    def __init__(self, data: bytes) -> None:
+        self.buffer = io.BytesIO(data)
+
+
+def run_pin(hook: types.ModuleType, attrs: dict[str, Any], stdin: bytes) -> dict[str, Any]:
+    args = namespace_from_spec(attrs)
+    out_fmt = computed_output_format(args)
+    ctx = sys.modules["sesslint.cli._context"].CliContext()
+    stdout = io.StringIO()
+    old_stdin = sys.stdin
+    sys.stdin = _StdinBuffer(stdin)  # type: ignore[assignment]
+    try:
+        with contextlib.redirect_stdout(stdout):
+            code = hook.run(ctx, args, None)
+    finally:
+        sys.stdin = old_stdin
+    return {
+        "exit_code": code,
+        "stdout": stdout.getvalue(),
+        "computed_output_format": out_fmt,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "configure_subcommand_declarations",
+            "construct": {"type": "configure"},
+        },
+        {
+            "id": "run_init_all_text",
+            "construct": {
+                "type": "run",
+                "args": {"init": True, "json": False, "agent": "all"},
+                "stdin_hex": "",
+            },
+        },
+        {
+            "id": "run_init_json_claude_agent",
+            "construct": {
+                "type": "run",
+                "args": {
+                    "init": True,
+                    "json": True,
+                    "agent": "claude",
+                    "output_format": "claude-json",
+                },
+                "stdin_hex": "",
+            },
+        },
+        {
+            "id": "run_init_codex",
+            "construct": {
+                "type": "run",
+                "args": {"init": True, "json": False, "agent": "codex"},
+                "stdin_hex": "",
+            },
+        },
+        {
+            "id": "run_defaults_minimal_stdin",
+            "construct": {
+                "type": "run",
+                "args": {
+                    "init": False,
+                    "json": False,
+                    "event": "SessionStart",
+                },
+                "stdin_hex": "7b7d",
+            },
+        },
+        {
+            "id": "run_json_flag_wins",
+            "construct": {
+                "type": "run",
+                "args": {
+                    "init": False,
+                    "json": True,
+                    "event": "SessionStart",
+                    "output_format": "claude-json",
+                },
+                "stdin_hex": "7b7d",
+            },
+        },
+        {
+            "id": "run_output_format_text",
+            "construct": {
+                "type": "run",
+                "args": {
+                    "init": False,
+                    "json": False,
+                    "event": "SessionStart",
+                    "output_format": "text",
+                },
+                "stdin_hex": "7b7d",
+            },
+        },
+    ]
+
+
+def build_expected(hook: types.ModuleType, row: dict[str, Any]) -> dict[str, Any]:
+    construct = row["construct"]
+    kind = construct["type"]
+    if kind == "configure":
+        return configure_expected(hook)
+    if kind == "run":
+        attrs = dict(construct.get("args") or {})
+        stdin = bytes.fromhex(construct.get("stdin_hex") or "")
+        pin = run_pin(hook, attrs, stdin)
+        gap_id = GAP_INIT_HOOKS_DOC if attrs.get("init") else GAP_RUN_HOOK
+        return {
+            "result": "gap",
+            "gap_id": gap_id,
+            "computed_output_format": pin.pop("computed_output_format"),
+            "pin": pin,
+        }
+    raise SystemExit(f"unknown construct for {row['id']}")
+
+
+def assert_payload_clean(payload: bytes) -> None:
+    if _BANNED_PAT.search(payload):
+        raise SystemExit("vectors.json contains banned marker")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must be LF-only")
+
+
+def main() -> int:
+    hook = load_hook_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(hook, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "hook_py_sha256": HOOK_PY_SHA256,
+        "hook_rs_sha256": HOOK_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_clean(payload_bytes)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.cli.hook configure declarations and run() gap "
+            "fixtures from pinned src/sesslint/cli/hook.py (no checkout import)."
+        ),
+        "generator": "rust/parity/vectors/cli.hook/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

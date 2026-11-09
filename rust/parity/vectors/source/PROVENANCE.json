@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic byte fixtures for sesslint.source fingerprint helpers (fingerprint_bytes and chunk_size ValueError parity).",
+  "generator": "rust/parity/vectors/source/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-source-filesystem-snapshot: guard, verify, guarded, and successful fingerprint_file paths that depend on stat metadata, realpaths, or host paths are not pinned as vectors (mtime, size, and path text vary by machine).",
+    "GAP-source-guarded-iter-events: guarded_iter_events imports sesslint.io.ReaderLimits and sesslint.io.iter_events; parity vectors do not exercise that integration in this crate."
+  ]
+}

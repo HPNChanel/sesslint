@@ -1,0 +1,276 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.atomic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "atomic_py_sha256": "94064b211d3f8298e34a5e71fb6b6ef9ae766147e1ef7d43827c63631b2f6609",
+  "known_parity_gaps": [
+    "lone_surrogate_encoding: Rust str cannot hold a lone surrogate; no vector.",
+    "exclusive_race_after_existence_check: dest created after the check may be replaced by Windows rename; no vector."
+  ],
+  "vectors": [
+    {
+      "id": "happy_write_synthetic_digest",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "empty",
+        "dest": "out.bin",
+        "data_b64": "c3ludGhldGljLWJ5dGVzCg==",
+        "sync_dir": true
+      },
+      "expected": {
+        "result": "ok",
+        "sha256": "6d2be2f98608ff3a889e146ea56ea3a3087fcaa42ca1a35e3c30c519e654868d",
+        "dest_b64": "c3ludGhldGljLWJ5dGVzCg==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "missing_parent_no_temp",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "empty",
+        "dest": "missing_dir/out.bin",
+        "data_b64": "c3ludGhldGljLWJ5dGVzCg=="
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "missing_parent",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "parent_path_is_file_refused",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "parent_is_file",
+        "dest": "file.txt/out.bin",
+        "data_b64": "c3ludGhldGljLWJ5dGVzCg=="
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "parent_not_dir",
+        "parent_rel": "file.txt",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "refuse_dotdot_before_parent_error",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "empty",
+        "dest": "missing/../out.bin",
+        "data_b64": "bmV3",
+        "refuse_paths": [
+          "out.bin"
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "refuse_protected",
+        "dest_rel": "missing/../out.bin",
+        "prohibited_rel": "out.bin",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "refuse_hardlink_same_file",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "hardlink_alias",
+        "dest": "alias.bin",
+        "data_b64": "Y29ycnVwdGVkIHJld3JpdGU=",
+        "refuse_paths": [
+          "source.bin"
+        ]
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "refuse_protected",
+        "dest_rel": "alias.bin",
+        "prohibited_rel": "source.bin",
+        "source_unchanged_b64": "aW5pdGlhbCBzb3VyY2U=",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "refuse_case_alias_same_file",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "case_alias",
+        "dest": "case.txt",
+        "data_b64": "enp6",
+        "refuse_paths": [
+          "Case.TXT"
+        ],
+        "requires_platform": "windows"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "refuse_protected",
+        "dest_rel": "case.txt",
+        "prohibited_rel": "Case.TXT",
+        "source_unchanged_b64": "YWJj",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "refuse_other_file_allows_write",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "other_refuse",
+        "dest": "out.bin",
+        "data_b64": "c3ludGhldGljLWJ5dGVzCg==",
+        "refuse_paths": [
+          "other.bin"
+        ]
+      },
+      "expected": {
+        "result": "ok",
+        "sha256": "6d2be2f98608ff3a889e146ea56ea3a3087fcaa42ca1a35e3c30c519e654868d",
+        "other_unchanged_b64": "b3RoZXItY29udGVudC1ieXRlcw==",
+        "dest_b64": "c3ludGhldGljLWJ5dGVzCg==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "overwrite_false_keeps_existing_bytes",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "seed_keep_me",
+        "dest": "out.bin",
+        "data_b64": "bmV3",
+        "overwrite": false
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "write_failed_exclusive",
+        "dest_unchanged_b64": "a2VlcC1tZQ==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "overwrite_true_replaces_bytes",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "seed_overwrite",
+        "dest": "out.bin",
+        "data_b64": "c3ludGhldGljLWJ5dGVzCg=="
+      },
+      "expected": {
+        "result": "ok",
+        "sha256": "6d2be2f98608ff3a889e146ea56ea3a3087fcaa42ca1a35e3c30c519e654868d",
+        "dest_b64": "c3ludGhldGljLWJ5dGVzCg==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "hooks_pre_write_then_pre_rename",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "empty",
+        "dest": "out.bin",
+        "data_b64": "cGF5bG9hZA==",
+        "hook": "lifecycle",
+        "sync_dir": true
+      },
+      "expected": {
+        "result": "ok",
+        "hook_events": [
+          "pre_write",
+          "pre_rename"
+        ],
+        "dest_b64": "cGF5bG9hZA==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "hook_pre_rename_fail_cleans_temp",
+      "construct": {
+        "type": "atomic_write_bytes",
+        "setup": "seed_hook_dest",
+        "dest": "out.bin",
+        "data_b64": "YmFkIG5ldyBkYXRh",
+        "hook": "pre_rename_fail"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "write_failed_hook",
+        "dest_unchanged_b64": "cHJlLWV4aXN0aW5nIHVudG91Y2hlZA==",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "text_utf8_default_digest",
+      "construct": {
+        "type": "atomic_write_text",
+        "setup": "empty",
+        "dest": "utf8.bin",
+        "text": "synthetic-é\n"
+      },
+      "expected": {
+        "result": "ok",
+        "sha256": "9eb40278b60348b930cd6120ab0f409b5d587e106312d42cc33f3d0977077e4a",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "text_latin1_digest",
+      "construct": {
+        "type": "atomic_write_text",
+        "setup": "empty",
+        "dest": "latin.bin",
+        "text": "synthetic-é\n",
+        "encoding": "latin-1"
+      },
+      "expected": {
+        "result": "ok",
+        "sha256": "42fd1e2b82cc9d1997e29b0abe4e9510aa52ab5d0ab2d33d30282e6cb1077509",
+        "dest_b64": "c3ludGhldGljLekK",
+        "temp_count": 0
+      }
+    },
+    {
+      "id": "text_ascii_encode_error",
+      "construct": {
+        "type": "atomic_write_text",
+        "setup": "empty",
+        "dest": "out.bin",
+        "text": "é",
+        "encoding": "ascii"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "encode_ascii",
+        "dest_exists": false,
+        "temp_count": 0,
+        "exact_message": "Failed to encode text with encoding 'ascii': 'ascii' codec can't encode character '\\xe9' in position 0: ordinal not in range(128)"
+      }
+    },
+    {
+      "id": "text_unknown_encoding_no_file",
+      "construct": {
+        "type": "atomic_write_text",
+        "setup": "empty",
+        "dest": "out.bin",
+        "text": "synthetic",
+        "encoding": "no-such"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "AtomicWriteError",
+        "error_kind": "encode_unknown",
+        "dest_exists": false,
+        "temp_count": 0,
+        "exact_message": "Failed to encode text with encoding 'no-such': unknown encoding: no-such"
+      }
+    }
+  ]
+}

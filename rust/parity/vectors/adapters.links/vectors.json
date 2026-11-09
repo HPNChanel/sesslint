@@ -1,0 +1,764 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.links",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "links_py_sha256": "c6b42b707b99fce9dc7623522817f5ffcfc28d78b6c1c876b8026aef17cb140c",
+  "vectors": [
+    {
+      "id": "happy_path_session_then_head_with_record_and_line",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "resume_head_id": "syn-head-01",
+          "parent_session_id": "syn-parent-01"
+        },
+        "record_id": "syn-rec-01",
+        "line": 7
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": "syn-rec-01",
+            "line": 7
+          },
+          {
+            "kind": "head_ref",
+            "target": "syn-head-01",
+            "record_id": "syn-rec-01",
+            "line": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": "declaration_order_not_input_or_btree_order",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "resume_head_id": "syn-head-01",
+          "parentSessionId": "syn-parent-02",
+          "parent_session_id": "syn-parent-01"
+        }
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "head_ref",
+            "target": "syn-head-01",
+            "record_id": null,
+            "line": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "string_strip_int_decimal_bool_and_other_ignored",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "  syn-parent-01  ",
+          "parentSessionId": -42,
+          "resume_from": true,
+          "resumeFrom": false,
+          "source_session_id": [
+            "not-scalar"
+          ],
+          "sourceSessionId": 0
+        },
+        "record_id": "syn-rec-01",
+        "line": -1
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": "syn-rec-01",
+            "line": -1
+          },
+          {
+            "kind": "session_ref",
+            "target": "-42",
+            "record_id": "syn-rec-01",
+            "line": -1
+          },
+          {
+            "kind": "session_ref",
+            "target": "0",
+            "record_id": "syn-rec-01",
+            "line": -1
+          }
+        ]
+      }
+    },
+    {
+      "id": "empty_after_strip_ignored",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "   ",
+          "parentSessionId": ""
+        },
+        "record_id": "syn-rec-01",
+        "line": 1
+      },
+      "expected": {
+        "links": []
+      }
+    },
+    {
+      "id": "target_len_512_kept_513_ignored",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+          "parentSessionId": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+            "record_id": null,
+            "line": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate_kind_target_ignored_different_kind_kept",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "syn-parent-01",
+          "parentSessionId": "syn-parent-01",
+          "resume_head_id": "syn-parent-01"
+        },
+        "line": 3
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": null,
+            "line": 3
+          },
+          {
+            "kind": "head_ref",
+            "target": "syn-parent-01",
+            "record_id": null,
+            "line": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "extra_input_fields_not_copied",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "syn-parent-01",
+          "payload": "not-copied",
+          "record_id": "obj-rec",
+          "line": 99,
+          "kind": "forged",
+          "target": "forged-target"
+        },
+        "record_id": "syn-rec-01",
+        "line": 4
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": "syn-rec-01",
+            "line": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_sixteen_session_before_head",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "syn-session-00",
+          "parentSessionId": "syn-session-01",
+          "resume_from": "syn-session-02",
+          "resumeFrom": "syn-session-03",
+          "source_session_id": "syn-session-04",
+          "sourceSessionId": "syn-session-05",
+          "previous_session_id": "syn-session-06",
+          "previousSessionId": "syn-session-07",
+          "continued_from": "syn-session-08",
+          "continuedFrom": "syn-session-09",
+          "forked_from_session": "syn-session-10",
+          "forkedFromSession": "syn-session-11",
+          "forked_from_id": "syn-session-12",
+          "forkedFromId": "syn-session-13",
+          "parent_thread_id": "syn-session-14",
+          "parentThreadId": "syn-session-15",
+          "resume_head_id": "syn-head-01"
+        }
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-session-00",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-03",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-04",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-05",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-06",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-07",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-08",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-09",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-10",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-11",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-12",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-13",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-14",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-session-15",
+            "record_id": null,
+            "line": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_allows_head_when_one_slot_remains",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "resume_head_id": "syn-head-01"
+        },
+        "initial_links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-00",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-03",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-04",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-05",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-06",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-07",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-08",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-09",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-10",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-11",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-12",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-13",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-14",
+            "record_id": null,
+            "line": null
+          }
+        ],
+        "record_id": "syn-rec-01",
+        "line": 2
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-00",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-03",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-04",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-05",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-06",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-07",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-08",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-09",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-10",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-11",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-12",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-13",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-prior-14",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "head_ref",
+            "target": "syn-head-01",
+            "record_id": "syn-rec-01",
+            "line": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "already_at_cap_no_lookup",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "syn-parent-01"
+        },
+        "initial_links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-full-00",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-03",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-04",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-05",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-06",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-07",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-08",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-09",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-10",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-11",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-12",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-13",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-14",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-15",
+            "record_id": null,
+            "line": null
+          }
+        ],
+        "record_id": "syn-rec-01",
+        "line": 9
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-full-00",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-01",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-02",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-03",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-04",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-05",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-06",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-07",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-08",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-09",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-10",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-11",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-12",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-13",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-14",
+            "record_id": null,
+            "line": null
+          },
+          {
+            "kind": "session_ref",
+            "target": "syn-full-15",
+            "record_id": null,
+            "line": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "preloaded_duplicate_pair_skipped",
+      "construct": {
+        "type": "extract_links",
+        "obj": {
+          "parent_session_id": "syn-parent-01"
+        },
+        "initial_links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": "syn-old",
+            "line": 1
+          }
+        ],
+        "record_id": "syn-rec-01",
+        "line": 8
+      },
+      "expected": {
+        "links": [
+          {
+            "kind": "session_ref",
+            "target": "syn-parent-01",
+            "record_id": "syn-old",
+            "line": 1
+          }
+        ]
+      }
+    }
+  ]
+}

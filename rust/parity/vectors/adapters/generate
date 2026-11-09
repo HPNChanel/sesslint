@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+"""Generate sesslint.adapters package parity vectors (stdlib only; pinned __init__.py)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+ADAPTERS_INIT_PATH = "src/sesslint/adapters/__init__.py"
+ADAPTERS_INIT_PY_SHA256 = (
+    "78c34a4ebcadb7a743bf48ca1315625e6c56d6524f9b99b83d6f33b299a46c66"
+)
+ADAPTERS_LIB_RS_SHA256 = (
+    "59e542822a7fef006cbf2ee3ed1f08cb0991d2fd515e3174a411adae6bf6de3d"
+)
+MODULE = "sesslint.adapters"
+
+VERSION_MODULES: Final[tuple[tuple[str, str], ...]] = (
+    ("sesslint.adapters.canonical", "SUPPORTED_CANONICAL_VERSIONS"),
+    ("sesslint.adapters.claude_code", "SUPPORTED_CLAUDE_VERSIONS"),
+    ("sesslint.adapters.codex_rollout", "SUPPORTED_CODEX_ROLLOUT_VERSIONS"),
+    ("sesslint.adapters.openai_agents", "SUPPORTED_OPENAI_AGENTS_VERSIONS"),
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    (
+        "GAP-adapters-dunder-all: Python adapters/__init__.py defines __all__ re-exports "
+        "for detect, load, and vendor parsers. Rust adapters/src/lib.rs exposes "
+        "supported_adapters only; barrel names are not re-exported."
+    ),
+    (
+        "GAP-adapters-detect-load-vendors: detect_format, load_*, and per-vendor "
+        "entry points live in sibling modules with dedicated parity cards; this card "
+        "pins supported_adapters metadata rows only."
+    ),
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/adapters/test_canonical_fast_path.py",
+    "tests/cli/test_formats_version.py",
+    "tests/test_api_surface.py",
+    "tests/test_bundle.py",
+    "tests/test_triage.py",
+    "tests/test_wave1_scan.py",
+    "tests/test_wave1_seal_watch.py",
+)
+
+# Doctor and version tests call cli.main. Sharing adapter names is not
+# coverage of supported_adapters(). No pinned test is that whole function.
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+NOT_THE_FUNCTION: Final[dict[str, str]] = {
+    "tests/cli/test_formats_version.py::test_doctor_human_lists_adapters": (
+        "calls cli main(['doctor']) and asserts stdout; not supported_adapters()"
+    ),
+    "tests/cli/test_formats_version.py::test_doctor_json_adapter_metadata": (
+        "calls cli main(['doctor', '--json']); not supported_adapters()"
+    ),
+    "tests/cli/test_formats_version.py::test_doctor_adapters_subset_of_version": (
+        "calls cli main(['doctor', '--json']) and main(['version', '--json']); "
+        "not supported_adapters()"
+    ),
+}
+
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def git_show_text(rev_path: str) -> str:
+    return git_show_bytes(rev_path).decode("utf-8")
+
+
+def verify_init_pin(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != ADAPTERS_INIT_PY_SHA256:
+        raise SystemExit(
+            "adapters/__init__.py pin sha256 mismatch: "
+            f"expected {ADAPTERS_INIT_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_adapters_lib_rs_sha256() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "adapters" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != ADAPTERS_LIB_RS_SHA256:
+        raise SystemExit(
+            "adapters/src/lib.rs sha256 mismatch: "
+            f"expected {ADAPTERS_LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def eval_frozenset_constant(source: str, const_name: str) -> frozenset[str]:
+    tree = ast.parse(source)
+    for node in tree.body:
+        target = None
+        value = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target = node.target.id
+            value = node.value
+        elif isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    target = tgt.id
+                    value = node.value
+                    break
+        if target != const_name or value is None:
+            continue
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "frozenset"
+            and value.args
+        ):
+            inner = ast.literal_eval(value.args[0])
+            if not isinstance(inner, (set, frozenset, tuple, list)):
+                raise SystemExit(f"{const_name} frozenset arg must be a set literal")
+            return frozenset(str(item) for item in inner)
+        evaluated = ast.literal_eval(value)
+        if not isinstance(evaluated, (frozenset, set, tuple, list)):
+            raise SystemExit(f"{const_name} must be a set literal at pin")
+        return frozenset(str(item) for item in evaluated)
+    raise SystemExit(f"missing {const_name} in pin module")
+
+
+def load_version_modules() -> None:
+    """Stub adapter modules so supported_adapters() can import version frozensets."""
+    ensure_pkg("sesslint")
+    ensure_pkg("sesslint.adapters")
+    rel_for: dict[str, str] = {
+        "sesslint.adapters.canonical": "adapters/canonical.py",
+        "sesslint.adapters.claude_code": "adapters/claude_code.py",
+        "sesslint.adapters.codex_rollout": "adapters/codex_rollout.py",
+        "sesslint.adapters.openai_agents": "adapters/openai_agents.py",
+    }
+    for mod_name, const_name in VERSION_MODULES:
+        rel = rel_for[mod_name]
+        source = git_show_text(f"{PYTHON_COMMIT}:src/sesslint/{rel}")
+        versions = eval_frozenset_constant(source, const_name)
+        mod = types.ModuleType(mod_name)
+        setattr(mod, const_name, versions)
+        sys.modules[mod_name] = mod
+        parent = sys.modules["sesslint.adapters"]
+        setattr(parent, mod_name.rsplit(".", 1)[-1], mod)
+
+
+def ensure_pkg(name: str) -> types.ModuleType:
+    if name in sys.modules:
+        return sys.modules[name]
+    mod = types.ModuleType(name)
+    mod.__path__ = []  # type: ignore[attr-defined]
+    sys.modules[name] = mod
+    return mod
+
+
+def stub_imported_submodules(init_source: str) -> None:
+    tree = ast.parse(init_source)
+    by_module: dict[str, set[str]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        if not node.module.startswith("sesslint.adapters."):
+            continue
+        names = by_module.setdefault(node.module, set())
+        for alias in node.names:
+            names.add(alias.name)
+    for mod_name, attr_names in by_module.items():
+        if mod_name in {m for m, _ in VERSION_MODULES}:
+            existing = sys.modules.get(mod_name)
+            if existing is None:
+                continue
+            for attr in attr_names:
+                if not hasattr(existing, attr):
+                    setattr(existing, attr, object())
+            continue
+        mod = types.ModuleType(mod_name)
+        for attr in attr_names:
+            setattr(mod, attr, object())
+        sys.modules[mod_name] = mod
+        parent_name = mod_name.rsplit(".", 1)[0]
+        child = mod_name.rsplit(".", 1)[-1]
+        parent = ensure_pkg(parent_name)
+        setattr(parent, child, mod)
+
+
+def load_python_all(init_source: str) -> list[str]:
+    tree = ast.parse(init_source)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    seq = node.value
+                    if not isinstance(seq, ast.List):
+                        raise SystemExit("__all__ must be a list literal")
+                    names: list[str] = []
+                    for elt in seq.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            names.append(elt.value)
+                        else:
+                            raise SystemExit("__all__ entries must be string literals")
+                    return names
+    raise SystemExit("missing __all__ in adapters/__init__.py")
+
+
+def exec_init_module(init_blob: bytes) -> types.ModuleType:
+    init_text = init_blob.decode("utf-8")
+    load_version_modules()
+    stub_imported_submodules(init_text)
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as handle:
+        handle.write(init_blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location("sesslint.adapters", tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned adapters/__init__.py")
+        mod = types.ModuleType("sesslint.adapters")
+        mod.__file__ = f"<{PYTHON_COMMIT}:{ADAPTERS_INIT_PATH}>"
+        mod.__package__ = "sesslint.adapters"
+        sys.modules["sesslint.adapters"] = mod
+        sys.modules["sesslint"].adapters = mod
+        code = compile(init_text, tmp_path, "exec")
+        exec(code, mod.__dict__)  # noqa: S102
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def encode_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    for row in rows:
+        versions = row["versions_supported"]
+        if not isinstance(versions, list):
+            raise SystemExit("versions_supported must be list")
+        out.append(
+            {
+                "name": row["name"],
+                "default_profile": row["default_profile"],
+                "description": row["description"],
+                "versions_supported": [str(v) for v in versions],
+            }
+        )
+    return out
+
+
+def vector_specs(adapters_mod: types.ModuleType) -> list[dict[str, Any]]:
+    rows = adapters_mod.supported_adapters()
+    if len(rows) != 4:
+        raise SystemExit(f"expected 4 supported_adapters rows, got {len(rows)}")
+    encoded = encode_rows(rows)
+    expected_names = [
+        "canonical",
+        "claude-code-jsonl",
+        "codex-rollout",
+        "openai-agents",
+    ]
+    for index, want in enumerate(expected_names):
+        if encoded[index]["name"] != want:
+            raise SystemExit(f"row {index} name mismatch: {encoded[index]['name']!r}")
+    return [
+        {
+            "id": "supported_adapters",
+            "construct": {"type": "supported_adapters"},
+            "expected": {"rows": encoded},
+        }
+    ]
+
+
+def imports_adapters_package(rel: str) -> bool:
+    try:
+        source = git_show_text(f"{PYTHON_COMMIT}:{rel}")
+    except subprocess.CalledProcessError:
+        return False
+    return bool(
+        re.search(
+            r"(?:from\s+sesslint\.adapters\s+import|import\s+sesslint\.adapters\b)",
+            source,
+        )
+    )
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = git_show_text(f"{PYTHON_COMMIT}:{rel}")
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str], py_all: list[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    rows.append(
+        {
+            "test": "src/sesslint/adapters/__init__.py::__all__",
+            "status": "not_applicable",
+            "python_all_len": len(py_all),
+        }
+    )
+    not_applicable += 1
+    for rel in COVERAGE_TEST_FILES:
+        if rel not in ("tests/cli/test_formats_version.py",) and not imports_adapters_package(
+            rel
+        ):
+            continue
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                reason = NOT_THE_FUNCTION.get(qual)
+                if reason is not None:
+                    row["reason"] = reason
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def main() -> int:
+    init_blob = git_show_bytes(f"{PYTHON_COMMIT}:{ADAPTERS_INIT_PATH}")
+    verify_init_pin(init_blob)
+    verify_adapters_lib_rs_sha256()
+    py_all = load_python_all(init_blob.decode("utf-8"))
+    adapters_mod = exec_init_module(init_blob)
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(adapters_mod)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "adapters_init_py_sha256": ADAPTERS_INIT_PY_SHA256,
+        "adapters_lib_rs_sha256": ADAPTERS_LIB_RS_SHA256,
+        "python_all": py_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.adapters package parity: supported_adapters metadata "
+            "rows (name, default_profile, description, sorted versions_supported) from "
+            "the pinned adapters/__init__.py; no session payload text."
+        ),
+        "generator": "rust/parity/vectors/adapters/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "adapters_init_py_sha256": ADAPTERS_INIT_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/adapters/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors), py_all)
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

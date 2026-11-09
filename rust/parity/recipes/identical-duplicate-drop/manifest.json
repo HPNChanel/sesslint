@@ -1,0 +1,14 @@
+{
+  "generator": "rust/parity/recipes/identical-duplicate-drop/generate",
+  "known_parity_gaps": [
+    "GAP-identical-duplicate-drop-affected-region: affected_region_identical_duplicate_drop in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not cover a region result.",
+    "GAP-identical-duplicate-drop-planner: api.plan, api.repair, and planner.plan are not executed. No plan, fingerprint, or fixture diff is stored.",
+    "GAP-identical-duplicate-drop-payload-fingerprint: mappings without a non-empty content_hash string are not pinned. test_drop_fails_closed_on_content_drift and fixtures/repair/t04_identical_duplicate_drop/source.jsonl stay not_applicable."
+  ],
+  "module": "sesslint.repair.recipes_conservative",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipe": "identical-duplicate-drop",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "vector_count": 15,
+  "vectors_sha256": "b2e98dbc8e1a74ceb6d7d9f79f56ad8d57405b6ad597600a8b73777df5e62bd1"
+}

@@ -1,0 +1,940 @@
+#!/usr/bin/env python3
+"""Generate sesslint.scan-report.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. This script does not
+import the checkout package and does not execute ``sesslint.scan``.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import math
+import re
+import subprocess
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = ROOT / "rust" / "crates" / "scan" / "src" / "schema" / "sesslint.scan-report.v1.rs"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.scan-report.v1.json"
+TEST_GIT = f"{PYTHON_COMMIT}:tests/test_scan_schema.py"
+GENERATOR = "rust/parity/schemas/sesslint.scan-report.v1/generate"
+SCHEMA_TESTS = (
+    "tests/test_scan_schema.py::test_scan_schema_loads_and_self_consistent",
+    "tests/test_scan_schema.py::test_scan_report_dict_validates",
+    "tests/test_scan_schema.py::test_scan_report_json_round_trip_validates",
+    "tests/test_scan_schema.py::test_scan_report_skipped_reasons_aggregated",
+    "tests/test_scan_schema.py::test_scan_report_skipped_reasons_omitted_when_empty",
+)
+NOTES = {
+    "tests/test_scan_schema.py::test_scan_schema_loads_and_self_consistent": (
+        "get_scan_schema_path and load_scan_schema open the schema file, then "
+        "compare the draft $schema, required subsets, the verdict enum, and the "
+        "code enum with ALL_CODES including its length. validate_scan_report_json "
+        "checks one instance. Facts recorded from the pin are not that loader call."
+    ),
+    "tests/test_scan_schema.py::test_scan_report_dict_validates": (
+        "_sample_report().to_dict() then _validate_scan_dict_strictly, which calls "
+        "assert_schema and also checks the bucket sum, sorted skipped_reasons keys, "
+        "non-empty reason keys, and the reason sum against skipped. Those comparisons "
+        "are outside the pinned schema. One valid object is not that sweep."
+    ),
+    "tests/test_scan_schema.py::test_scan_report_json_round_trip_validates": (
+        "json.loads of ScanReport.to_json then the same multi-assert sweep. "
+        "validate_scan_report_json does not round-trip an emitter document."
+    ),
+    "tests/test_scan_schema.py::test_scan_report_skipped_reasons_aggregated": (
+        "skipped_reason_totals must equal a two-key dict, to_dict must repeat it, "
+        "and the strict sweep must pass. validate_scan_report_json does not "
+        "aggregate skipped reasons."
+    ),
+    "tests/test_scan_schema.py::test_scan_report_skipped_reasons_omitted_when_empty": (
+        "the test asserts ScanReport.to_dict omits skipped_reasons. A valid object "
+        "without that key is not the emitter omission."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+}
+STATED = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+}
+
+
+class Unproven(Exception):
+    """A comparison cannot be proven from the token."""
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'SCAN_REPORT_SCHEMA_JSON: &str = r#"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"#;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def test_function_names() -> list[str]:
+    source = git_show_bytes(TEST_GIT).decode("utf-8")
+    tree = ast.parse(source)
+    names: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            raise SystemExit(f"unexpected test class {node.name}")
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+            names.append(node.name)
+    return names
+
+
+def assert_test_list() -> None:
+    actual = test_function_names()
+    expected = [item.split("::", 1)[1] for item in SCHEMA_TESTS]
+    if actual != expected:
+        raise SystemExit(f"schema test list mismatch: {actual}")
+    for test_id in SCHEMA_TESTS:
+        if test_id not in NOTES:
+            raise SystemExit(f"missing note for {test_id}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right, strict=True))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            raise Unproven()
+        return left_int == right_int
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def check(schema: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path)
+    if failure is not None:
+        return failure
+    return check_array(schema, value, path)
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    return None
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        if "properties" in schema and not isinstance(schema["properties"], dict):
+            return ("unsupported", path, "properties")
+        props = schema["properties"] if isinstance(schema.get("properties"), dict) else {}
+        flag = schema["additionalProperties"]
+        if flag is False:
+            for key in value:
+                if key not in props:
+                    return ("additionalProperties", path, str(key))
+        elif flag is True:
+            pass
+        elif isinstance(flag, dict):
+            for key, child in value.items():
+                if key not in props:
+                    failure = check(flag, child, pointer(path, str(key)))
+                    if failure is not None:
+                        return failure
+        else:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)))
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_array(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}")
+            if failure is not None:
+                return failure
+    return None
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "")
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword == "unsupported":
+        raise SystemExit(f"oracle unsupported at {path} ({detail})")
+    return {"detail": detail, "keyword": keyword, "ok": False, "path": path}
+
+
+def collect_keywords(schema: object, found: set[str]) -> None:
+    if not isinstance(schema, dict):
+        return
+    for key, value in schema.items():
+        if key in ANNOTATIONS:
+            continue
+        found.add(str(key))
+        if key == "properties" and isinstance(value, dict):
+            for sub in value.values():
+                collect_keywords(sub, found)
+        elif key == "additionalProperties" and isinstance(value, dict):
+            collect_keywords(value, found)
+        elif key == "items" and isinstance(value, dict):
+            collect_keywords(value, found)
+        elif key == "items" and isinstance(value, list):
+            for sub in value:
+                collect_keywords(sub, found)
+
+
+def dumps(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False)
+    return text + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "02694d5" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def clone_doc(value: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(value))
+    if not isinstance(cloned, dict):
+        raise SystemExit("document is not an object")
+    return cloned
+
+
+def zero_totals() -> dict[str, Any]:
+    return {
+        "healthy": 0,
+        "invalid": 0,
+        "skipped": 0,
+        "total": 0,
+        "unreadable": 0,
+        "unsupported": 0,
+    }
+
+
+def minimal() -> dict[str, Any]:
+    return {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": zero_totals(),
+    }
+
+
+def file_row(**overrides: object) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "error_count": 0,
+        "path": "a.jsonl",
+        "verdict": "healthy",
+        "warning_count": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+def with_file(row: dict[str, Any]) -> dict[str, Any]:
+    document = minimal()
+    document["files"] = [row]
+    return document
+
+
+def finding_row(**overrides: object) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "code": "SL001",
+        "evidence": {"n": 1},
+        "fingerprint": "f",
+        "remediation": "",
+        "repairability": "manual",
+        "severity": "error",
+        "span": {"byte": 0, "line": 1, "path": "a.jsonl"},
+    }
+    row.update(overrides)
+    return row
+
+
+def with_finding(row: dict[str, Any]) -> dict[str, Any]:
+    host = file_row(error_count=1, verdict="invalid")
+    host["findings"] = [row]
+    return with_file(host)
+
+
+def group_row(**overrides: object) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "code": "SL001",
+        "count": 1,
+        "kind": "k",
+        "sample_fingerprints": ["f"],
+    }
+    row.update(overrides)
+    return row
+
+
+def with_group(row: dict[str, Any]) -> dict[str, Any]:
+    host = file_row(error_count=1, verdict="invalid")
+    host["finding_groups"] = [row]
+    return with_file(host)
+
+
+def raw_replace(document: dict[str, Any], old: str, new: str) -> str:
+    text = json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    if text.count(old) != 1:
+        raise SystemExit(f"token not unique: {old}")
+    return text.replace(old, new, 1)
+
+
+def build_vectors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, instance: object = None, raw: str | None = None) -> None:
+        if raw is None:
+            encoded = json.dumps(instance, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            loaded = json.loads(encoded)
+            vectors.append(
+                {"expected": expect(schema, loaded), "id": vector_id, "instance": loaded}
+            )
+            return
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    props = schema["properties"]
+    totals_schema = props["totals"]
+    file_schema = props["files"]["items"]
+    finding_schema = file_schema["properties"]["findings"]["items"]
+    group_schema = file_schema["properties"]["finding_groups"]["items"]
+    verdicts = file_schema["properties"]["verdict"]["enum"]
+
+    add("minimal_object", minimal())
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_number", 1)
+    add("root_bool", True)
+    for name in schema["required"]:
+        document = minimal()
+        document.pop(name)
+        add(f"missing_{name}", document)
+    const_bad = minimal()
+    const_bad["schema_version"] = "nope"
+    add("schema_version_const", const_bad)
+    root_type = minimal()
+    root_type["root_path"] = 1
+    add("root_path_type", root_type)
+    empty_root = minimal()
+    empty_root["root_path"] = ""
+    add("empty_root_path", empty_root)
+    summary = minimal()
+    summary["summary"] = {}
+    add("root_summary_allowed", summary)
+    uneven = minimal()
+    uneven["totals"]["healthy"] = 2
+    add("totals_sum_not_a_schema_rule", uneven)
+    totals_type = minimal()
+    totals_type["totals"] = []
+    add("totals_type", totals_type)
+    for name in totals_schema["required"]:
+        document = minimal()
+        document["totals"].pop(name)
+        add(f"missing_totals_{name}", document)
+    extra = minimal()
+    extra["totals"]["extra"] = 1
+    add("totals_additional_property", extra)
+    healthy_min = minimal()
+    healthy_min["totals"]["healthy"] = -1
+    add("healthy_minimum", healthy_min)
+    total_min = minimal()
+    total_min["totals"]["total"] = -1
+    add("total_minimum", total_min)
+    healthy_str = minimal()
+    healthy_str["totals"]["healthy"] = "0"
+    add("healthy_type_string", healthy_str)
+    healthy_bool = minimal()
+    healthy_bool["totals"]["healthy"] = True
+    add("healthy_type_bool", healthy_bool)
+    reasons = minimal()
+    reasons["totals"]["skipped_reasons"] = {"size-cap": 1}
+    add("skipped_reasons_one", reasons)
+    reasons_empty = minimal()
+    reasons_empty["totals"]["skipped_reasons"] = {}
+    add("skipped_reasons_empty", reasons_empty)
+    reasons_two = minimal()
+    reasons_two["totals"]["skipped_reasons"] = {"z": 2, "a": 1}
+    add("skipped_reasons_two", reasons_two)
+    reasons_over = minimal()
+    reasons_over["totals"]["skipped_reasons"] = {"a": 3}
+    add("skipped_reasons_sum_not_a_schema_rule", reasons_over)
+    reasons_type = minimal()
+    reasons_type["totals"]["skipped_reasons"] = []
+    add("skipped_reasons_type", reasons_type)
+    reasons_zero = minimal()
+    reasons_zero["totals"]["skipped_reasons"] = {"size-cap": 0}
+    add("skipped_reasons_minimum", reasons_zero)
+    reasons_neg = minimal()
+    reasons_neg["totals"]["skipped_reasons"] = {"size-cap": -1}
+    add("skipped_reasons_negative", reasons_neg)
+    reasons_str = minimal()
+    reasons_str["totals"]["skipped_reasons"] = {"size-cap": "1"}
+    add("skipped_reasons_value_type", reasons_str)
+    reasons_bool = minimal()
+    reasons_bool["totals"]["skipped_reasons"] = {"size-cap": True}
+    add("skipped_reasons_value_bool", reasons_bool)
+    slash = minimal()
+    slash["totals"]["skipped_reasons"] = {"a/b": 0}
+    add("skipped_reasons_slash_key", slash)
+    tilde = minimal()
+    tilde["totals"]["skipped_reasons"] = {"a~b": "x"}
+    add("skipped_reasons_tilde_key", tilde)
+    files_type = minimal()
+    files_type["files"] = {}
+    add("files_type", files_type)
+    add("file_item_type", with_file_value("a.jsonl"))
+    for verdict in verdicts:
+        add(f"verdict_{verdict}", with_file(file_row(verdict=verdict)))
+    skipped = file_row(verdict="skipped", skipped_reason="size-cap")
+    add("skipped_reason_present", with_file(skipped))
+    cached = file_row()
+    cached["cache"] = "hit"
+    add("file_cache_allowed", with_file(cached))
+    add("duplicate_paths_allowed", minimal_files([file_row(), file_row()]))
+    omitted = file_row()
+    add("findings_omitted", with_file(omitted))
+    empty_findings = file_row()
+    empty_findings["findings"] = []
+    add("findings_empty", with_file(empty_findings))
+    for name in file_schema["required"]:
+        row = file_row()
+        row.pop(name)
+        add(f"missing_file_{name}", with_file(row))
+    add("path_min_length", with_file(file_row(path="")))
+    add("path_type", with_file(file_row(path=1)))
+    add("verdict_enum", with_file(file_row(verdict="nope")))
+    add("verdict_type", with_file(file_row(verdict=1)))
+    add("error_count_minimum", with_file(file_row(error_count=-1)))
+    add("warning_count_minimum", with_file(file_row(warning_count=-1)))
+    add("error_count_bool", with_file(file_row(error_count=True)))
+    add("skipped_reason_min_length", with_file(file_row(skipped_reason="")))
+    add("skipped_reason_type", with_file(file_row(skipped_reason=1)))
+    findings_type = file_row()
+    findings_type["findings"] = {}
+    add("findings_type", with_file(findings_type))
+    finding_item = file_row()
+    finding_item["findings"] = ["f"]
+    add("finding_item_type", with_file(finding_item))
+    second = file_row()
+    second.pop("path")
+    add("file_index_one_missing_path", minimal_files([file_row(), second]))
+    add("finding_sl001", with_finding(finding_row()))
+    add("code_sl402", with_finding(finding_row(code="SL402")))
+    add("fingerprint_upper", with_finding(finding_row(fingerprint="F")))
+    add("severity_unconstrained", with_finding(finding_row(severity="nope")))
+    add("repairability_unconstrained", with_finding(finding_row(repairability="nope")))
+    add("evidence_null", with_finding(finding_row(evidence=None)))
+    null_span = {"byte": None, "line": None, "path": "a.jsonl"}
+    add("span_nulls", with_finding(finding_row(span=null_span)))
+    negative_span = {"byte": -1, "line": -1, "path": "a.jsonl"}
+    add("span_negative", with_finding(finding_row(span=negative_span)))
+    noted = finding_row()
+    noted["note"] = "n"
+    add("finding_note_allowed", with_finding(noted))
+    span_note = finding_row()
+    span_note["span"] = {"byte": 0, "line": 1, "note": "n", "path": "a.jsonl"}
+    add("span_note_allowed", with_finding(span_note))
+    for name in finding_schema["required"]:
+        row = finding_row()
+        row.pop(name)
+        add(f"missing_finding_{name}", with_finding(row))
+    add("code_enum", with_finding(finding_row(code="SL999")))
+    add("code_type", with_finding(finding_row(code=1)))
+    add("fingerprint_min_length", with_finding(finding_row(fingerprint="")))
+    add("fingerprint_type", with_finding(finding_row(fingerprint=1)))
+    add("remediation_type", with_finding(finding_row(remediation=1)))
+    add("repairability_type", with_finding(finding_row(repairability=1)))
+    add("severity_type", with_finding(finding_row(severity=1)))
+    add("span_type", with_finding(finding_row(span=[])))
+    add("span_missing_path", with_finding(finding_row(span={"line": 1})))
+    add("span_path_min_length", with_finding(finding_row(span={"path": ""})))
+    add("span_path_type", with_finding(finding_row(span={"path": 1})))
+    add("span_line_type", with_finding(finding_row(span={"line": "1", "path": "a.jsonl"})))
+    add("span_byte_type", with_finding(finding_row(span={"byte": True, "path": "a.jsonl"})))
+    add("evidence_type_string", with_finding(finding_row(evidence="x")))
+    add("evidence_type_array", with_finding(finding_row(evidence=[])))
+    add("finding_group_one", with_group(group_row()))
+    empty_samples = group_row(sample_fingerprints=[])
+    add("empty_sample_fingerprints", with_group(empty_samples))
+    for name in group_schema["required"]:
+        row = group_row()
+        row.pop(name)
+        add(f"missing_group_{name}", with_group(row))
+    extra_group = group_row()
+    extra_group["extra"] = 1
+    add("group_additional_property", with_group(extra_group))
+    add("group_count_minimum", with_group(group_row(count=0)))
+    add("group_count_bool", with_group(group_row(count=True)))
+    add("group_code_type", with_group(group_row(code=1)))
+    add("group_kind_type", with_group(group_row(kind=1)))
+    groups_type = file_row()
+    groups_type["finding_groups"] = {}
+    add("finding_groups_type", with_file(groups_type))
+    group_item = file_row()
+    group_item["finding_groups"] = ["g"]
+    add("group_item_type", with_file(group_item))
+    samples_type = group_row(sample_fingerprints={})
+    add("sample_fingerprints_type", with_group(samples_type))
+    sample_item = group_row(sample_fingerprints=[1])
+    add("sample_fingerprint_type", with_group(sample_item))
+    padded = json.dumps(minimal(), ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    add("raw_padded", raw="\n" + padded + "\n")
+    add("raw_healthy_one_point_zero", raw=raw_replace(minimal(), '"healthy": 0', '"healthy": 1.0'))
+    add("raw_healthy_exponent", raw=raw_replace(minimal(), '"healthy": 0', '"healthy": 1e1'))
+    add("raw_healthy_scaled", raw=raw_replace(minimal(), '"healthy": 0', '"healthy": 10e-1'))
+    add("raw_healthy_negative_zero", raw=raw_replace(minimal(), '"healthy": 0', '"healthy": -0'))
+    add("raw_healthy_fraction", raw=raw_replace(minimal(), '"healthy": 0', '"healthy": 1.5'))
+    add(
+        "raw_skipped_reason_one_point_zero",
+        raw=raw_replace(reasons, '"size-cap": 1', '"size-cap": 1.0'),
+    )
+    add(
+        "raw_skipped_reason_fraction",
+        raw=raw_replace(reasons, '"size-cap": 1', '"size-cap": 1.5'),
+    )
+    rich = with_finding(finding_row())
+    add("raw_line_one_point_zero", raw=raw_replace(rich, '"line": 1', '"line": 1.0'))
+    add("raw_line_fraction", raw=raw_replace(rich, '"line": 1', '"line": 1.5'))
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def with_file_value(value: object) -> dict[str, Any]:
+    document = minimal()
+    document["files"] = [value]
+    return document
+
+
+def minimal_files(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    document = minimal()
+    document["files"] = rows
+    return document
+
+
+def require_expected(
+    vectors: list[dict[str, Any]],
+    vector_id: str,
+    expected: dict[str, Any],
+) -> None:
+    found = next(item for item in vectors if item["id"] == vector_id)
+    if found["expected"] != expected:
+        raise SystemExit(f"{vector_id} oracle drifted: {found['expected']}")
+
+
+def assert_oracle(schema: dict[str, Any], vectors: list[dict[str, Any]]) -> None:
+    if check({"pattern": "^a$"}, "a", "") != ("unsupported", "", "pattern"):
+        raise SystemExit("pattern did not fail closed")
+    if check({"uniqueItems": True}, ["a", "a"], "") != ("unsupported", "", "uniqueItems"):
+        raise SystemExit("uniqueItems did not fail closed")
+    if check({"format": "date"}, "m", "") != ("unsupported", "", "format"):
+        raise SystemExit("format did not fail closed")
+    if expect(schema, minimal()) != {"ok": True}:
+        raise SystemExit("minimal object rejected")
+    require_expected(
+        vectors,
+        "empty_object",
+        {"detail": "files", "keyword": "required", "ok": False, "path": ""},
+    )
+    require_expected(
+        vectors,
+        "healthy_minimum",
+        {"detail": "", "keyword": "minimum", "ok": False, "path": "/totals/healthy"},
+    )
+    require_expected(
+        vectors,
+        "totals_additional_property",
+        {"detail": "extra", "keyword": "additionalProperties", "ok": False, "path": "/totals"},
+    )
+    require_expected(
+        vectors,
+        "skipped_reasons_slash_key",
+        {"detail": "", "keyword": "minimum", "ok": False, "path": "/totals/skipped_reasons/a~1b"},
+    )
+    require_expected(
+        vectors,
+        "skipped_reasons_tilde_key",
+        {"detail": "", "keyword": "type", "ok": False, "path": "/totals/skipped_reasons/a~0b"},
+    )
+    require_expected(
+        vectors,
+        "file_index_one_missing_path",
+        {"detail": "path", "keyword": "required", "ok": False, "path": "/files/1"},
+    )
+    require_expected(vectors, "root_summary_allowed", {"ok": True})
+    require_expected(vectors, "span_negative", {"ok": True})
+    require_expected(vectors, "severity_unconstrained", {"ok": True})
+    require_expected(vectors, "fingerprint_upper", {"ok": True})
+    require_expected(vectors, "totals_sum_not_a_schema_rule", {"ok": True})
+    require_expected(
+        vectors,
+        "code_enum",
+        {"detail": "", "keyword": "enum", "ok": False, "path": "/files/0/findings/0/code"},
+    )
+    require_expected(
+        vectors,
+        "verdict_type",
+        {"detail": "", "keyword": "type", "ok": False, "path": "/files/0/verdict"},
+    )
+    require_expected(
+        vectors,
+        "raw_healthy_fraction",
+        {"detail": "", "keyword": "type", "ok": False, "path": "/totals/healthy"},
+    )
+    require_expected(vectors, "raw_healthy_one_point_zero", {"ok": True})
+    require_expected(vectors, "raw_healthy_negative_zero", {"ok": True})
+    require_expected(
+        vectors,
+        "group_additional_property",
+        {
+            "detail": "extra",
+            "keyword": "additionalProperties",
+            "ok": False,
+            "path": "/files/0/finding_groups/0",
+        },
+    )
+
+
+def facts_from(schema: dict[str, Any]) -> dict[str, Any]:
+    props = schema["properties"]
+    totals = props["totals"]
+    file_item = props["files"]["items"]
+    finding = file_item["properties"]["findings"]["items"]
+    span = finding["properties"]["span"]
+    group = file_item["properties"]["finding_groups"]["items"]
+    reasons = totals["properties"]["skipped_reasons"]
+    found: set[str] = set()
+    collect_keywords(schema, found)
+    if found != STATED:
+        raise SystemExit(f"pinned keyword set drifted: {sorted(found)}")
+    return {
+        "code_enum": finding["properties"]["code"]["enum"],
+        "counter_minimum": totals["properties"]["healthy"]["minimum"],
+        "dialect": schema["$schema"],
+        "evidence_type": finding["properties"]["evidence"]["type"],
+        "file_property_names": list(file_item["properties"]),
+        "file_required": file_item["required"],
+        "finding_property_names": list(finding["properties"]),
+        "finding_required": finding["required"],
+        "fingerprint_min_length": finding["properties"]["fingerprint"]["minLength"],
+        "group_additional_properties": group["additionalProperties"],
+        "group_count_minimum": group["properties"]["count"]["minimum"],
+        "group_property_names": list(group["properties"]),
+        "group_required": group["required"],
+        "id": schema["$id"],
+        "keywords": sorted(found),
+        "line_type": span["properties"]["line"]["type"],
+        "path_min_length": file_item["properties"]["path"]["minLength"],
+        "property_names": list(props),
+        "required": schema["required"],
+        "root_additional_properties": schema.get("additionalProperties"),
+        "schema_version_const": props["schema_version"]["const"],
+        "skipped_reason_min_length": file_item["properties"]["skipped_reason"]["minLength"],
+        "skipped_reasons_minimum": reasons["additionalProperties"]["minimum"],
+        "skipped_reasons_value_type": reasons["additionalProperties"]["type"],
+        "span_property_names": list(span["properties"]),
+        "span_required": span["required"],
+        "totals_additional_properties": totals["additionalProperties"],
+        "totals_property_names": list(totals["properties"]),
+        "totals_required": totals["required"],
+        "verdict_enum": file_item["properties"]["verdict"]["enum"],
+    }
+
+
+def coverage_doc() -> dict[str, Any]:
+    rows = [
+        {
+            "note": NOTES[test_id],
+            "status": "not_applicable",
+            "test": test_id,
+            "vector_id": None,
+        }
+        for test_id in SCHEMA_TESTS
+    ]
+    return {
+        "covered_count": 0,
+        "module": "sesslint.scan",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.scan-report.v1.json",
+    }
+
+
+def main() -> None:
+    assert_test_list()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    test_bytes = git_show_bytes(TEST_GIT)
+    if b"\r" in schema_bytes or b"\r" in test_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    vectors = build_vectors(schema)
+    assert_oracle(schema, vectors)
+    document = {
+        "facts": facts_from(schema),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.scan-report.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "test_py_sha256": hashlib.sha256(test_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.scan-report.v1 schema parity. Constraints and expected "
+            "rejections come from the pinned schema. Documents are hand-built. "
+            "ScanReport.to_dict is not executed. No session text is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            "Schema loading and the ALL_CODES enum lockstep are not this validator.",
+            "Bucket sums, sorted reason keys, and reason sums are outside the pinned schema.",
+            "JSON round trip and skipped_reason_totals are emitter behavior.",
+            "Emitter omission of empty skipped_reasons is not one accepted object.",
+            "Duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+            "A JSON number is an integer only when it is a proven i128.",
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage_doc()))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    payload = vectors_text.encode("utf-8")
+    print(f"vector_count={len(vectors)}")
+    print("covered_count=0")
+    print(f"not_applicable_count={len(SCHEMA_TESTS)}")
+    print(f"vectors_sha256={vectors_sha}")
+    print(f"bytes={len(payload)}")
+    print(f"lf={payload.count(10)}")
+    print(f"cr={payload.count(13)}")
+
+
+if __name__ == "__main__":
+    main()

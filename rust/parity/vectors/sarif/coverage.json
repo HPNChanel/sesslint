@@ -1,0 +1,42 @@
+{
+  "rows": [
+    {
+      "test": "tests/test_sarif.py::test_check_sarif_structure",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_check_sarif_clean_file_empty_results",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_scan_sarif_aggregates_findings",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_json_and_output_format_mutually_exclusive",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_sarif_deterministic",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_sarif_content_free",
+      "status": "not_applicable",
+      "reason": "Test invokes sesslint.cli.main or checks CLI exit/stdout; vectors exercise build_sarif and render_sarif only."
+    },
+    {
+      "test": "tests/test_sarif.py::test_build_sarif_level_mapping",
+      "status": "covered",
+      "vector_ids": [
+        "build_sarif_level_mapping"
+      ],
+      "reason": "Vectors call build_sarif with the pin test inputs and record the pin rule level map."
+    }
+  ]
+}

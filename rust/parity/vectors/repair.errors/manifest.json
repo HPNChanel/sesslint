@@ -1,0 +1,14 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.errors",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "errors_rs_sha256": "79a30b309327cda120e14365d85339bbb6df21e851bb297f13037681a152ce16",
+  "vector_count": 25,
+  "vectors_sha256": "fef8b1873f54caa6f3b8a65ccce439ddcbf746d29ee8f8a1f5a5298b177f91c2",
+  "generator": "rust/parity/vectors/repair.errors/generate",
+  "known_parity_gaps": [
+    "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; parity vectors use repair::errors types only.",
+    "Python isinstance(exc, SesslintError) on the repair hierarchy; Rust uses an explicit is_sesslint_error probe tied to model::errors::SesslintError \u2014 parity is on the boolean, not on converting into SesslintError::Generic.",
+    "VendorProjectionRefused: Python always sets instance code VENDOR_PROJECTION_REFUSED via __init__; there is no code= override vector \u2014 parity not required on a non-existent path."
+  ]
+}

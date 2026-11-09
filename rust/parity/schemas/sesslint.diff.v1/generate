@@ -1,0 +1,933 @@
+#!/usr/bin/env python3
+"""Generate sesslint.diff.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. ``sesslint.*`` imports
+are refused before any pin module would load. This script parses ``diff.py``
+with ``ast`` and does not execute it. A ``ModuleNotFoundError`` or
+``CheckoutImportRefused`` is not a pin result. No network.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib
+import importlib.abc
+import json
+import math
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = ROOT / "rust" / "crates" / "cli" / "src" / "schema" / "sesslint.diff.v1.rs"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.diff.v1.json"
+DIFF_GIT = f"{PYTHON_COMMIT}:src/sesslint/diff.py"
+TEST_GIT = f"{PYTHON_COMMIT}:tests/cli/test_diff.py"
+GENERATOR = "rust/parity/schemas/sesslint.diff.v1/generate"
+SCHEMA_TESTS = (
+    "tests/cli/test_diff.py::test_diff_json_output_schema",
+    "tests/cli/test_diff.py::test_diff_json_validates_against_schema",
+)
+NOTES = {
+    "tests/cli/test_diff.py::test_diff_json_output_schema": (
+        "main compares two session files and asserts exit 1, schema_version, "
+        "identical, counts.added, both event counts, and that every delta category "
+        "is one of the six names. validate judges one document. A synthetic object "
+        "does not run that CLI sweep."
+    ),
+    "tests/cli/test_diff.py::test_diff_json_validates_against_schema": (
+        "diff_sessions and to_dict build one document, then load_diff_schema checks "
+        "the const, every required key, every side required key, and category "
+        "membership for each delta. validate does not load sessions or open a schema "
+        "path. One accepted object is not that multi-assert sweep."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+_MISSING = object()
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "$ref",
+    "$defs",
+}
+ALLOWED_FAILURES = {
+    "additionalProperties",
+    "const",
+    "enum",
+    "minimum",
+    "required",
+    "type",
+}
+CHECK_MAX_DEPTH = 32
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class Unproven(Exception):
+    """A comparison cannot be proven."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def install_refusal() -> None:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+
+
+def assert_checkout_import_refused() -> None:
+    try:
+        importlib.import_module("sesslint.diff")
+    except CheckoutImportRefused:
+        return
+    except ModuleNotFoundError as exc:
+        raise SystemExit("isolated ModuleNotFoundError is not a pin result") from exc
+    raise SystemExit("sesslint import was not refused")
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'DIFF_SCHEMA_JSON: &str = r##"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"##;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def schema_test_names(path: str) -> list[str]:
+    source = git_show_bytes(f"{PYTHON_COMMIT}:{path}").decode("utf-8")
+    tree = ast.parse(source)
+    names: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and _is_schema_test(node.name):
+            names.append(node.name)
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, ast.FunctionDef) and _is_schema_test(child.name):
+                    raise SystemExit(f"class schema test is not flat: {node.name}.{child.name}")
+    return names
+
+
+def _is_schema_test(name: str) -> bool:
+    return name.startswith("test_") and "schema" in name
+
+
+def assert_test_list() -> None:
+    by_file: dict[str, list[str]] = {}
+    for test_id in SCHEMA_TESTS:
+        path, name = test_id.split("::", 1)
+        by_file.setdefault(path, []).append(name)
+    for path, names in by_file.items():
+        actual = schema_test_names(path)
+        if actual != names:
+            raise SystemExit(f"schema test list mismatch for {path}: {actual}")
+
+
+def literal_assign(source: str, name: str) -> object:
+    tree = ast.parse(source)
+    for node in tree.body:
+        value: ast.expr | None = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == name:
+                value = node.value
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    value = node.value
+        if value is None:
+            continue
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError) as exc:
+            raise SystemExit(f"{name} is not a literal") from exc
+    raise SystemExit(f"{name} missing")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right, strict=True))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            raise Unproven()
+        return left_int == right_int
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def unescape_pointer(token: str) -> str | None:
+    out: list[str] = []
+    index = 0
+    while index < len(token):
+        if token[index] != "~":
+            out.append(token[index])
+            index += 1
+            continue
+        if index + 1 >= len(token):
+            return None
+        nxt = token[index + 1]
+        if nxt == "0":
+            out.append("~")
+        elif nxt == "1":
+            out.append("/")
+        else:
+            return None
+        index += 2
+    return "".join(out)
+
+
+def resolve_ref(root: object, reference: object) -> object | None:
+    if not isinstance(reference, str):
+        return None
+    if reference == "#":
+        return root
+    if not reference.startswith("#/"):
+        return None
+    current = root
+    for token in reference[2:].split("/"):
+        key = unescape_pointer(token)
+        if key is None or not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def check(
+    schema: object,
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if depth >= CHECK_MAX_DEPTH:
+        return ("unsupported", path, "depth")
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path, root, depth)
+    if failure is not None:
+        return failure
+    failure = check_array(schema, value, path, root, depth)
+    if failure is not None:
+        return failure
+    if "$ref" in schema:
+        target = resolve_ref(root, schema["$ref"])
+        if target is None:
+            return ("unsupported", path, "$ref")
+        return check(target, value, path, root, depth + 1)
+    return None
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        failure = check_additional(schema, value, path, root, depth)
+        if failure is not None:
+            return failure
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)), root, depth + 1)
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_additional(
+    schema: dict[str, Any],
+    value: dict[str, Any],
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    flag = schema["additionalProperties"]
+    props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        return ("unsupported", path, "properties")
+    if flag is False:
+        for key in value:
+            if key not in props:
+                return ("additionalProperties", path, str(key))
+        return None
+    if flag is True:
+        return None
+    if isinstance(flag, dict):
+        for key, item in value.items():
+            if key not in props:
+                failure = check(flag, item, pointer(path, str(key)), root, depth + 1)
+                if failure is not None:
+                    return failure
+        return None
+    return ("unsupported", path, "additionalProperties")
+
+
+def check_array(
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    root: object,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}", root, depth + 1)
+            if failure is not None:
+                return failure
+    return None
+
+
+def first_unknown(schema: object) -> str | None:
+    if not isinstance(schema, dict):
+        return None
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return str(key)
+    for key, value in schema.items():
+        if key in {"properties", "$defs", "patternProperties", "dependentSchemas"}:
+            if isinstance(value, dict):
+                for sub in value.values():
+                    found = first_unknown(sub)
+                    if found is not None:
+                        return found
+            continue
+        if key in {"items", "additionalProperties", "not", "if", "then", "else", "contains"}:
+            if isinstance(value, dict):
+                found = first_unknown(value)
+                if found is not None:
+                    return found
+    return None
+
+
+def collect_minimums(schema: object, found: list[object]) -> None:
+    if isinstance(schema, dict):
+        if "minimum" in schema:
+            found.append(schema["minimum"])
+        for value in schema.values():
+            collect_minimums(value, found)
+    elif isinstance(schema, list):
+        for item in schema:
+            collect_minimums(item, found)
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "", schema, 0)
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword not in ALLOWED_FAILURES:
+        raise SystemExit(f"oracle unsupported at {path} ({detail}) via {keyword}")
+    return {"detail": detail, "keyword": keyword, "ok": False, "path": path}
+
+
+def dumps(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False)
+    return text + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "02694d5" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def clone_doc(value: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(value))
+    if not isinstance(cloned, dict):
+        raise SystemExit("clone did not return an object")
+    return cloned
+
+
+def base_document(schema: dict[str, Any]) -> dict[str, Any]:
+    categories = category_enum(schema)
+    return {
+        "a": {"event_count": 0, "format": "canonical", "path": "a.jsonl"},
+        "b": {"event_count": 0, "format": "canonical", "path": "b.jsonl"},
+        "counts": {key: 0 for key in categories},
+        "deltas": [],
+        "identical": True,
+        "schema_version": schema["properties"]["schema_version"]["const"],
+        "tool_version": "0",
+    }
+
+
+def category_enum(schema: dict[str, Any]) -> list[str]:
+    return list(schema["properties"]["deltas"]["items"]["properties"]["category"]["enum"])
+
+
+def compact(document: dict[str, Any]) -> str:
+    return json.dumps(document, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
+def rewrite_number(document: dict[str, Any], field: str, token: str) -> str:
+    text = compact(document)
+    needle = f'"{field}":0'
+    if text.count(needle) != 1:
+        raise SystemExit(f"{needle} is not unique")
+    return text.replace(needle, f'"{field}":{token}', 1)
+
+
+def rewrite_tool_version(document: dict[str, Any], token: str) -> str:
+    text = compact(document)
+    needle = '"tool_version":"0"'
+    if text.count(needle) != 1:
+        raise SystemExit("tool_version zero is not unique")
+    return text.replace(needle, f'"tool_version":"{token}"', 1)
+
+
+def with_delta(schema: dict[str, Any], category: str, **extra: object) -> dict[str, Any]:
+    document = clone_doc(base_document(schema))
+    document["identical"] = False
+    document["counts"][category] = 1
+    item: dict[str, Any] = {"category": category}
+    item.update(extra)
+    document["deltas"] = [item]
+    return document
+
+
+def build_vectors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    base = base_document(schema)
+
+    def add(vector_id: str, instance: object = _MISSING, raw: str | None = None) -> None:
+        if raw is None:
+            if instance is _MISSING:
+                raise SystemExit(f"{vector_id} has no instance")
+            vectors.append(
+                {"expected": expect(schema, instance), "id": vector_id, "instance": instance}
+            )
+            return
+        if instance is not _MISSING:
+            raise SystemExit(f"{vector_id} has both raw and instance")
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    add("synthetic_minimal", clone_doc(base))
+    empty_version = clone_doc(base)
+    empty_version["tool_version"] = ""
+    add("tool_version_empty", empty_version)
+    positive = clone_doc(base)
+    positive["a"]["event_count"] = 1
+    positive["b"]["event_count"] = 2
+    add("event_counts_positive", positive)
+    loose_identical = clone_doc(base)
+    loose_identical["identical"] = False
+    add("identical_false_empty_deltas", loose_identical)
+    loose_counts = clone_doc(base)
+    loose_counts["counts"]["added"] = 1
+    add("counts_added_without_deltas", loose_counts)
+    for category in category_enum(schema):
+        add(f"delta_{category.replace('-', '_')}", with_delta(schema, category))
+    add(
+        "delta_full_kind_changed",
+        with_delta(
+            schema,
+            "kind-changed",
+            a_index=0,
+            b_index=0,
+            detail={"kind_a": "message", "kind_b": "checkpoint"},
+            event_id="e1",
+        ),
+    )
+    add("delta_detail_empty", with_delta(schema, "content-changed", detail={}))
+    add("delta_detail_string", with_delta(schema, "content-changed", detail={"k": "v"}))
+    add("delta_detail_slash_key", with_delta(schema, "content-changed", detail={"a/b": "left"}))
+    add("delta_indexes_zero", with_delta(schema, "removed", a_index=0))
+    add("raw_added_one_point_zero", raw=rewrite_number(base, "added", "1.0"))
+    add("raw_added_exponent", raw=rewrite_number(base, "added", "1e1"))
+    add("raw_tool_version_unicode", raw=rewrite_tool_version(base, r"caf\u00e9"))
+
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_bool", True)
+    add("root_number", 1)
+    for name in schema["required"]:
+        document = clone_doc(base)
+        document.pop(name)
+        add(f"missing_{name.replace('-', '_')}", document)
+    extra = clone_doc(base)
+    extra["extra"] = 1
+    add("root_additional_property", extra)
+    const_bad = clone_doc(base)
+    const_bad["schema_version"] = "other"
+    add("schema_version_const", const_bad)
+    const_number = clone_doc(base)
+    const_number["schema_version"] = 1
+    add("schema_version_number", const_number)
+    tool_type = clone_doc(base)
+    tool_type["tool_version"] = 1
+    add("tool_version_type", tool_type)
+    identical_type = clone_doc(base)
+    identical_type["identical"] = 1
+    add("identical_type", identical_type)
+    a_type = clone_doc(base)
+    a_type["a"] = []
+    add("a_type", a_type)
+    b_type = clone_doc(base)
+    b_type["b"] = []
+    add("b_type", b_type)
+    side = schema["$defs"]["side"]
+    for name in side["required"]:
+        document = clone_doc(base)
+        document["a"].pop(name)
+        add(f"a_missing_{name}", document)
+    a_extra = clone_doc(base)
+    a_extra["a"]["z"] = 1
+    add("a_additional_property", a_extra)
+    a_count_string = clone_doc(base)
+    a_count_string["a"]["event_count"] = "0"
+    add("a_event_count_string", a_count_string)
+    a_count_bool = clone_doc(base)
+    a_count_bool["a"]["event_count"] = True
+    add("a_event_count_bool", a_count_bool)
+    a_count_negative = clone_doc(base)
+    a_count_negative["a"]["event_count"] = -1
+    add("a_event_count_negative", a_count_negative)
+    a_count_fraction = clone_doc(base)
+    a_count_fraction["a"]["event_count"] = 1.5
+    add("a_event_count_fraction", a_count_fraction)
+    a_path = clone_doc(base)
+    a_path["a"]["path"] = 1
+    add("a_path_type", a_path)
+    a_format = clone_doc(base)
+    a_format["a"]["format"] = 1
+    add("a_format_type", a_format)
+    a_both = clone_doc(base)
+    a_both["a"]["event_count"] = "bad"
+    a_both["a"]["z"] = 1
+    add("a_extra_and_bad_count", a_both)
+    b_missing = clone_doc(base)
+    b_missing["b"].pop("path")
+    add("b_missing_path", b_missing)
+    counts_type = clone_doc(base)
+    counts_type["counts"] = []
+    add("counts_type", counts_type)
+    for name in schema["properties"]["counts"]["required"]:
+        document = clone_doc(base)
+        document["counts"].pop(name)
+        add(f"counts_missing_{name.replace('-', '_')}", document)
+    counts_extra = clone_doc(base)
+    counts_extra["counts"]["z"] = 1
+    add("counts_additional", counts_extra)
+    counts_string = clone_doc(base)
+    counts_string["counts"]["added"] = "0"
+    add("counts_added_string", counts_string)
+    counts_bool = clone_doc(base)
+    counts_bool["counts"]["added"] = True
+    add("counts_added_bool", counts_bool)
+    counts_negative = clone_doc(base)
+    counts_negative["counts"]["added"] = -1
+    add("counts_added_negative", counts_negative)
+    deltas_type = clone_doc(base)
+    deltas_type["deltas"] = {}
+    add("deltas_type", deltas_type)
+    add("deltas_item_type", with_deltas(base, ["x"]))
+    add("deltas_second_item_type", with_deltas(base, [{"category": "added"}, "x"]))
+    add("delta_missing_category", with_deltas(base, [{"z": 1}]))
+    add("delta_additional", with_deltas(base, [{"category": "added", "z": 1}]))
+    add("delta_category_enum", with_deltas(base, [{"category": "nope"}]))
+    add("delta_category_number", with_deltas(base, [{"category": 1}]))
+    add("event_id_type", with_deltas(base, [{"category": "added", "event_id": 1}]))
+    add("a_index_string", with_deltas(base, [{"category": "removed", "a_index": "0"}]))
+    add("a_index_negative", with_deltas(base, [{"category": "removed", "a_index": -1}]))
+    add("a_index_bool", with_deltas(base, [{"category": "removed", "a_index": True}]))
+    add("b_index_fraction", with_deltas(base, [{"category": "added", "b_index": 0.5}]))
+    add("detail_type", with_deltas(base, [{"category": "content-changed", "detail": []}]))
+    add("detail_number", with_deltas(base, [{"category": "content-changed", "detail": {"k": 1}}]))
+    add(
+        "detail_bool",
+        with_deltas(base, [{"category": "content-changed", "detail": {"k": True}}]),
+    )
+    add("detail_null", with_deltas(base, [{"category": "content-changed", "detail": {"k": None}}]))
+    add(
+        "detail_slash_number",
+        with_deltas(base, [{"category": "content-changed", "detail": {"a/b": 1}}]),
+    )
+    add(
+        "detail_tilde_number",
+        with_deltas(base, [{"category": "content-changed", "detail": {"a~b": 1}}]),
+    )
+    add("raw_added_fraction", raw=rewrite_number(base, "added", "1.5"))
+    add("raw_added_exponent_fraction", raw=rewrite_number(base, "added", "1e-1"))
+
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def with_deltas(document: dict[str, Any], deltas: list[object]) -> dict[str, Any]:
+    cloned = clone_doc(document)
+    cloned["deltas"] = deltas
+    return cloned
+
+
+def assert_schema_shape(schema: dict[str, Any], categories: tuple[str, ...], version: str) -> None:
+    unknown = first_unknown(schema)
+    if unknown is not None:
+        raise SystemExit(f"pinned schema states {unknown}, which this checker does not prove")
+    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+        raise SystemExit("pinned schema dialect changed")
+    if schema.get("additionalProperties") is not False:
+        raise SystemExit("root additionalProperties changed")
+    side_ref = schema["properties"]["a"]["$ref"]
+    if schema["properties"]["b"]["$ref"] != side_ref:
+        raise SystemExit("side refs differ")
+    if resolve_ref(schema, side_ref) is not schema["$defs"]["side"]:
+        raise SystemExit("side ref does not resolve")
+    if version != schema["properties"]["schema_version"]["const"]:
+        raise SystemExit("DIFF_SCHEMA_VERSION disagrees with the pinned const")
+    if list(categories) != category_enum(schema):
+        raise SystemExit("DELTA_CATEGORIES disagrees with the pinned enum")
+    if set(schema["properties"]["counts"]["required"]) != set(categories):
+        raise SystemExit("counts required disagrees with categories")
+    detail = schema["properties"]["deltas"]["items"]["properties"]["detail"]
+    if detail["additionalProperties"] != {"type": "string"}:
+        raise SystemExit("detail additionalProperties changed")
+    minimums: list[object] = []
+    collect_minimums(schema, minimums)
+    if not minimums or any(type(item) is not int or item != 0 for item in minimums):
+        raise SystemExit("a minimum is not the integer 0")
+    if expect(schema, base_document(schema)) != {"ok": True}:
+        raise SystemExit("synthetic minimal document is not valid")
+
+
+def facts_from(
+    schema: dict[str, Any],
+    categories: tuple[str, ...],
+    version: str,
+) -> dict[str, Any]:
+    properties = schema["properties"]
+    side = schema["$defs"]["side"]
+    counts = properties["counts"]
+    items = properties["deltas"]["items"]
+    return {
+        "additional_properties": schema["additionalProperties"],
+        "category_enum": category_enum(schema),
+        "count_minimum": counts["properties"]["added"]["minimum"],
+        "counts_required": counts["required"],
+        "detail_value_type": items["properties"]["detail"]["additionalProperties"]["type"],
+        "id": schema["$id"],
+        "index_minimum": items["properties"]["a_index"]["minimum"],
+        "pin_categories": list(categories),
+        "pin_schema_version": version,
+        "property_names": list(properties.keys()),
+        "required": schema["required"],
+        "schema_version_const": properties["schema_version"]["const"],
+        "side_property_names": list(side["properties"].keys()),
+        "side_ref": properties["a"]["$ref"],
+        "side_required": side["required"],
+    }
+
+
+def coverage_doc() -> dict[str, Any]:
+    rows = [
+        {
+            "note": NOTES[test_id],
+            "status": "not_applicable",
+            "test": test_id,
+            "vector_id": None,
+        }
+        for test_id in SCHEMA_TESTS
+    ]
+    return {
+        "covered_count": 0,
+        "module": "sesslint.diff",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.diff.v1.json",
+    }
+
+
+def main() -> None:
+    install_refusal()
+    assert_checkout_import_refused()
+    assert_test_list()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    diff_bytes = git_show_bytes(DIFF_GIT)
+    test_bytes = git_show_bytes(TEST_GIT)
+    if b"\r" in schema_bytes or b"\r" in diff_bytes or b"\r" in test_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    diff_source = diff_bytes.decode("utf-8")
+    version = literal_assign(diff_source, "DIFF_SCHEMA_VERSION")
+    categories = literal_assign(diff_source, "DELTA_CATEGORIES")
+    if not isinstance(version, str):
+        raise SystemExit("DIFF_SCHEMA_VERSION is not a string")
+    if not isinstance(categories, tuple) or not all(isinstance(item, str) for item in categories):
+        raise SystemExit("DELTA_CATEGORIES is not a tuple of strings")
+    assert_schema_shape(schema, categories, version)
+    vectors = build_vectors(schema)
+    document = {
+        "facts": facts_from(schema, categories, version),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    round_trip = json.loads(vectors_text)
+    for case in round_trip["vectors"]:
+        if "raw" in case:
+            value = json.loads(case["raw"])
+        else:
+            value = case["instance"]
+        again = expect(schema, value)
+        if again != case["expected"]:
+            raise SystemExit(f"round trip changed {case['id']}")
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "diff_py_sha256": hashlib.sha256(diff_bytes).hexdigest(),
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.diff.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "test_diff_py_sha256": hashlib.sha256(test_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.diff.v1 schema parity. Constraints and expected "
+            "rejections come from the pinned schema. Documents are constructed "
+            "objects, not SessionDiff.to_dict output. No session text is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            (
+                "diff.py imports sesslint.canonical, sesslint.adapters, and "
+                "sesslint.report. Those imports are refused, so "
+                "SessionDiff.to_dict is not executed."
+            ),
+            (
+                "tests/cli/test_diff.py::test_diff_json_output_schema calls the "
+                "CLI and checks several fields. validate is one document, not "
+                "that sweep."
+            ),
+            (
+                "tests/cli/test_diff.py::test_diff_json_validates_against_schema "
+                "calls diff_sessions and load_diff_schema. One object is not "
+                "that sweep."
+            ),
+            (
+                "Duplicate JSON object keys are a syntax refusal. Python "
+                "json.loads keeps the last key, so that case is not a vector."
+            ),
+            (
+                "uniqueItems, minLength, maxLength, and pattern are absent from "
+                "the pinned schema. A schema that stated them fails closed as "
+                "unsupported."
+            ),
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage_doc()))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    encoded = vectors_text.encode("utf-8")
+    print(f"vector_count={len(vectors)}")
+    print("covered_count=0")
+    print(f"not_applicable_count={len(SCHEMA_TESTS)}")
+    print(f"vectors_sha256={vectors_sha}")
+    print(f"vectors_bytes={len(encoded)}")
+    newline_count = encoded.count(b"\n")
+    carriage_count = encoded.count(b"\r")
+    print(f"vectors_lf={newline_count}")
+    print(f"vectors_cr={carriage_count}")
+
+
+if __name__ == "__main__":
+    main()

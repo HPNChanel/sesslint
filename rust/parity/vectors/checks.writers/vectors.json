@@ -1,0 +1,1265 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.writers",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_writers_rs_sha256": "b5250a9a6fc864986ddb43bc57a3ee2f7d304041cb8e7d9989c3bd2c1c4eecf5",
+  "python_all": [
+    "check_writers"
+  ],
+  "known_parity_gaps": [
+    "An interleave calls make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE; Python emits one SL010 finding."
+  ],
+  "vectors": [
+    {
+      "id": "empty_input_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "three_events_no_writer_extra_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-nw-0"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-nw-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-nw-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "triple_instance_alpha_synth_lines_123_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-tr-0"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-tr-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-tr-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "instance_alpha_versions_beta_ordered_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-ab-0"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-ab-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "version",
+                            {
+                              "t": "str",
+                              "v": "beta-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-ab-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "version",
+                            {
+                              "t": "str",
+                              "v": "beta-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "instance_alpha_version_beta_instance_gamma_ordered_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-abg-0"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-abg-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "version",
+                            {
+                              "t": "str",
+                              "v": "beta-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-abg-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 3
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "gamma-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "two_same_line_instance_then_version_next_line_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": [
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-d1-0"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-d1-1"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "instance",
+                            {
+                              "t": "str",
+                              "v": "alpha-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "format": "session",
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "e-d1-2"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "correlation_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "branch_id",
+                {
+                  "t": "null"
+                }
+              ],
+              [
+                "source_line",
+                {
+                  "t": "int",
+                  "v": 2
+                }
+              ],
+              [
+                "payload",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "writer",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "version",
+                            {
+                              "t": "str",
+                              "v": "beta-synth"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "check_writers_len": 0
+      }
+    },
+    {
+      "id": "constants_marker_hashes_silent",
+      "construct": {
+        "type": "writer_check_events",
+        "source_path": "synth.jsonl",
+        "events": []
+      },
+      "expected": {
+        "check_writers_len": 0,
+        "marker_hash_i_alpha_synth": "c6aff657",
+        "marker_hash_v_beta_synth": "de823d83"
+      }
+    }
+  ]
+}

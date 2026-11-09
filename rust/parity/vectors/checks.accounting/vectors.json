@@ -1,0 +1,658 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.checks.accounting",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "checks_accounting_rs_sha256": "f5fefc1989cb29e65f9f1059c7c0f9cdfff5c58b4656f180b1bdabb35371e4de",
+  "known_parity_gaps": [
+    "check_accounting uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
+    "Python ints are unbounded and Rust uses checked i64 addition for counter sums.",
+    "A bool is not an int (bool, float, and negative int counter values are ignored per key)."
+  ],
+  "vectors": [
+    {
+      "id": "module_dunder_all",
+      "construct": {
+        "type": "module_dunder_all"
+      },
+      "expected": {
+        "names": [
+          "check_accounting"
+        ]
+      }
+    },
+    {
+      "id": "no_usage_slots_empty_findings",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-u0-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-u1-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "contribution_two_then_cumulative_two_empty",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-c0-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "contribution",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-c1-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "cumulative",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "marker_own_contribution_inside_expected_sum_empty",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-m0-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "contribution",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 5
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-m1-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "contribution",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "cumulative",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 7
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "key_only_in_window_no_mismatch",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-w0-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "contribution",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ],
+                                [
+                                  "w",
+                                  {
+                                    "t": "int",
+                                    "v": 9
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "cumulative",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "bool_float_negative_ignored_nonneg_match_empty",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-mix-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "contribution",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "cumulative",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 2
+                                  }
+                                ],
+                                [
+                                  "a",
+                                  {
+                                    "t": "bool",
+                                    "v": true
+                                  }
+                                ],
+                                [
+                                  "b",
+                                  {
+                                    "t": "float",
+                                    "v": 1.5
+                                  }
+                                ],
+                                [
+                                  "c",
+                                  {
+                                    "t": "int",
+                                    "v": -1
+                                  }
+                                ],
+                                [
+                                  "e",
+                                  {
+                                    "t": "str",
+                                    "v": "x"
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    },
+    {
+      "id": "compaction_next_cumulative_baseline_unchecked_empty",
+      "construct": {
+        "type": "accounting_check",
+        "events": [
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-bnd-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "compaction_boundary"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": []
+                }
+              ]
+            ]
+          },
+          {
+            "entries": [
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-par-post-synthetic"
+                }
+              ],
+              [
+                "seq",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ],
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "extra_fields",
+                {
+                  "t": "map",
+                  "entries": [
+                    [
+                      "usage",
+                      {
+                        "t": "map",
+                        "entries": [
+                          [
+                            "cumulative",
+                            {
+                              "t": "map",
+                              "entries": [
+                                [
+                                  "n",
+                                  {
+                                    "t": "int",
+                                    "v": 99
+                                  }
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "findings_count": 0
+      }
+    }
+  ]
+}

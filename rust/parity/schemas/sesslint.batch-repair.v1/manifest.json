@@ -1,0 +1,11 @@
+{
+  "batch_py_sha256": "07e323ecd79668cfb7eefc94436314d9c37912f625b83b23a5544fd4e14378f8",
+  "generator": "rust/parity/schemas/sesslint.batch-repair.v1/generate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.batch-repair.v1.json",
+  "schema_sha256": "3d63dbe60d016ec92b96958f39730a50b58ea785b6d7e69a1520eb424657308b",
+  "test_py_sha256": "c7f15a1a94e8c0e9e754966838d05235575239b999d93481d2ba2adfd3461873",
+  "vector_count": 70,
+  "vectors_sha256": "590e4ed873c60e547d0ffcd8be936a1898e5bf7f0d5ca81d30d4427809618ca9"
+}

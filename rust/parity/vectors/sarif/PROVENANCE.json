@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic SARIF parity for module constants, build_sarif level map, relative URI percent-encoding, and documented scan-report/minimize gaps.",
+  "generator": "rust/parity/vectors/sarif/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-sarif-scan-report: scan_report_sarif aggregates sesslint.scan.ScanReport file findings in Python. Rust scan_report_sarif stops with sesslint.scan.ScanReport is not available before JSON is built.",
+    "GAP-sarif-minimize-sha1: _artifact_uri calls minimize_path for absolute paths (character index 1 is ':' or leading '/'); Python uses hashlib.sha1 for some spellings. Rust returns hashlib.sha1 is not available and emits no URI.",
+    "GAP-sarif-cli-check: tests/test_sarif.py CLI cases call sesslint.cli.main with --format sarif; parity vectors call build_sarif and render_sarif only."
+  ]
+}

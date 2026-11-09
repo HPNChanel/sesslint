@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Generate sesslint.profiles.builtin module parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROFILE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BUILTIN_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BUILTIN_RS_SHA256 = (
+    "8ac5a563c81e05189577d1177425b26dab911fb1fed4338f7c0abf0c235312fd"
+)
+PROFILE_RS_SHA256 = (
+    "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c"
+)
+MODULE = "sesslint.profiles.builtin"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "checks::profile::get_profile is not wired to this registry. It still returns "
+    "sesslint.profiles.builtin is not available. Python get_profile returns the registered profile.",
+    "REGISTRY.get of a missing name is None. Python dict lookup raises KeyError. "
+    "Do not require the KeyError text.",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_blob_matches_head(pin: str, path: str) -> None:
+    pin_text = git_show_blob(f"{pin}:{path}")
+    head_text = git_show_blob(f"HEAD:{path}")
+    if pin_text != head_text:
+        raise SystemExit(
+            f"{path} differs from pin blob; regenerate or align the worktree."
+        )
+
+
+def verify_builtin_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "builtin.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != BUILTIN_RS_SHA256:
+        raise SystemExit(
+            "checks/src/builtin.rs sha256 mismatch: "
+            f"expected {BUILTIN_RS_SHA256}, got {digest}"
+        )
+
+
+def load_builtin_module() -> types.ModuleType:
+    verify_blob_matches_head(PROFILE_PY_PIN, "src/sesslint/profiles/profile.py")
+    verify_blob_matches_head(BUILTIN_PY_PIN, "src/sesslint/profiles/builtin.py")
+    verify_builtin_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{BUILTIN_PY_PIN}:src/sesslint/profiles/builtin.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_builtin.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_profiles_builtin_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned builtin.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def encode_dict_value(value: Any) -> Any:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {"t": "int", "v": value}
+    if isinstance(value, float):
+        return {"t": "float", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, list):
+        return {"t": "list", "items": [encode_dict_value(item) for item in value]}
+    if isinstance(value, dict):
+        pairs: list[list[Any]] = []
+        for key, val in value.items():
+            pairs.append([key, encode_dict_value(val)])
+        return {"t": "map", "entries": pairs}
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def vectors_from_module(mod: Any) -> list[dict[str, Any]]:
+    expected_all = [
+        "ALL_RULES",
+        "CLAUDE_STRICT_PROFILE",
+        "NEUTRAL_PROFILE",
+        "OPENAI_STRICT_PROFILE",
+        "REGISTRY",
+    ]
+    py_all = list(mod.__all__)
+    if py_all != expected_all:
+        raise SystemExit(f"unexpected __all__: {py_all!r}")
+
+    out: list[dict[str, Any]] = []
+
+    out.append(
+        {
+            "id": "all_rules_order",
+            "construct": {"type": "noop"},
+            "expected": {"codes": list(mod.ALL_RULES)},
+        }
+    )
+
+    out.append(
+        {
+            "id": "neutral_to_dict",
+            "construct": {"type": "profile_to_dict", "profile": "NEUTRAL_PROFILE"},
+            "expected": {"dict": encode_dict_value(mod.NEUTRAL_PROFILE.to_dict())},
+        }
+    )
+
+    out.append(
+        {
+            "id": "claude_strict_to_dict",
+            "construct": {
+                "type": "profile_to_dict",
+                "profile": "CLAUDE_STRICT_PROFILE",
+            },
+            "expected": {"dict": encode_dict_value(mod.CLAUDE_STRICT_PROFILE.to_dict())},
+        }
+    )
+
+    out.append(
+        {
+            "id": "openai_strict_to_dict",
+            "construct": {
+                "type": "profile_to_dict",
+                "profile": "OPENAI_STRICT_PROFILE",
+            },
+            "expected": {"dict": encode_dict_value(mod.OPENAI_STRICT_PROFILE.to_dict())},
+        }
+    )
+
+    out.append(
+        {
+            "id": "registry_order",
+            "construct": {"type": "noop"},
+            "expected": {"keys": list(mod.REGISTRY.keys())},
+        }
+    )
+
+    out.append(
+        {
+            "id": "all_names",
+            "construct": {"type": "noop"},
+            "expected": {"names": py_all},
+        }
+    )
+
+    if len(out) != 6:
+        raise SystemExit(f"expected 6 vectors, got {len(out)}")
+    return out
+
+
+def main() -> int:
+    mod = load_builtin_module()
+    out_dir = Path(__file__).resolve().parent
+
+    vectors = vectors_from_module(mod)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_builtin_rs_sha256": BUILTIN_RS_SHA256,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "python_all": list(mod.__all__),
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_builtin_rs_sha256": BUILTIN_RS_SHA256,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/profiles.builtin/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.profiles.builtin parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/profiles.builtin/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.check configure declarations from pinned src/sesslint/cli/check.py (no checkout import). Run vectors omitted for _run import-stop seams.",
+  "generator": "rust/parity/vectors/cli.check/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-cli-check-run-stops: agent and a single directory Display `sesslint.api.check_dir is not available`; lone stdin Display `sesslint.api.check_bytes is not available` before any read; several paths Display `sesslint.report.minimize_path is not available`; an existing file Display `sesslint.api.check_file is not available`. Run vectors omitted; these import stops are gaps, not covered rows."
+  ]
+}

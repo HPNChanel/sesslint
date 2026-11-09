@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.adapters.synthetic parity (reserved namespace IDs and collision guard only).",
+  "generator": "rust/parity/vectors/adapters.synthetic/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "check_event: sesslint.canonical.SessionEvent is not ported; Rust check_event returns CheckEventError without registering an event \u2014 no vector.",
+    "unicode_nd_digits: Python str.isdigit and default re \\d accept Unicode decimal digits (e.g. U+0661); Rust port accepts ASCII 0-9 only \u2014 documented gap, not a required vector.",
+    "lone_surrogate_source_hint: Python encode(errors='replace') can hash a lone surrogate; Rust str cannot hold one \u2014 no vector."
+  ]
+}

@@ -1,0 +1,3724 @@
+{
+  "facts": {
+    "code_enum": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL008",
+      "SL009",
+      "SL010",
+      "SL011",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL204",
+      "SL205",
+      "SL206",
+      "SL207",
+      "SL208",
+      "SL301",
+      "SL302",
+      "SL303",
+      "SL304",
+      "SL305",
+      "SL306",
+      "SL401",
+      "SL402"
+    ],
+    "counter_minimum": 0,
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "evidence_type": [
+      "object",
+      "null"
+    ],
+    "file_property_names": [
+      "error_count",
+      "path",
+      "verdict",
+      "warning_count",
+      "skipped_reason",
+      "findings",
+      "finding_groups"
+    ],
+    "file_required": [
+      "error_count",
+      "path",
+      "verdict",
+      "warning_count"
+    ],
+    "finding_property_names": [
+      "code",
+      "fingerprint",
+      "remediation",
+      "repairability",
+      "severity",
+      "span",
+      "evidence"
+    ],
+    "finding_required": [
+      "code",
+      "fingerprint",
+      "remediation",
+      "repairability",
+      "severity",
+      "span"
+    ],
+    "fingerprint_min_length": 1,
+    "group_additional_properties": false,
+    "group_count_minimum": 1,
+    "group_property_names": [
+      "code",
+      "kind",
+      "count",
+      "sample_fingerprints"
+    ],
+    "group_required": [
+      "code",
+      "kind",
+      "count",
+      "sample_fingerprints"
+    ],
+    "id": "https://sesslint.dev/schemas/sesslint.scan-report/v1",
+    "keywords": [
+      "additionalProperties",
+      "const",
+      "enum",
+      "items",
+      "minLength",
+      "minimum",
+      "properties",
+      "required",
+      "type"
+    ],
+    "line_type": [
+      "integer",
+      "null"
+    ],
+    "path_min_length": 1,
+    "property_names": [
+      "schema_version",
+      "root_path",
+      "totals",
+      "files"
+    ],
+    "required": [
+      "files",
+      "root_path",
+      "schema_version",
+      "totals"
+    ],
+    "root_additional_properties": null,
+    "schema_version_const": "sesslint.scan-report/v1",
+    "skipped_reason_min_length": 1,
+    "skipped_reasons_minimum": 1,
+    "skipped_reasons_value_type": "integer",
+    "span_property_names": [
+      "path",
+      "line",
+      "byte"
+    ],
+    "span_required": [
+      "path"
+    ],
+    "totals_additional_properties": false,
+    "totals_property_names": [
+      "healthy",
+      "invalid",
+      "skipped",
+      "total",
+      "unreadable",
+      "unsupported",
+      "skipped_reasons"
+    ],
+    "totals_required": [
+      "healthy",
+      "invalid",
+      "skipped",
+      "total",
+      "unreadable",
+      "unsupported"
+    ],
+    "verdict_enum": [
+      "healthy",
+      "invalid",
+      "unsupported",
+      "unreadable",
+      "skipped"
+    ]
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "minimal_object",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "files",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "files",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_files",
+      "instance": {
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "root_path",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_root_path",
+      "instance": {
+        "files": [],
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "totals",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_totals",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "nope",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/root_path"
+      },
+      "id": "root_path_type",
+      "instance": {
+        "files": [],
+        "root_path": 1,
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "empty_root_path",
+      "instance": {
+        "files": [],
+        "root_path": "",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "root_summary_allowed",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "summary": {},
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "totals_sum_not_a_schema_rule",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 2,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "totals_type",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": []
+      }
+    },
+    {
+      "expected": {
+        "detail": "healthy",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_healthy",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "invalid",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_invalid",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "skipped",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_skipped",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_total",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "unreadable",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_unreadable",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "unsupported",
+        "keyword": "required",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "missing_totals_unsupported",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/totals"
+      },
+      "id": "totals_additional_property",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "extra": 1,
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/totals/healthy"
+      },
+      "id": "healthy_minimum",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": -1,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/totals/total"
+      },
+      "id": "total_minimum",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": -1,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/healthy"
+      },
+      "id": "healthy_type_string",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": "0",
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/healthy"
+      },
+      "id": "healthy_type_bool",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": true,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "skipped_reasons_one",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "size-cap": 1
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "skipped_reasons_empty",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {},
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "skipped_reasons_two",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "a": 1,
+            "z": 2
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "skipped_reasons_sum_not_a_schema_rule",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "a": 3
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/skipped_reasons"
+      },
+      "id": "skipped_reasons_type",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": [],
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/totals/skipped_reasons/size-cap"
+      },
+      "id": "skipped_reasons_minimum",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "size-cap": 0
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/totals/skipped_reasons/size-cap"
+      },
+      "id": "skipped_reasons_negative",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "size-cap": -1
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/skipped_reasons/size-cap"
+      },
+      "id": "skipped_reasons_value_type",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "size-cap": "1"
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/skipped_reasons/size-cap"
+      },
+      "id": "skipped_reasons_value_bool",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "size-cap": true
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/totals/skipped_reasons/a~1b"
+      },
+      "id": "skipped_reasons_slash_key",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "a/b": 0
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/skipped_reasons/a~0b"
+      },
+      "id": "skipped_reasons_tilde_key",
+      "instance": {
+        "files": [],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "skipped_reasons": {
+            "a~b": "x"
+          },
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files"
+      },
+      "id": "files_type",
+      "instance": {
+        "files": {},
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0"
+      },
+      "id": "file_item_type",
+      "instance": {
+        "files": [
+          "a.jsonl"
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "verdict_healthy",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "verdict_invalid",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "verdict_unsupported",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "unsupported",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "verdict_unreadable",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "unreadable",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "verdict_skipped",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "skipped",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "skipped_reason_present",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "skipped_reason": "size-cap",
+            "verdict": "skipped",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "file_cache_allowed",
+      "instance": {
+        "files": [
+          {
+            "cache": "hit",
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "duplicate_paths_allowed",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          },
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "findings_omitted",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "findings_empty",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "findings": [],
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "error_count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0"
+      },
+      "id": "missing_file_error_count",
+      "instance": {
+        "files": [
+          {
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0"
+      },
+      "id": "missing_file_path",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "verdict",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0"
+      },
+      "id": "missing_file_verdict",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "warning_count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0"
+      },
+      "id": "missing_file_warning_count",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy"
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/files/0/path"
+      },
+      "id": "path_min_length",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/path"
+      },
+      "id": "path_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": 1,
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/files/0/verdict"
+      },
+      "id": "verdict_enum",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "nope",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/verdict"
+      },
+      "id": "verdict_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": 1,
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/0/error_count"
+      },
+      "id": "error_count_minimum",
+      "instance": {
+        "files": [
+          {
+            "error_count": -1,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/0/warning_count"
+      },
+      "id": "warning_count_minimum",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": -1
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/error_count"
+      },
+      "id": "error_count_bool",
+      "instance": {
+        "files": [
+          {
+            "error_count": true,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/files/0/skipped_reason"
+      },
+      "id": "skipped_reason_min_length",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "skipped_reason": "",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/skipped_reason"
+      },
+      "id": "skipped_reason_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "skipped_reason": 1,
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings"
+      },
+      "id": "findings_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "findings": {},
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "finding_item_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "findings": [
+              "f"
+            ],
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/1"
+      },
+      "id": "file_index_one_missing_path",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          },
+          {
+            "error_count": 0,
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "finding_sl001",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "code_sl402",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL402",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "fingerprint_upper",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "F",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "severity_unconstrained",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "nope",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "repairability_unconstrained",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "nope",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "evidence_null",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": null,
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "span_nulls",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": null,
+                  "line": null,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "span_negative",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": -1,
+                  "line": -1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "finding_note_allowed",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "note": "n",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "span_note_allowed",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "note": "n",
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "code",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_code",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_fingerprint",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "remediation",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_remediation",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "repairability",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_repairability",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "severity",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_severity",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "span",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0"
+      },
+      "id": "missing_finding_span",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error"
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/files/0/findings/0/code"
+      },
+      "id": "code_enum",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL999",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/code"
+      },
+      "id": "code_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": 1,
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/files/0/findings/0/fingerprint"
+      },
+      "id": "fingerprint_min_length",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/fingerprint"
+      },
+      "id": "fingerprint_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": 1,
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/remediation"
+      },
+      "id": "remediation_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": 1,
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/repairability"
+      },
+      "id": "repairability_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": 1,
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/severity"
+      },
+      "id": "severity_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": 1,
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/span"
+      },
+      "id": "span_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": []
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/findings/0/span"
+      },
+      "id": "span_missing_path",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "line": 1
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/files/0/findings/0/span/path"
+      },
+      "id": "span_path_min_length",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "path": ""
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/span/path"
+      },
+      "id": "span_path_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "path": 1
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/span/line"
+      },
+      "id": "span_line_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "line": "1",
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/span/byte"
+      },
+      "id": "span_byte_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": {
+                  "n": 1
+                },
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": true,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/evidence"
+      },
+      "id": "evidence_type_string",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": "x",
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/evidence"
+      },
+      "id": "evidence_type_array",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "findings": [
+              {
+                "code": "SL001",
+                "evidence": [],
+                "fingerprint": "f",
+                "remediation": "",
+                "repairability": "manual",
+                "severity": "error",
+                "span": {
+                  "byte": 0,
+                  "line": 1,
+                  "path": "a.jsonl"
+                }
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "finding_group_one",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "empty_sample_fingerprints",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": []
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "code",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "missing_group_code",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "kind",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "missing_group_kind",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "missing_group_count",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "sample_fingerprints",
+        "keyword": "required",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "missing_group_sample_fingerprints",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": "k"
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "group_additional_property",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "extra": 1,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/count"
+      },
+      "id": "group_count_minimum",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 0,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/count"
+      },
+      "id": "group_count_bool",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": true,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/code"
+      },
+      "id": "group_code_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": 1,
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/kind"
+      },
+      "id": "group_kind_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": 1,
+                "sample_fingerprints": [
+                  "f"
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups"
+      },
+      "id": "finding_groups_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "finding_groups": {},
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0"
+      },
+      "id": "group_item_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 0,
+            "finding_groups": [
+              "g"
+            ],
+            "path": "a.jsonl",
+            "verdict": "healthy",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/sample_fingerprints"
+      },
+      "id": "sample_fingerprints_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": {}
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/finding_groups/0/sample_fingerprints/0"
+      },
+      "id": "sample_fingerprint_type",
+      "instance": {
+        "files": [
+          {
+            "error_count": 1,
+            "finding_groups": [
+              {
+                "code": "SL001",
+                "count": 1,
+                "kind": "k",
+                "sample_fingerprints": [
+                  1
+                ]
+              }
+            ],
+            "path": "a.jsonl",
+            "verdict": "invalid",
+            "warning_count": 0
+          }
+        ],
+        "root_path": "r",
+        "schema_version": "sesslint.scan-report/v1",
+        "totals": {
+          "healthy": 0,
+          "invalid": 0,
+          "skipped": 0,
+          "total": 0,
+          "unreadable": 0,
+          "unsupported": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_padded",
+      "raw": "\n{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 0, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}\n"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_healthy_one_point_zero",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 1.0, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_healthy_exponent",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 1e1, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_healthy_scaled",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 10e-1, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_healthy_negative_zero",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": -0, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/healthy"
+      },
+      "id": "raw_healthy_fraction",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 1.5, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_skipped_reason_one_point_zero",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 0, \"invalid\": 0, \"skipped\": 0, \"skipped_reasons\": {\"size-cap\": 1.0}, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/totals/skipped_reasons/size-cap"
+      },
+      "id": "raw_skipped_reason_fraction",
+      "raw": "{\"files\": [], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 0, \"invalid\": 0, \"skipped\": 0, \"skipped_reasons\": {\"size-cap\": 1.5}, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_line_one_point_zero",
+      "raw": "{\"files\": [{\"error_count\": 1, \"findings\": [{\"code\": \"SL001\", \"evidence\": {\"n\": 1}, \"fingerprint\": \"f\", \"remediation\": \"\", \"repairability\": \"manual\", \"severity\": \"error\", \"span\": {\"byte\": 0, \"line\": 1.0, \"path\": \"a.jsonl\"}}], \"path\": \"a.jsonl\", \"verdict\": \"invalid\", \"warning_count\": 0}], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 0, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/files/0/findings/0/span/line"
+      },
+      "id": "raw_line_fraction",
+      "raw": "{\"files\": [{\"error_count\": 1, \"findings\": [{\"code\": \"SL001\", \"evidence\": {\"n\": 1}, \"fingerprint\": \"f\", \"remediation\": \"\", \"repairability\": \"manual\", \"severity\": \"error\", \"span\": {\"byte\": 0, \"line\": 1.5, \"path\": \"a.jsonl\"}}], \"path\": \"a.jsonl\", \"verdict\": \"invalid\", \"warning_count\": 0}], \"root_path\": \"r\", \"schema_version\": \"sesslint.scan-report/v1\", \"totals\": {\"healthy\": 0, \"invalid\": 0, \"skipped\": 0, \"total\": 0, \"unreadable\": 0, \"unsupported\": 0}}"
+    }
+  ]
+}

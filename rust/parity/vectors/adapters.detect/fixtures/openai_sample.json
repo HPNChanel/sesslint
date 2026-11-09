@@ -1,0 +1,12 @@
+{
+  "agent_sdk_version": "0.1.0",
+  "items": [
+    {
+      "id": "msg_01",
+      "type": "message",
+      "role": "user",
+      "content": "Please analyze the logs",
+      "timestamp": "2026-09-05T12:00:00Z"
+    }
+  ]
+}

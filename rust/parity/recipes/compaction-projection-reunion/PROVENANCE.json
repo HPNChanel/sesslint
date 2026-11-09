@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic compaction-projection-reunion parity. Refusal messages come from the pinned blob. Fixture output, fingerprints, and planner results stay uncovered. No fixture diff is stored.",
+  "generator": "rust/parity/recipes/compaction-projection-reunion/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-compaction-projection-reunion-affected-region: affected_region_compaction_projection_reunion in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
+    "GAP-compaction-projection-reunion-planner: planner.plan and api.repair are not executed. A missing canonical codec call is not a successful plan. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-compaction-projection-reunion-bool-boundary: a bool boundary_index uses Python equality against an int endpoint in the pin. The published function does not treat that bool as the endpoint int. This set does not store the pin refusal and does not claim that message."
+  ]
+}

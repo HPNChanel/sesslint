@@ -1,0 +1,55 @@
+{
+  "rows": [
+    {
+      "test": "tests/report/test_html.py::test_html_document_shape",
+      "status": "covered",
+      "vector_ids": [
+        "html_document_shape"
+      ]
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_is_offline_and_scriptless",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_deterministic_bytes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_verdict_banners",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_escapes_identifier_fields",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_no_absolute_paths",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_findings_table_fields",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_html_findings_truncation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_scan_html_sections",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_scan_html_summary_and_truncation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_cli_check_html",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/report/test_html.py::test_cli_scan_html",
+      "status": "not_applicable"
+    }
+  ]
+}

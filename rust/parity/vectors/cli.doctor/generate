@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli.doctor parity vectors from pinned blobs (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from argparse import Namespace
+from contextlib import contextmanager
+from pathlib import Path as FsPath
+from typing import Any, Iterator
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DOCTOR_PY_SHA256 = (
+    "e550b2a8094c4f0d212cf33ea9e0abbc88f77ba9ea4db1c74c663aecae7c7c8d"
+)
+DOCTOR_RS_SHA256 = (
+    "5bba8088a44ff8728de3c92e8ca9d6f39be80584abac5d2c1d054dfc5d5e36a7"
+)
+MODULE = "sesslint.cli.doctor"
+
+GAP_CONFIG_ERROR = "GAP-cli-doctor-config-error"
+RUST_SEAM = "sesslint.config.ConfigError is not available"
+IMPORT_NAME = "sesslint.config.ConfigError"
+
+KNOWN_PARITY_GAPS = [
+    (
+        f"{GAP_CONFIG_ERROR}: Python run() starts with "
+        "`from sesslint.config import ConfigError` before any path check and "
+        "before `from sesslint.doctor import doctor_report`; Rust run() returns "
+        f"Display `{RUST_SEAM}` at that import (no doctor_report, no getattr, "
+        "no emit_text, no exit 0/2)."
+    ),
+]
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|sesslint-wt-|FOR_WORK)"
+)
+
+
+def repo_root() -> FsPath:
+    return FsPath(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    with tempfile_named_blob(blob) as tmp_path:
+        spec = importlib.util.spec_from_file_location(fullname, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {fullname}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[fullname] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+
+@contextmanager
+def tempfile_named_blob(blob: bytes) -> Iterator[str]:
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        yield tmp_path
+    finally:
+        FsPath(tmp_path).unlink(missing_ok=True)
+
+
+class _Ctx:
+    def __init__(self) -> None:
+        self.errors: list[str] = []
+
+    def error(self, message: str) -> None:
+        self.errors.append(message)
+
+
+def install_package_tree() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    adapters = types.ModuleType("sesslint.adapters")
+    adapters.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.adapters"] = adapters
+    pkg.adapters = adapters
+
+    detect = types.ModuleType("sesslint.adapters.detect")
+    detect.VALID_FORMAT_OPTIONS = frozenset(
+        {
+            "auto",
+            "canonical",
+            "claude-code-jsonl",
+            "codex-rollout",
+            "openai-agents",
+        }
+    )
+    sys.modules["sesslint.adapters.detect"] = detect
+    adapters.detect = detect
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    context = types.ModuleType("sesslint.cli._context")
+    context.CliContext = _Ctx
+    sys.modules["sesslint.cli._context"] = context
+    cli_pkg._context = context
+
+    common = types.ModuleType("sesslint.cli._common")
+
+    def _output_format(args: Namespace) -> str:
+        if getattr(args, "json", False):
+            return "json"
+        fmt = getattr(args, "output_format", None)
+        return fmt if fmt is not None else "human"
+
+    common._output_format = _output_format
+    sys.modules["sesslint.cli._common"] = common
+    cli_pkg._common = common
+
+    output_mod = types.ModuleType("sesslint.cli._output")
+
+    def emit_text(
+        _ctx: _Ctx,
+        _args: Namespace,
+        text: str,
+        *,
+        inputs: tuple[Any, ...] = (),
+        summary: str = "",
+    ) -> None:
+        _ = (inputs, summary)
+        sys.stdout.write(text)
+
+    output_mod.emit_text = emit_text
+    sys.modules["sesslint.cli._output"] = output_mod
+    cli_pkg._output = output_mod
+
+    options_blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_options.py")
+    options = exec_blob(options_blob, "sesslint.cli._options")
+    sys.modules["sesslint.cli._options"] = options
+    cli_pkg._options = options
+
+
+def load_doctor_module() -> types.ModuleType:
+    install_package_tree()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/doctor.py")
+    verify_digest(blob, DOCTOR_PY_SHA256, "cli/doctor.py")
+    doctor = exec_blob(blob, "sesslint.cli.doctor")
+    sys.modules["sesslint.cli"].doctor = doctor
+    return doctor
+
+
+def encode_action(action: argparse.Action) -> str:
+    if action.const is True and action.nargs == 0:
+        return "store_true"
+    return "store"
+
+
+def is_suppress(value: Any) -> bool:
+    return value is argparse.SUPPRESS
+
+
+def encode_default_keyword(action: argparse.Action) -> Any:
+    if not action.option_strings:
+        return "absent"
+    if is_suppress(action.default):
+        return {"present": "suppress"}
+    if action.const is True and action.default is False:
+        return {"present": "false"}
+    if action.default is None:
+        return {"present": "none"}
+    if isinstance(action.default, bool):
+        return {"present": "false" if not action.default else "true"}
+    if isinstance(action.default, str):
+        return {"present": {"text": action.default}}
+    raise SystemExit(f"unexpected default for {action.dest}: {action.default!r}")
+
+
+def encode_effective_default(action: argparse.Action) -> Any:
+    if not action.option_strings:
+        return "none"
+    if is_suppress(action.default):
+        return "suppress"
+    if action.const is True and action.default is False:
+        return "false"
+    if action.default is None:
+        return "none"
+    if isinstance(action.default, bool):
+        return "false" if not action.default else "true"
+    if isinstance(action.default, str):
+        return {"text": action.default}
+    raise SystemExit(f"unexpected effective for {action.dest}: {action.default!r}")
+
+
+def nargs_token(action: argparse.Action) -> Any:
+    if action.nargs is None:
+        return None
+    if action.nargs == 0:
+        return "0"
+    return str(action.nargs)
+
+
+def type_name(action: argparse.Action) -> str | None:
+    if action.type is None:
+        return None
+    if hasattr(action.type, "__name__"):
+        name = action.type.__name__
+        if name == "Path":
+            return "Path"
+        return name
+    return None
+
+
+def encode_argument(action: argparse.Action) -> dict[str, Any]:
+    positional = not action.option_strings
+    choices = list(action.choices) if action.choices is not None else None
+    required = bool(action.required)
+    return {
+        "positional": positional,
+        "option_strings": list(action.option_strings),
+        "dest": action.dest,
+        "action": encode_action(action),
+        "nargs": nargs_token(action),
+        "type_name": type_name(action),
+        "choices": choices,
+        "metavar": action.metavar,
+        "help": action.help,
+        "default_keyword": encode_default_keyword(action),
+        "effective_default": encode_effective_default(action),
+        "required": required,
+    }
+
+
+def find_exclusive_groups(
+    parser: argparse.ArgumentParser,
+) -> list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]]:
+    out: list[tuple[argparse._MutuallyExclusiveGroup, list[argparse.Action]]] = []
+    for group in parser._mutually_exclusive_groups:
+        members = [action for action in group._group_actions if action.dest not in {"help"}]
+        if members:
+            out.append((group, members))
+    return out
+
+
+def configure_expected(doctor: types.ModuleType) -> dict[str, Any]:
+    root = argparse.ArgumentParser(prog="sesslint")
+    subparsers = root.add_subparsers()
+    sub = doctor.configure(subparsers)
+
+    subcommand_help = None
+    for action in root._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice_action in action._choices_actions:
+                if choice_action.dest == doctor.NAME:
+                    subcommand_help = choice_action.help
+                    break
+    if subcommand_help is None:
+        raise SystemExit("failed to introspect subcommand help from configure()")
+
+    arguments: list[dict[str, Any]] = []
+    for action in sub._actions:
+        if action.dest in {"help"}:
+            continue
+        arguments.append(encode_argument(action))
+
+    groups: list[dict[str, Any]] = []
+    for group, members in find_exclusive_groups(sub):
+        groups.append(
+            {
+                "required_keyword": group.required if group.required else None,
+                "required": bool(group.required),
+                "member_dests": [member.dest for member in members],
+            }
+        )
+
+    description = sub.description or ""
+    if description.count("\u2014") != 1:
+        raise SystemExit("description must contain exactly one U+2014")
+
+    return {
+        "name": doctor.NAME,
+        "help": subcommand_help or "",
+        "description": description,
+        "arguments": arguments,
+        "groups": groups,
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    # run() needs sesslint.config and sesslint.doctor; isolated exec artifacts are omitted.
+    return [
+        {"id": "configure_subcommand_declarations", "construct": {"type": "configure"}},
+    ]
+
+
+def build_expected(doctor: types.ModuleType, row: dict[str, Any]) -> dict[str, Any]:
+    construct = row["construct"]
+    kind = construct["type"]
+    if kind == "configure":
+        return configure_expected(doctor)
+    if kind == "run":
+        raise SystemExit(
+            f"run vectors omitted for {row['id']} (ConfigError import seam: {IMPORT_NAME})"
+        )
+    raise SystemExit(f"unknown construct for {row['id']}")
+
+
+def assert_payload_clean(payload: bytes) -> None:
+    if _BANNED_PAT.search(payload):
+        raise SystemExit("vectors.json contains banned marker")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must be LF-only")
+
+
+def main() -> int:
+    doctor = load_doctor_module()
+    out_dir = FsPath(__file__).resolve().parent
+    rs_path = repo_root() / "rust" / "crates" / "cli" / "src" / "doctor.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != DOCTOR_RS_SHA256:
+        raise SystemExit(
+            f"doctor.rs sha256 mismatch: expected {DOCTOR_RS_SHA256}, got {rs_digest}"
+        )
+
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        expected = build_expected(doctor, row)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": row["construct"],
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "doctor_py_sha256": DOCTOR_PY_SHA256,
+        "doctor_rs_sha256": DOCTOR_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_clean(payload_bytes)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.cli.doctor configure declarations from pinned "
+            "src/sesslint/cli/doctor.py (no checkout import). Run vectors omitted "
+            "where sesslint.config is unavailable in isolated exec."
+        ),
+        "generator": "rust/parity/vectors/cli.doctor/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "rows": [],
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

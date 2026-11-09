@@ -1,0 +1,875 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.check",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "check_py_sha256": "7642d26eb328d49299edaa922a92d32906e22f769b18029e081a74f4171790f8",
+  "check_rs_sha256": "ddee54a32199f15941d0545525476a048fdd30955a532454659b649f55d73602",
+  "known_parity_gaps": [
+    "GAP-cli-check-run-stops: agent and a single directory Display `sesslint.api.check_dir is not available`; lone stdin Display `sesslint.api.check_bytes is not available` before any read; several paths Display `sesslint.report.minimize_path is not available`; an existing file Display `sesslint.api.check_file is not available`. Run vectors omitted; these import stops are gaps, not covered rows."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "check",
+        "aliases": [
+          "scan"
+        ],
+        "help": "[read-only] Check session artifacts (files, directories, or agent session roots).",
+        "description": "[read-only] Check session artifacts for structural defects, causal breaks, and schema violations. Positional targets may be files, directories (scanned recursively), or '-' to read one session file from stdin. 'scan' is an alias for this command.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": "*",
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path(s) to session file(s) (.json or .jsonl) or directories. Multiple paths produce one aggregated scan report. '-' reads one session artifact from stdin (max 100 MB). Omit PATH only when using --agent.",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--profile"
+            ],
+            "dest": "profile",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Replay validation profile (default: neutral)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--agent"
+            ],
+            "dest": "agent",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "claude",
+              "codex",
+              "all"
+            ],
+            "metavar": null,
+            "help": "Scan well-known session roots for an agent runtime ($CLAUDE_CONFIG_DIR/projects or ~/.claude/projects; $CODEX_HOME/sessions or ~/.codex/sessions). Explicit PATH overrides.",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--latest"
+            ],
+            "dest": "latest",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Check only the newest primary ledger for --agent claude|codex",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--include-archived"
+            ],
+            "dest": "include_archived",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Include Codex archived_sessions during agent discovery",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--follow-symlinks"
+            ],
+            "dest": "follow_symlinks",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "[lossy: follows links] Follow directory symlinks during recursive scanning",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--max-files"
+            ],
+            "dest": "max_files",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_positive_int",
+            "choices": null,
+            "metavar": null,
+            "help": "Maximum number of files to inspect during recursive scan (default: 10000)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--max-bytes"
+            ],
+            "dest": "max_bytes",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_positive_int",
+            "choices": null,
+            "metavar": null,
+            "help": "Maximum cumulative bytes to read during recursive scan (default: 1GB)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Output check report as a single canonical JSON document to stdout",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "human",
+              "json",
+              "sarif",
+              "html"
+            ],
+            "metavar": null,
+            "help": "Output format (default: human; --json is equivalent to 'json')",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--progress-json"
+            ],
+            "dest": "progress_json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Emit NDJSON progress events to stderr (stdout stays the result channel)",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--no-progress"
+            ],
+            "dest": "no_progress",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Disable interactive progress output on stderr",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--top"
+            ],
+            "dest": "top",
+            "action": "store",
+            "nargs": null,
+            "type_name": "int",
+            "choices": null,
+            "metavar": "N",
+            "help": "Show up to N worst files in the report summary (default: 10; 0 disables the worst-files view)",
+            "default_keyword": {
+              "present": {
+                "int": 10
+              }
+            },
+            "effective_default": {
+              "int": 10
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--group-by"
+            ],
+            "dest": "group_by",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "code",
+              "none"
+            ],
+            "metavar": null,
+            "help": "Summary grouping: 'code' aggregates findings by rule code (default), 'none' disables",
+            "default_keyword": {
+              "present": {
+                "text": "code"
+              }
+            },
+            "effective_default": {
+              "text": "code"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--jobs"
+            ],
+            "dest": "jobs",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "N",
+            "help": "Parallel worker processes for per-file analysis (default: 1 = sequential; 'auto' or 0 = CPU count). Report output is identical for any N; only wall time changes. Ignored for single-file input.",
+            "default_keyword": {
+              "present": {
+                "text": "1"
+              }
+            },
+            "effective_default": {
+              "text": "1"
+            },
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--incremental"
+            ],
+            "dest": "incremental",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Reuse cached per-file results when content is provably unchanged (sqlite cache; findings/verdicts identical, hits marked 'cache: hit')",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--cache-dir"
+            ],
+            "dest": "cache_dir",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "DIR",
+            "help": "Override the incremental cache directory (default: SESSLINT_CACHE_DIR or platform cache location)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--color"
+            ],
+            "dest": "color",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "metavar": null,
+            "help": "Control colored terminal output (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--no-color"
+            ],
+            "dest": "no_color",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Disable ANSI color styling",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-q",
+              "--quiet"
+            ],
+            "dest": "quiet",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Suppress non-error stderr output",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-v",
+              "--verbose"
+            ],
+            "dest": "verbose",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Print debug diagnostics (settings provenance, elapsed) to stderr",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--confidence-min"
+            ],
+            "dest": "confidence_min",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_unit_interval_float",
+            "choices": null,
+            "metavar": null,
+            "help": "Format auto-detection minimum confidence threshold",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--margin-min"
+            ],
+            "dest": "margin_min",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_unit_interval_float",
+            "choices": null,
+            "metavar": null,
+            "help": "Format auto-detection minimum margin threshold",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--skip-undetected"
+            ],
+            "dest": "skip_undetected",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Classify files whose format cannot be detected as skipped instead of invalid (useful for pre-commit hooks and mixed-content trees)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--fail-on"
+            ],
+            "dest": "fail_on",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "error",
+              "warning"
+            ],
+            "metavar": null,
+            "help": "Minimum finding severity that fails the command (default: error)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--config"
+            ],
+            "dest": "config",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "PATH",
+            "help": "Explicit config file path (overrides [tool.sesslint] discovery)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--select"
+            ],
+            "dest": "select",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "CODES",
+            "help": "Comma-separated rule codes to run exclusively (e.g. SL101,SL102)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--ignore"
+            ],
+            "dest": "ignore",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "CODES",
+            "help": "Comma-separated rule codes to skip (e.g. SL101,SL102)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--baseline"
+            ],
+            "dest": "baseline",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "PATH",
+            "help": "Suppress findings whose fingerprints are recorded in baseline file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--write-baseline"
+            ],
+            "dest": "write_baseline",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "PATH",
+            "help": "Write the current finding fingerprints as a new baseline file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--exclude"
+            ],
+            "dest": "exclude",
+            "action": "append",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "GLOB",
+            "help": "Skip files/dirs whose name or root-relative path matches GLOB (repeatable)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--ext"
+            ],
+            "dest": "ext",
+            "action": "append",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "EXT",
+            "help": "Only inspect files with these extensions during directory walks (repeatable)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--include-content"
+            ],
+            "dest": "include_content",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Embed raw transcript content in reports (warning: emits raw sensitive data)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal"
+            ],
+            "dest": "seal",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": "LEDGER",
+            "help": "Append a tamper-evident seal line to LEDGER (append-only hash-chained verdict record; 'sesslint seal --verify' re-checks it)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-no-path"
+            ],
+            "dest": "seal_no_path",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Omit the artifact path from the seal line (multi-machine ledgers)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--seal-genesis-of"
+            ],
+            "dest": "seal_genesis_of",
+            "action": "store",
+            "nargs": null,
+            "type_name": "str",
+            "choices": null,
+            "metavar": "HEX",
+            "help": "Bind a new ledger's first line to a prior ledger's last entry hash (ledger rotation)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--max-file-bytes"
+            ],
+            "dest": "max_file_bytes",
+            "action": "store",
+            "nargs": null,
+            "type_name": "int",
+            "choices": null,
+            "metavar": null,
+            "help": "Skip files above this byte limit (default: 104857600)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--timestamp-skew-ms"
+            ],
+            "dest": "timestamp_skew_ms",
+            "action": "store",
+            "nargs": null,
+            "type_name": "int",
+            "choices": null,
+            "metavar": null,
+            "help": "Allowed backwards timestamp skew in milliseconds (default: 2000)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--fail-on-unsupported"
+            ],
+            "dest": "fail_on_unsupported",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Exit 1 for unsupported formats as well as invalid inputs",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--max-findings-per-code"
+            ],
+            "dest": "max_findings_per_code",
+            "action": "store",
+            "nargs": null,
+            "type_name": "int",
+            "choices": null,
+            "metavar": null,
+            "help": "Maximum displayed samples per code per file (default: 20)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--newest"
+            ],
+            "dest": "newest",
+            "action": "store",
+            "nargs": null,
+            "type_name": "int",
+            "choices": null,
+            "metavar": "N",
+            "help": "Inspect the N most recently modified session files",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--since"
+            ],
+            "dest": "since",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": "YYYY-MM-DD",
+            "help": "Inspect files modified on/after this absolute UTC date",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          }
+        ],
+        "groups": [
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "json",
+              "output_format"
+            ]
+          },
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "select",
+              "ignore"
+            ]
+          },
+          {
+            "required_keyword": null,
+            "required": false,
+            "member_dests": [
+              "baseline",
+              "write_baseline"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic torn-record-excision parity. Preconditions and refusals come from the pinned blob. Session copy success and planner output stay uncovered. No fixture diff is stored.",
+  "generator": "rust/parity/recipes/torn-record-excision/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-torn-record-excision-affected-region: RECIPE_TORN_RECORD_EXCISION.affected_region is absent. This set does not construct sesslint.policy.abstention.AffectedRegion and does not cover a region row.",
+    "GAP-torn-record-excision-planner: planner.plan and api.repair are not executed. A missing canonical codec call is not a successful plan. No fingerprint is hashed and no fixture diff is stored.",
+    "GAP-torn-record-excision-session-copy: the apply validation test copies SessionEvent records inside a multi-assert sweep. That success is not replayed as Ok. One refusal inside the sweep is not the whole test."
+  ]
+}

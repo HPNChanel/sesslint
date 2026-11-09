@@ -1,0 +1,10 @@
+{
+  "finding_py_sha256": "5a0a7218512b36ccc6bd7fb1568dd95e81dc5b74d4685d14acdd4f2d0d911d7a",
+  "generator": "rust/parity/schemas/sesslint.finding.v1/generate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.finding.v1.json",
+  "schema_sha256": "4a203604549abf4f0e9f7207cb565c56b656c2eb9667cbae34df1ca278f8a1f7",
+  "vector_count": 57,
+  "vectors_sha256": "cb8da929dde7ec90e41455f0e71dd12800fc30105a2187ca9ac92dccba5a3a0a"
+}

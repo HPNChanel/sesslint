@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.triage",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "triage_py_sha256": "a1b695b89ac9fc3142f098d51c9ffba01d2f1a20e9cebe202f6a41e26669029d",
+  "triage_rs_sha256": "2f452ff34e6ddad32957000629ff9512fe783b20e515b7ca25e822916b9ce9a0",
+  "vector_count": 17,
+  "vectors_sha256": "46d29d9ec0cc9da1982dc807db2496bc2ca1613025fc761d5f93a637ae43273b",
+  "generator": "rust/parity/vectors/triage/generate",
+  "known_parity_gaps": [
+    "GAP-triage-get-profile: triage() calls sesslint.profiles.get_profile before any ledger work. Rust stops with sesslint.profiles.get_profile is not available and does not return TriageReport.",
+    "GAP-triage-preview: _preview reads sesslint.assessment.SourceAssessment and calls plan. Rust preview() stops with sesslint.assessment.SourceAssessment is not available.",
+    "GAP-triage-read-codex-state: _native_state after copy guards calls sesslint.state_db.read_codex_state and may return membership-matches or membership-mismatch. Rust native_state() stops with sesslint.state_db.read_codex_state is not available."
+  ]
+}

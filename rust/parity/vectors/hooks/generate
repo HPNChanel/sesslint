@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Generate sesslint.hooks parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HOOKS_PY_SHA256 = (
+    "0af5cbea5a42ae596f73d700f18f19c784d63259b635e47614a760259233a4b8"
+)
+HOOKS_RS_SHA256 = (
+    "d8d88b3a0192c82528832fc8d23ab90ee8c1ed4c2454eb8f845579f8632edcf8"
+)
+MODULE = "sesslint.hooks"
+
+KNOWN_PARITY_GAPS: list[str] = []
+
+FORBIDDEN_SNIPPET_MARKERS = (
+    "/path/to",
+    "$CLAUDE_PROJECT_DIR",
+    "*.jsonl",
+    "jq",
+    "xargs",
+)
+
+FORBIDDEN_SHELL_MARKERS = (">", "tee ", "--output-file")
+
+UNKNOWN_AGENTS = [
+    "nope",
+    "",
+    "it's",
+    'say "hi"',
+    "a\nb",
+    "\\",
+    "both'\"",
+    "caf\u00e9",
+    "\u200b",
+    "\u0080",
+    "\U0001f600",
+    "\xad",
+    "\xa0",
+    "\x00",
+    "\t",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_hooks_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/hooks.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != HOOKS_PY_SHA256:
+        raise SystemExit(
+            f"hooks.py pin sha256 mismatch: expected {HOOKS_PY_SHA256}, got {digest}"
+        )
+
+
+def load_hooks_module() -> types.ModuleType:
+    blob = pinned_hooks_source()
+    verify_pin_digest(blob)
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "hooks.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import importlib
+
+        return importlib.import_module("sesslint.hooks")
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_hooks.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_hooks_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned hooks.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def claude_recipe_expected(hooks: Any) -> dict[str, Any]:
+    doc = hooks.init_hooks_doc("claude")
+    by_hook = {f.recipe: f for f in doc.files}
+    ss = by_hook["SessionStart corruption warning (non-blocking)"].merge_block
+    pc = by_hook["PreCompact integrity check (non-blocking)"].merge_block
+    pxc = by_hook["PostCompact boundary check (non-blocking)"].merge_block
+    se = by_hook["SessionEnd secret check (non-blocking)"].merge_block
+    assert ss and pc and pxc and se
+    ss_entry = ss["hooks"]["SessionStart"][0]
+    pc_entry = pc["hooks"]["PreCompact"][0]
+    pxc_entry = pxc["hooks"]["PostCompact"][0]
+    se_entry = se["hooks"]["SessionEnd"][0]
+    return {
+        "session_start_matcher": ss_entry["matcher"],
+        "session_start_command": ss_entry["hooks"][0]["command"],
+        "pre_compact_matcher": pc_entry["matcher"],
+        "pre_compact_command": pc_entry["hooks"][0]["command"],
+        "post_compact_has_matcher": "matcher" in pxc_entry,
+        "post_compact_command": pxc_entry["hooks"][0]["command"],
+        "post_compact_timeout": pxc_entry["hooks"][0]["timeout"],
+        "session_end_matcher": se_entry["matcher"],
+        "session_end_command": se_entry["hooks"][0]["command"],
+        "session_end_timeout": se_entry["hooks"][0]["timeout"],
+    }
+
+
+def claude_commands(hooks: Any) -> list[str]:
+    doc = hooks.init_hooks_doc("claude")
+    commands: list[str] = []
+    for file in doc.files:
+        if file.merge_block is None:
+            continue
+        for entries in file.merge_block["hooks"].values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    commands.append(hook["command"])
+    return commands
+
+
+def build_vectors(hooks: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "schema_version": hooks.SCHEMA_VERSION,
+            "valid_agents": list(hooks.VALID_AGENTS),
+            "all_exports": list(hooks.__all__),
+        },
+    )
+
+    for agent in hooks.VALID_AGENTS:
+        doc = hooks.init_hooks_doc(agent)
+        expected: dict[str, Any] = {
+            "to_json": doc.to_json(),
+            "render_human": doc.render_human(),
+            "file_count": len(doc.files),
+        }
+        if agent == "codex":
+            expected["json_contains_merge_block"] = "merge_block" in doc.to_json()
+            expected["note_contains"] = "not emitted yet"
+        if agent == "all":
+            expected["note_contains_codex"] = "codex"
+        add(
+            f"init_hooks_doc_{agent}",
+            {"type": "init_hooks_doc", "agent": agent},
+            expected,
+        )
+
+    add(
+        "init_hooks_doc_claude_deterministic",
+        {"type": "init_hooks_doc_deterministic", "agent": "claude"},
+        {
+            "to_json_equal": hooks.init_hooks_doc("claude").to_json()
+            == hooks.init_hooks_doc("claude").to_json(),
+            "render_human_equal": hooks.init_hooks_doc("claude").render_human()
+            == hooks.init_hooks_doc("claude").render_human(),
+        },
+    )
+
+    add(
+        "claude_recipe_contract",
+        {"type": "claude_recipe_contract"},
+        claude_recipe_expected(hooks),
+    )
+
+    claude_blob = hooks.init_hooks_doc("claude").to_json()
+    add(
+        "snippets_content_free",
+        {"type": "snippets_content_free"},
+        {
+            "forbidden_present": [
+                marker for marker in FORBIDDEN_SNIPPET_MARKERS if marker in claude_blob
+            ],
+            "command_prefix_ok": all(
+                cmd.startswith("sesslint hook --event ") and cmd.endswith("|| true")
+                for cmd in claude_commands(hooks)
+            ),
+        },
+    )
+
+    add(
+        "claude_shell_safe",
+        {"type": "claude_shell_safe"},
+        {
+            "unsafe_commands": [
+                cmd
+                for cmd in claude_commands(hooks)
+                if any(marker in cmd for marker in FORBIDDEN_SHELL_MARKERS)
+            ],
+            "session_start_claude_json_flag": any(
+                "--event SessionStart --format claude-json" in cmd
+                for cmd in claude_commands(hooks)
+            ),
+        },
+    )
+
+    for index, agent in enumerate(UNKNOWN_AGENTS):
+        try:
+            hooks.init_hooks_doc(agent)
+            raise SystemExit(f"unknown agent unexpectedly accepted: {agent!r}")
+        except ValueError as error:
+            add(
+                f"init_hooks_doc_unknown_{index}",
+                {"type": "init_hooks_doc_error", "agent": agent},
+                {"error": str(error)},
+            )
+
+    file = hooks.HookFile(
+        target_path_hint="hint",
+        recipe="recipe",
+        merge_block=None,
+    )
+    doc_absent = hooks.InitHooksDoc(agent="claude", files=(file,), note="")
+    add(
+        "hook_file_absent_merge_block",
+        {"type": "hook_file_to_dict", "merge_block": None},
+        {
+            "file_json": json.dumps(file.to_dict(), sort_keys=True),
+            "doc_json": doc_absent.to_json(),
+            "render_human": doc_absent.render_human(),
+            "file_keys": list(file.to_dict().keys()),
+            "doc_keys": list(doc_absent.to_dict().keys()),
+        },
+    )
+
+    escape_doc = hooks.InitHooksDoc(agent='a"b', files=(), note="\u00e9")
+    add(
+        "init_hooks_doc_json_escape",
+        {"type": "init_hooks_doc_custom", "agent": 'a"b', "note": "\u00e9"},
+        {"to_json": escape_doc.to_json()},
+    )
+
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "hooks_py_sha256": HOOKS_PY_SHA256,
+        "hooks_rs_sha256": HOOKS_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "hooks_py_sha256": HOOKS_PY_SHA256,
+        "hooks_rs_sha256": HOOKS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/hooks/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.hooks parity (init-hooks JSON/human render, "
+            "recipe contracts, unknown-agent repr only)."
+        ),
+        "generator": "rust/parity/vectors/hooks/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    hooks = load_hooks_module()
+    vectors = build_vectors(hooks)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

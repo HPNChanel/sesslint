@@ -1,0 +1,486 @@
+#!/usr/bin/env python3
+"""Generate sesslint._events parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+EVENTS_RS_SHA256 = (
+    "7cb5cb9aa2bf64030792490986617f06d8549d7c3293f5bc0265cb53b7301913"
+)
+EVENTS_PY_BLOB_SHA1 = "eaba4eb0d85b1517933cdb47f6765cb82867f662"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error"
+    ),
+    (
+        "a mapping with no usable content_hash: Python hashes the payload or the whole mapping"
+    ),
+    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "sha256(str(ev))",
+    "Python str(float), str(list), and str(dict) for a getter field",
+    "the tolerant dict(ev) fallback",
+    "an int outside i64",
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def verify_events_py_blob() -> None:
+    root = repo_root()
+    events_py = root / "src" / "sesslint" / "_events.py"
+    raw = events_py.read_bytes()
+    header = b"blob " + str(len(raw)).encode() + b"\0"
+    blob = hashlib.sha1(header + raw).hexdigest()
+    if blob != EVENTS_PY_BLOB_SHA1:
+        raise SystemExit(
+            f"src/sesslint/_events.py git blob mismatch: expected {EVENTS_PY_BLOB_SHA1}, got {blob}"
+        )
+
+
+def verify_events_rs_sha256() -> None:
+    root = repo_root()
+    rs_path = root / "rust" / "crates" / "model" / "src" / "events.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != EVENTS_RS_SHA256:
+        raise SystemExit(
+            f"events.rs sha256 mismatch: expected {EVENTS_RS_SHA256}, got {digest}"
+        )
+
+
+def load_events_module() -> Any:
+    verify_events_py_blob()
+    verify_events_rs_sha256()
+    root = repo_root()
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from sesslint import _events  # noqa: WPS433
+
+    return _events
+
+
+def decode_field(obj: dict[str, Any]) -> Any:
+    t = obj["t"]
+    if t == "null":
+        return None
+    if t == "str":
+        return str(obj["v"])
+    if t == "bool":
+        return bool(obj["v"])
+    if t == "int":
+        return int(obj["v"])
+    if t == "map":
+        return decode_mapping(obj["entries"])
+    raise ValueError(f"unknown field tag {t}")
+
+
+def decode_mapping(entries: list[list[Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for pair in entries:
+        key, field = pair[0], pair[1]
+        out[str(key)] = decode_field(field)
+    return out
+
+
+def encode_value(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"t": "null"}
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": value}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, dict):
+        return {
+            "t": "map",
+            "entries": encode_mapping(value),
+        }
+    raise TypeError(f"unencodable {type(value)}")
+
+
+def encode_mapping(d: dict[str, Any]) -> list[list[Any]]:
+    return [[key, encode_value(val)] for key, val in d.items()]
+
+
+class ContentHashAttr:
+    """Simple object with only ``content_hash`` for parity with bare attributes."""
+
+    __slots__ = ("content_hash",)
+
+    def __init__(self, content_hash: str) -> None:
+        self.content_hash = content_hash
+
+
+class SessionEventLike:
+    """Mirrors Rust ``SessionEvent::new`` field subset; no ``to_canonical_dict``."""
+
+    __slots__ = ("kind", "id", "parent_id", "correlation_id")
+
+    def __init__(
+        self,
+        *,
+        kind: str,
+        id: str,
+        parent_id: None,
+        correlation_id: str,
+    ) -> None:
+        self.kind = kind
+        self.id = id
+        self.parent_id = parent_id
+        self.correlation_id = correlation_id
+
+
+def run_vector(events: Any, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "event_kind":
+        m = decode_mapping(construct["mapping"])
+        return {"value": events._event_kind(m)}
+    if kind == "event_id":
+        m = decode_mapping(construct["mapping"])
+        return {"value": events._event_id(m)}
+    if kind == "event_parent_id":
+        m = decode_mapping(construct["mapping"])
+        return {"value": events._event_parent_id(m)}
+    if kind == "event_corr_id":
+        m = decode_mapping(construct["mapping"])
+        return {"value": events._event_corr_id(m)}
+    if kind == "event_content_fingerprint":
+        if construct["source"] == "mapping":
+            m = decode_mapping(construct["mapping"])
+            return {"value": events._event_content_fingerprint(m)}
+        if construct["source"] == "attr_content_hash":
+            obj = ContentHashAttr(str(construct["content_hash"]))
+            return {"value": events._event_content_fingerprint(obj)}
+        raise ValueError("bad event_content_fingerprint source")
+    if kind == "to_event_dict":
+        m = decode_mapping(construct["mapping"])
+        return {"ordered": encode_mapping(events._to_event_dict(m))}
+    if kind == "copy_events_as_dicts":
+        evs: list[Any] = []
+        for item in construct["events"]:
+            evs.append(decode_mapping(item["entries"]))
+        out = events._copy_events_as_dicts(evs)
+        return {
+            "dicts": [encode_mapping(d) for d in out],
+        }
+    if kind == "copy_events_as_dicts_strict":
+        evs = []
+        for item in construct["events"]:
+            evs.append(decode_mapping(item["entries"]))
+        out = events._copy_events_as_dicts_strict(evs)
+        return {
+            "dicts": [encode_mapping(d) for d in out],
+        }
+    if kind == "session_event_getters":
+        c = construct["event"]
+        ev = SessionEventLike(
+            kind=str(c["kind"]),
+            id=str(c["id"]),
+            parent_id=None,
+            correlation_id=str(c["correlation_id"]),
+        )
+        return {
+            "kind": events._event_kind(ev),
+            "id": events._event_id(ev),
+            "parent_id": events._event_parent_id(ev),
+            "correlation_id": events._event_corr_id(ev),
+        }
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+EVENT_GETTER_OPS: dict[str, str] = {
+    "kind": "event_kind",
+    "id": "event_id",
+    "parent_id": "event_parent_id",
+    "correlation_id": "event_corr_id",
+}
+
+
+def field_string_value(key: str) -> str:
+    return {
+        "kind": "message",
+        "id": "evt-synthetic",
+        "parent_id": "parent-synthetic",
+        "correlation_id": "corr-synthetic",
+    }[key]
+
+
+def field_string(key: str) -> dict[str, Any]:
+    return {
+        "id": f"mapping_{key}_string",
+        "construct": {
+            "type": EVENT_GETTER_OPS[key],
+            "mapping": [[key, {"t": "str", "v": field_string_value(key)}]],
+        },
+    }
+
+
+def field_missing(key: str) -> dict[str, Any]:
+    return {
+        "id": f"mapping_{key}_missing_key",
+        "construct": {"type": EVENT_GETTER_OPS[key], "mapping": []},
+    }
+
+
+def field_null(key: str) -> dict[str, Any]:
+    return {
+        "id": f"mapping_{key}_json_null",
+        "construct": {
+            "type": EVENT_GETTER_OPS[key],
+            "mapping": [[key, {"t": "null"}]],
+        },
+    }
+
+
+def field_empty_string(key: str) -> dict[str, Any]:
+    return {
+        "id": f"mapping_{key}_empty_string",
+        "construct": {
+            "type": EVENT_GETTER_OPS[key],
+            "mapping": [[key, {"t": "str", "v": ""}]],
+        },
+    }
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    for key in ("kind", "id", "parent_id", "correlation_id"):
+        specs.append(field_string(key))
+        specs.append(field_missing(key))
+        specs.append(field_null(key))
+        specs.append(field_empty_string(key))
+
+    specs.append(
+        {
+            "id": "coercion_kind_true",
+            "construct": {
+                "type": EVENT_GETTER_OPS["kind"],
+                "mapping": [["kind", {"t": "bool", "v": True}]],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "coercion_kind_false",
+            "construct": {
+                "type": EVENT_GETTER_OPS["kind"],
+                "mapping": [["kind", {"t": "bool", "v": False}]],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "coercion_kind_int_positive",
+            "construct": {
+                "type": EVENT_GETTER_OPS["kind"],
+                "mapping": [["kind", {"t": "int", "v": 42}]],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "coercion_kind_int_negative",
+            "construct": {
+                "type": EVENT_GETTER_OPS["kind"],
+                "mapping": [["kind", {"t": "int", "v": -7}]],
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "content_fingerprint_mapping_hash_abc",
+            "construct": {
+                "type": "event_content_fingerprint",
+                "source": "mapping",
+                "mapping": [["content_hash", {"t": "str", "v": "abc"}]],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "content_fingerprint_attr_object_hash_abc",
+            "construct": {
+                "type": "event_content_fingerprint",
+                "source": "attr_content_hash",
+                "content_hash": "abc",
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "to_event_dict_flat_insertion_order",
+            "construct": {
+                "type": "to_event_dict",
+                "mapping": [
+                    ["key-z", {"t": "str", "v": "last"}],
+                    ["key-a", {"t": "str", "v": "first"}],
+                    ["key-m", {"t": "int", "v": 1}],
+                ],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "to_event_dict_nested_mapping",
+            "construct": {
+                "type": "to_event_dict",
+                "mapping": [
+                    [
+                        "outer",
+                        {
+                            "t": "map",
+                            "entries": [["inner", {"t": "str", "v": "abc"}]],
+                        },
+                    ]
+                ],
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "copy_events_as_dicts_two_with_nested",
+            "construct": {
+                "type": "copy_events_as_dicts",
+                "events": [
+                    {
+                        "entries": [
+                            ["a", {"t": "int", "v": 1}],
+                            ["b", {"t": "str", "v": "evt-synthetic"}],
+                        ]
+                    },
+                    {
+                        "entries": [
+                            [
+                                "nested",
+                                {
+                                    "t": "map",
+                                    "entries": [["x", {"t": "str", "v": "message"}]],
+                                },
+                            ]
+                        ]
+                    },
+                ],
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "copy_events_as_dicts_strict_two_with_nested",
+            "construct": {
+                "type": "copy_events_as_dicts_strict",
+                "events": [
+                    {
+                        "entries": [
+                            ["a", {"t": "int", "v": 1}],
+                            ["b", {"t": "str", "v": "evt-synthetic"}],
+                        ]
+                    },
+                    {
+                        "entries": [
+                            [
+                                "nested",
+                                {
+                                    "t": "map",
+                                    "entries": [["x", {"t": "str", "v": "message"}]],
+                                },
+                            ]
+                        ]
+                    },
+                ],
+            },
+        }
+    )
+
+    specs.append(
+        {
+            "id": "session_event_simple_attrs_all_getters",
+            "construct": {
+                "type": "session_event_getters",
+                "event": {
+                    "kind": "message",
+                    "id": "evt-synthetic",
+                    "parent_id": None,
+                    "correlation_id": "corr-synthetic",
+                },
+            },
+        }
+    )
+
+    return specs
+
+
+def main() -> int:
+    events = load_events_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for spec in vector_specs():
+        construct = spec["construct"]
+        expected = run_vector(events, construct)
+        vectors.append({"id": spec["id"], "construct": construct, "expected": expected})
+
+    document = {
+        "schema": SCHEMA,
+        "module": "sesslint._events",
+        "python_commit": PYTHON_COMMIT,
+        "events_rs_sha256": EVENTS_RS_SHA256,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": "sesslint._events",
+        "python_commit": PYTHON_COMMIT,
+        "events_rs_sha256": EVENTS_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/_events/generate",
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint._events parity (_event_kind, _event_id, _event_parent_id, "
+            "_event_corr_id, _event_content_fingerprint, _to_event_dict, _copy_events_as_dicts, "
+            "_copy_events_as_dicts_strict)."
+        ),
+        "generator": "rust/parity/vectors/_events/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": KNOWN_PARITY_GAPS,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

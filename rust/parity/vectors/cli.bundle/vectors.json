@@ -1,0 +1,229 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.bundle",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "bundle_py_sha256": "c9a12db3449268d60e6331aaa6c98f6b95cec0f460de7f0ab5aa8d043164233e",
+  "bundle_rs_sha256": "d8f7c17681b936b3695279e44b25a1788c0b16a04c657090f13b5b50e01bfbf1",
+  "known_parity_gaps": [
+    "GAP-cli-bundle-build-bundle: Python run() imports sesslint.api.build_bundle after path checks and may build, warn, and print bundle JSON; Rust run() returns Display `sesslint.api.build_bundle is not available` immediately after evaluating that import name (no stderr, no exit 0, no build_bundle, no atomic_write_text)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "bundle",
+        "help": "[read-only] Generate a privacy-safe diagnostic support bundle and fixture skeleton.",
+        "description": "[read-only] Generate a privacy-safe diagnostic support bundle and fixture skeleton.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to session file (.json or .jsonl)",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to output bundle JSON file",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Output bundle as JSON to stdout",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--profile"
+            ],
+            "dest": "profile",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Replay validation profile (default: neutral)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--confidence-min"
+            ],
+            "dest": "confidence_min",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_unit_interval_float",
+            "choices": null,
+            "metavar": null,
+            "help": "Minimum confidence threshold for format auto-detection",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--margin-min"
+            ],
+            "dest": "margin_min",
+            "action": "store",
+            "nargs": null,
+            "type_name": "_validate_unit_interval_float",
+            "choices": null,
+            "metavar": null,
+            "help": "Minimum margin threshold between top candidates for auto-detection",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--strict-share"
+            ],
+            "dest": "strict_share",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Exit 1 without writing output when the source file contains secret-shaped material (SL009 share_advisory present)",
+            "default_keyword": {
+              "present": "false"
+            },
+            "effective_default": "false",
+            "required": false
+          }
+        ],
+        "groups": []
+      }
+    },
+    {
+      "id": "run_missing_path",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-missing.json"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Path not found: fixtures\\par-missing.json\n"
+      }
+    },
+    {
+      "id": "run_broken_symlink",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-broken.json"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Path not found: fixtures\\par-broken.json\n"
+      }
+    },
+    {
+      "id": "run_directory_path",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-dir"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Path is a directory. Bundle requires a single session file: fixtures\\par-dir\n"
+      }
+    },
+    {
+      "id": "run_symlink_to_directory",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-dir-link"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Path is a directory. Bundle requires a single session file: fixtures\\par-dir-link\n"
+      }
+    }
+  ]
+}

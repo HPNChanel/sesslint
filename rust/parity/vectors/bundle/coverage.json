@@ -1,0 +1,239 @@
+{
+  "rows": [
+    {
+      "test": "tests/test_bundle.py::test_bundle_determinism",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_source_basename_only",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_source_size_and_sha256",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_created_by_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_fixture_skeleton_structure",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_version_constant",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_missing_file_raises_filenotfound",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_directory_raises_isadirectoryerror",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_count_records_bounded_io_error",
+      "status": "covered",
+      "vector_ids": [
+        "count_records_bounded_io_error_pin"
+      ]
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_surfaces_read_error_not_zero",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_stdout_json",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_flag_json_parity",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_out_file",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_out_refuses_source_path",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_missing_file_exits_2",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_directory_exits_2",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_confidence_and_margin_min_cli",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_check_stderr_hint_on_detection_failure",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_seeded_source_emits_advisory",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_clean_source_omits_advisory_key",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_advisory_is_content_free",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_advisory_deterministic",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_cli_advisory_warns_stderr_but_exits_0",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_cli_strict_share_gates_and_writes_nothing",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_cli_strict_share_clean_source_passes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_golden_bundle_schema_and_keys",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_golden_bundle_byte_exact_snapshot",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_unsupported_version_integration_check_hint_and_bundle_evidence",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_toctou_mutation_detected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_outer_and_embedded_share_effective_thresholds",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_bundle.py::test_bundle_resolve_format_call_kwargs_match_embedded",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_schema_loads_and_self_consistent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_conservative_plan_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_refusal_path_plan_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_salvage_plan_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_detection_failed_bundle_dict_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_json_round_trip_validates",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_missing_step_field_fails_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_wrong_version_fails_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_missing_section_fails_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_wrong_version_fails_validation",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_secret_shapes_after_real_json_escapes_are_detected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_escaped_backslash_text_does_not_create_a_secret_boundary",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_escape_run_parity_preserves_secret_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_private_key_digest_uses_original_bytes_after_escape_shadow",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_secret_window_keeps_stripped_record_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_short_prefix_gate_preserves_reference_boundaries",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_shared_secret_families_are_detected_and_never_echoed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_azure_and_gcp_service_account_secret_shapes_are_detected",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_dump_session_file_uses_atomic_writer_and_lf",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_jsonl_readers_treat_unicode_separators_as_json_string_content",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_mcp_bounds_oversized_jsonl_and_recursion_failures",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_index_and_cache_recursion_fail_closed",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_bundle_chunk_count_matches_physical_lf_reference",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_sarif_artifact_uri_percent_encodes_path_bytes",
+      "status": "not_applicable"
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_deterministic_python_codec_wording_and_bytes_are_stable",
+      "status": "not_applicable"
+    }
+  ]
+}

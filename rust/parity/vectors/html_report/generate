@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+"""Generate sesslint.html_report parity vectors (stdlib only; pinned git show)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+HTML_REPORT_PY_SHA256 = (
+    "bcbeebf86e1f1f62ccdcd2511508725dde5299c737158012a9598602be374abb"
+)
+HTML_REPORT_RS_SHA256 = (
+    "a81efa04e2d76f74157d308a996161bdf77fd0090dcb307e1a63853d8e6083fb"
+)
+MODULE = "sesslint.html_report"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-html-refusal-rationale: render_html with any finding calls "
+    "get_finding_remediation in Python. Rust stops with "
+    "sesslint.repair.refusals.refusal_rationale_for is not available and "
+    "does not return a page.",
+    "GAP-html-scan-report: scan_report_html takes a sesslint.scan.ScanReport "
+    "in Python. Rust stops with sesslint.scan.ScanReport is not available "
+    "before any HTML is built.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/report/test_html.py",)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/report/test_html.py::test_html_document_shape": ("html_document_shape",),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/html_report.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != HTML_REPORT_PY_SHA256:
+        raise SystemExit(
+            f"html_report.py pin sha256 mismatch: expected {HTML_REPORT_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "report" / "src" / "html_report.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != HTML_REPORT_RS_SHA256:
+        raise SystemExit(
+            f"html_report.rs sha256 mismatch: expected {HTML_REPORT_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.adapters",
+        "sesslint.scan",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+
+
+def load_module(mod: str) -> None:
+    if mod == "sesslint.html_report":
+        return
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_html_report_from_temp() -> types.ModuleType:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/html_report.py")
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_html_report.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "sesslint.html_report"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned html_report.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        package = sys.modules["sesslint"]
+        setattr(package, "html_report", mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def load_pinned_html_report() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    deps = [m for m in closure("sesslint.html_report") if m != "sesslint.html_report"]
+    pending = list(deps)
+    for _ in range(64):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod)
+                progress = True
+            except Exception:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:8]}")
+    return load_html_report_from_temp()
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def html_report_rep(rep_mod: Any, findings: list[Any]) -> Any:
+    return rep_mod.build_report(
+        session_id="sess_html",
+        source_fingerprint="fp_html_123",
+        tool_version="0.2.0",
+        findings=findings,
+        assurance="A3",
+        limitation="Graph invariants validated.",
+    )
+
+
+def html_finding() -> Any:
+    from sesslint.codes import SL003, Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    return make_finding(
+        code=SL003,
+        severity=Severity.WARNING,
+        repairability=Repairability.MANUAL,
+        message_template="Duplicate event id {record_id}",
+        source=SourceRef(path=".._abc123/sess.jsonl", line=4, record_id="evt_2"),
+        evidence={"byte_offset": 10, "byte_end": 42},
+    )
+
+
+def coverage_wire(rep: Any) -> dict[str, Any]:
+    return {
+        "performed": sorted(rep.coverage.performed),
+        "skipped": [
+            {"check": skip.check, "reason": skip.reason} for skip in rep.coverage.skipped
+        ],
+    }
+
+
+def offline_checks(html: str) -> dict[str, bool]:
+    lowered = html.lower()
+    return {
+        "no_script": "<script" not in lowered,
+        "no_http": "http://" not in lowered,
+        "no_https": "https://" not in lowered,
+        "no_url_paren": "url(" not in lowered,
+        "no_src_eq": "src=" not in lowered,
+        "no_import": "@import" not in lowered,
+    }
+
+
+def vector_specs(html: Any, rep_mod: Any) -> list[dict[str, Any]]:
+    from sesslint.scan import (  # noqa: WPS433
+        FileResult,
+        ScanReport,
+        ScanTotals,
+    )
+
+    specs: list[dict[str, Any]] = []
+
+    def add(row: dict[str, Any]) -> None:
+        specs.append(row)
+
+    add(
+        {
+            "id": "module_exports",
+            "construct": {"type": "module_exports"},
+            "expected": {"python_all": list(html.__all__)},
+        }
+    )
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {"max_rows": html.MAX_ROWS},
+        }
+    )
+
+    healthy = html_report_rep(rep_mod, [])
+    healthy_html = html.render_html(healthy, adapter="canonical", profile="neutral")
+    add(
+        {
+            "id": "html_document_shape",
+            "construct": {
+                "type": "render_html",
+                "report_kind": "test_html_document_shape",
+                "session_id": healthy.session_id,
+                "source_fingerprint": healthy.source_fingerprint,
+                "tool_version": healthy.tool_version,
+                "assurance": healthy.assurance,
+                "limitation": healthy.limitation,
+                "adapter": "canonical",
+                "profile": "neutral",
+                "coverage": coverage_wire(healthy),
+            },
+            "expected": {
+                "html": healthy_html,
+                "must_contain": [
+                    "<!DOCTYPE html>",
+                    '<html lang="es">',
+                    "<style>",
+                    "</html>",
+                    "Session is healthy",
+                    "sess_html",
+                    "0.2.0",
+                ],
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "render_html_deterministic_empty",
+            "construct": {
+                "type": "render_html",
+                "report_kind": "deterministic_empty",
+                "session_id": healthy.session_id,
+                "source_fingerprint": healthy.source_fingerprint,
+                "tool_version": healthy.tool_version,
+                "assurance": healthy.assurance,
+                "limitation": healthy.limitation,
+                "adapter": "canonical",
+                "profile": "neutral",
+                "coverage": coverage_wire(healthy),
+            },
+            "expected": {
+                "pin_equal": html.render_html(healthy)
+                == html.render_html(healthy, adapter="canonical", profile="neutral"),
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "render_html_offline_healthy",
+            "construct": {
+                "type": "render_html",
+                "report_kind": "offline_healthy",
+                "session_id": healthy.session_id,
+                "source_fingerprint": healthy.source_fingerprint,
+                "tool_version": healthy.tool_version,
+                "assurance": healthy.assurance,
+                "limitation": healthy.limitation,
+                "adapter": "canonical",
+                "profile": "neutral",
+                "coverage": coverage_wire(healthy),
+            },
+            "expected": {"offline": offline_checks(healthy_html)},
+        }
+    )
+
+    with_finding = html_report_rep(rep_mod, [html_finding()])
+    pin_html = html.render_html(with_finding, adapter="canonical", profile="neutral")
+    add(
+        {
+            "id": "render_html_with_finding_gap",
+            "construct": {
+                "type": "render_html",
+                "report_kind": "one_warning",
+                "session_id": with_finding.session_id,
+                "source_fingerprint": with_finding.source_fingerprint,
+                "tool_version": with_finding.tool_version,
+                "assurance": with_finding.assurance,
+                "limitation": with_finding.limitation,
+                "adapter": "canonical",
+                "profile": "neutral",
+                "coverage": coverage_wire(with_finding),
+                "finding_count": 1,
+            },
+            "expected": {
+                "pin": {"banner_class": "warn", "html_bytes_len": len(pin_html.encode("utf-8"))},
+                "rust_assertion": {"mode": "gap_refusal_rationale"},
+            },
+        }
+    )
+
+    scan = ScanReport(
+        root_path=".._abc123/dir",
+        totals=ScanTotals(healthy=1),
+        files=(FileResult(path=".._abc123/a.jsonl", verdict="healthy"),),
+    )
+    pin_scan_html = html.scan_report_html(scan, tool_version="0.2.0")
+    add(
+        {
+            "id": "scan_report_html_gap",
+            "construct": {
+                "type": "scan_report_html",
+                "tool_version": "0.2.0",
+                "root_path": ".._abc123/dir",
+            },
+            "expected": {
+                "pin": {
+                    "starts_with": pin_scan_html[:32],
+                    "offline": offline_checks(pin_scan_html),
+                },
+                "rust_assertion": {"mode": "gap_scan_report"},
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "html_esc_sample",
+            "construct": {"type": "html_escape", "value": "<b>&"},
+            "expected": {"escaped": html._esc("<b>&")},
+        }
+    )
+
+    return specs
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def main() -> int:
+    html = load_pinned_html_report()
+    rep_mod = sys.modules["sesslint.report"]
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(html, rep_mod)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "html_report_py_sha256": HTML_REPORT_PY_SHA256,
+        "html_report_rs_sha256": HTML_REPORT_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "html_report_py_sha256": HTML_REPORT_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/html_report/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.html_report parity: healthy render_html shape, "
+            "offline checks, escape sample, and documented refusal/scan-report gaps."
+        ),
+        "generator": "rust/parity/vectors/html_report/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

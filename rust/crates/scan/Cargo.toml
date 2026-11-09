@@ -1,0 +1,10 @@
+[package]
+name = "scan"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+model = { path = "../model" }
+checks = { path = "../checks" }
+sha2 = "=0.10.9"

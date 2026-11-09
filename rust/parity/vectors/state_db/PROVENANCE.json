@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.state_db parity (pure name helpers and sqlite/report seams).",
+  "generator": "rust/parity/vectors/state_db/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-state-db-sqlite-read: read_codex_state after symlink, absent, and size checks calls sqlite3.connect and returns a populated CodexStateSnapshot. Rust stops with sqlite3.connect is not available and does not open a database. Vectors store pin snapshots under expected.pin and assert the sqlite seam.",
+    "GAP-state-db-short-hash: migration_skip_reason_hashes in read_codex_state and short_hash cells call sesslint.report.short_hash. Rust migration_skip_reason_hash stops with sesslint.report.short_hash is not available. Vectors assert that seam.",
+    "GAP-state-db-table-columns: _table_columns executes PRAGMA table_info on an open connection. Rust table_columns stops at the sqlite seam without opening a database.",
+    "GAP-state-db-scan-integration: tests/scan/test_state_db.py integration cases that call scan_path or expect full registry reconciliation are not pinned as vectors."
+  ]
+}

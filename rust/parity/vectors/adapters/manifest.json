@@ -1,0 +1,9 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "adapters_init_py_sha256": "78c34a4ebcadb7a743bf48ca1315625e6c56d6524f9b99b83d6f33b299a46c66",
+  "vector_count": 1,
+  "vectors_sha256": "fb50cd68a25e005d0cd4827649944c7cf13b11daaab9d9449dd5ace5b96316f1",
+  "generator": "rust/parity/vectors/adapters/generate"
+}

@@ -1,0 +1,632 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.writeback",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "writeback_py_sha256": "b03898de0ad01063e56535a345dad5e2a8d9c36988d74560a213b1094f05b31d",
+  "writeback_rs_sha256": "5da293060ede3fc4fe2acfdbfa33b75be77da599238acfc402d1beb771f41e79",
+  "known_parity_gaps": [
+    "GAP-writeback-hashlib: Python hashes emitted bytes with hashlib.sha256 for ProjectionSummary; Rust returns hashlib.sha256 is not available and does not construct ProjectionSummary.",
+    "GAP-writeback-canonical-record-hash: When source_record_hash is non-empty and the line parses, Python recomputes canonical_bytes and compares; Rust returns sesslint._canonical_codec.canonical_json_bytes is not available without hashing.",
+    "GAP-writeback-r4-record-drift: Python R4 after a successful re-parse compares recomputed sha256 to stored hash (record hash drift message); Rust does not perform that comparison after the canonical seam.",
+    "GAP-writeback-r3-with-record-hash: Python R3 on a later line while earlier lines carry source_record_hash; Rust stops at canonical_json_bytes on the first hashed line and does not reach line-level R3.",
+    "GAP-writeback-api-integration: tests/repair/test_writeback.py api.repair and api.verify paths are outside repair::writeback."
+  ],
+  "vectors": [
+    {
+      "id": "refuses_unsupported_format_r6",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "e30K",
+        "source_events": [],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "e1",
+            "identity": "1a2d700dd71f6ede8a9e9c77fdeb5fb374a6a508d08efb70745d53032c534d72",
+            "source_record_hash": null
+          }
+        ],
+        "emit_format": "bogus-format",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "comparable",
+        "reason": "R6",
+        "message": "Write-back is not supported for format 'bogus-format'. Use '--emit canonical' to produce a canonical repaired artifact.",
+        "pin": {
+          "mode": "refusal",
+          "reason": "R6"
+        }
+      }
+    },
+    {
+      "id": "refuses_single_doc_json_r6",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "ewogICJleHBvcnRfdmVyc2lvbiI6ICIxLjAuMCIsCiAgIml0ZW1zIjogWwogICAgewogICAgICAiaWQiOiAiaTEiCiAgICB9CiAgXQp9",
+        "source_events": [
+          {
+            "source_line": 4,
+            "id": "i1",
+            "identity": "1966c75aba58c89eec0cd0c6f0a33e8c5e0b4ca16f834ed1a480322851fa9de7",
+            "source_record_hash": null
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 4,
+            "id": "i1",
+            "identity": "1966c75aba58c89eec0cd0c6f0a33e8c5e0b4ca16f834ed1a480322851fa9de7",
+            "source_record_hash": null
+          }
+        ],
+        "emit_format": "openai-agents",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "comparable",
+        "reason": "R6",
+        "message": "Write-back requires a per-line record stream (JSONL); a single-document JSON export has no physical record boundaries. Use '--emit canonical' to produce a canonical repaired artifact.",
+        "pin": {
+          "mode": "refusal",
+          "reason": "R6"
+        }
+      }
+    },
+    {
+      "id": "refuses_synthesized_event_r1",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          },
+          {
+            "source_line": null,
+            "id": "evt_synth",
+            "identity": "ab7f9467d1a19d0f03e90f675d3f8c955775607ace1f334a7a51b591d2898cd9",
+            "source_record_hash": null
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "comparable",
+        "reason": "R1",
+        "message": "Repaired output contains a synthesized event with no source line; cannot project to vendor format. Use '--emit canonical'.",
+        "pin": {
+          "mode": "refusal",
+          "reason": "R1"
+        }
+      }
+    },
+    {
+      "id": "refuses_reorder_r5",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          },
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "comparable",
+        "reason": "R5",
+        "message": "Repair requires reordering source lines; cannot express as a verbatim vendor projection. Use '--emit canonical'.",
+        "pin": {
+          "mode": "refusal",
+          "reason": "R5"
+        }
+      }
+    },
+    {
+      "id": "identity_passthrough",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint._canonical_codec.canonical_json_bytes is not available",
+        "pin": {
+          "mode": "success",
+          "emitted_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+          "retained_lines": 5,
+          "dropped_lines": 0,
+          "emitted_sha256": "67c242fa692b073a0f0a6c016bd3969c74818eb6c542bc6af6de71c2630a198f",
+          "emit_format": "claude-code-jsonl"
+        }
+      }
+    },
+    {
+      "id": "drops_line_when_all_events_dropped",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint._canonical_codec.canonical_json_bytes is not available",
+        "pin": {
+          "mode": "success",
+          "emitted_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9Cg==",
+          "retained_lines": 4,
+          "dropped_lines": 1,
+          "emitted_sha256": "0610ac6c009a1df473fa27444330042ff08f1d708ce04bb3ec6fd4849366d627",
+          "emit_format": "claude-code-jsonl"
+        }
+      }
+    },
+    {
+      "id": "preserves_interior_cr_parametrize",
+      "construct": {
+        "type": "emit_vendor_bytes_parametrize",
+        "variants": [
+          {
+            "source_b64": "eyJ0eXBlIjoidXNlciIsInV1aWQiOiJvbmUiLCJtZXNzYWdlIjp7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6IngifX0K",
+            "source_events": [],
+            "output_events": [],
+            "emit_format": "claude-code-jsonl",
+            "drop_lines": null,
+            "expected": {
+              "mode": "rust_seam",
+              "seam": "hashlib.sha256 is not available",
+              "pin": {
+                "mode": "success",
+                "emitted_b64": "eyJ0eXBlIjoidXNlciIsInV1aWQiOiJvbmUiLCJtZXNzYWdlIjp7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6IngifX0K",
+                "retained_lines": 1,
+                "dropped_lines": 0,
+                "emitted_sha256": "03074cad0a9ce33a2577e5f7f33af3d7aa0fabd06ee5ad13f03407c8586950b8",
+                "emit_format": "claude-code-jsonl"
+              }
+            }
+          },
+          {
+            "source_b64": "ew0idHlwZSI6InVzZXIiLCJ1dWlkIjoib25lIiwibWVzc2FnZSI6eyJyb2xlIjoidXNlciIsImNvbnRlbnQiOiJ4In19Cg==",
+            "source_events": [],
+            "output_events": [],
+            "emit_format": "claude-code-jsonl",
+            "drop_lines": null,
+            "expected": {
+              "mode": "rust_seam",
+              "seam": "hashlib.sha256 is not available",
+              "pin": {
+                "mode": "success",
+                "emitted_b64": "ew0idHlwZSI6InVzZXIiLCJ1dWlkIjoib25lIiwibWVzc2FnZSI6eyJyb2xlIjoidXNlciIsImNvbnRlbnQiOiJ4In19Cg==",
+                "retained_lines": 1,
+                "dropped_lines": 0,
+                "emitted_sha256": "77845454ddbd0d6b5281aed5541652e0ae98e967a24184e9ee125e04f8c56ebb",
+                "emit_format": "claude-code-jsonl"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "mode": "parametrize"
+      }
+    },
+    {
+      "id": "drop_lines_discards_torn_record",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0KeyJpZCI6Im1zZ18wMyIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2E=",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": [
+          6
+        ]
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint._canonical_codec.canonical_json_bytes is not available",
+        "pin": {
+          "mode": "success",
+          "emitted_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0K",
+          "retained_lines": 5,
+          "dropped_lines": 1,
+          "emitted_sha256": "67c242fa692b073a0f0a6c016bd3969c74818eb6c542bc6af6de71c2630a198f",
+          "emit_format": "claude-code-jsonl"
+        }
+      }
+    },
+    {
+      "id": "keeps_uninterpreted_lines",
+      "construct": {
+        "type": "emit_vendor_bytes",
+        "source_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0KCg==",
+        "source_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "output_events": [
+          {
+            "source_line": 1,
+            "id": "msg_01",
+            "identity": "e82d1587a31eca705b7123e3c55e25b47207b62b1f5cf03b445a865883e58bef",
+            "source_record_hash": "sha256:475393b31f8a87af45861149c71fd6096e15c1955d9f8b2f3585b2aec57306f7"
+          },
+          {
+            "source_line": 2,
+            "id": "msg_02",
+            "identity": "9806ba88a90d2113d7a32134bc3ce45d2847afd316149fd2a36e19a65b0e4686",
+            "source_record_hash": "sha256:6f80bea2d257e3d914838331dc988681ae9c8582dd9fec42f95f4642f676c5bf"
+          },
+          {
+            "source_line": 3,
+            "id": "msg_03",
+            "identity": "aefc4b4f069bc0c7b7d724e2f2106859aa4903889e757fd1b06dc136a76c4603",
+            "source_record_hash": "sha256:638bb145fcb8f231f1d326b005af1011ee250504a55abd4e64cbdad295794736"
+          },
+          {
+            "source_line": 4,
+            "id": "msg_04",
+            "identity": "4ebcea4c2f242a4212aa5d79c64df3e8fd17d83941b1bb259ffc0c9ae0f912ae",
+            "source_record_hash": "sha256:1eee253a7738dad5b57942eb1191697974c8c64b9a5f2a6c31356f8d913752ec"
+          },
+          {
+            "source_line": 5,
+            "id": "msg_05",
+            "identity": "437fc874660313c9e01dd0111d755f4770b26df81125775eee0fbbb03881c2eb",
+            "source_record_hash": "sha256:de3d7764d6dd2e040ecdfe82013fac7103bfe9513f4b2f655d587ac8f179e2ea"
+          }
+        ],
+        "emit_format": "claude-code-jsonl",
+        "drop_lines": null
+      },
+      "expected": {
+        "mode": "rust_seam",
+        "seam": "sesslint._canonical_codec.canonical_json_bytes is not available",
+        "pin": {
+          "mode": "success",
+          "emitted_b64": "eyJpZCI6Im1zZ18wMSIsInR5cGUiOiJ1c2VyX21lc3NhZ2UiLCJtZXNzYWdlIjoiUGxlYXNlIHJlYWQgZGF0YSBmaWxlIiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMFoifQp7ImlkIjoibXNnXzAyIiwicGFyZW50SWQiOiJtc2dfMDEiLCJ0eXBlIjoiYXNzaXN0YW50X21lc3NhZ2UiLCJtZXNzYWdlIjoiUmVhZGluZyBkYXRhIGZpbGUgbm93IiwidGltZXN0YW1wIjoiMjAyNS0wMS0wMVQxMjowMDowMVoifQp7ImlkIjoibXNnXzAzIiwicGFyZW50SWQiOiJtc2dfMDIiLCJ0eXBlIjoidG9vbF91c2UiLCJuYW1lIjoicmVhZF9maWxlIiwidG9vbFVzZUlkIjoiY2FsbF8wMSIsImlucHV0Ijp7InBhdGgiOiJkYXRhLnR4dCJ9LCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAyWiJ9CnsiaWQiOiJtc2dfMDQiLCJwYXJlbnRJZCI6Im1zZ18wMyIsInR5cGUiOiJ0b29sX3Jlc3VsdCIsInRvb2xVc2VJZCI6ImNhbGxfMDEiLCJjb250ZW50IjoiZmlsZSBjb250ZW50cyBzdW1tYXJ5IiwiaXNfZXJyb3IiOmZhbHNlLCJ0aW1lc3RhbXAiOiIyMDI1LTAxLTAxVDEyOjAwOjAzWiJ9CnsiaWQiOiJtc2dfMDUiLCJwYXJlbnRJZCI6Im1zZ18wNCIsInR5cGUiOiJhc3Npc3RhbnRfbWVzc2FnZSIsIm1lc3NhZ2UiOiJGaWxlIGNvbnRhaW5zIHN1bW1hcnkgZGF0YSIsInRpbWVzdGFtcCI6IjIwMjUtMDEtMDFUMTI6MDA6MDRaIn0KCg==",
+          "retained_lines": 6,
+          "dropped_lines": 0,
+          "emitted_sha256": "90e51a45f0422d7edc82f0bfb97fc79d08a3b35e4424f0a409c56733bbe64c5f",
+          "emit_format": "claude-code-jsonl"
+        }
+      }
+    }
+  ]
+}

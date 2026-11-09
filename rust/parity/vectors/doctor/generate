@@ -1,0 +1,727 @@
+#!/usr/bin/env python3
+"""Generate sesslint.doctor parity vectors from the pinned Python module (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import types
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import patch
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+DOCTOR_PY_SHA256 = (
+    "a9fa4e596f382298f1063e0c7c5aa3976c5486c183a3b4da70d435d0a34a70f3"
+)
+DOCTOR_RS_SHA256 = (
+    "d9e38e9491a87a00b8fa892d404236ad99fc9ee550b71dda8709642e479bf752"
+)
+MODULE = "sesslint.doctor"
+
+KNOWN_PARITY_GAPS = [
+    (
+        "GAP-doctor-index-health: index_health stops at "
+        "sesslint.indexes.discover_index_files."
+    ),
+    (
+        "GAP-doctor-doctor-report: doctor_report stops at "
+        "sesslint.adapters.supported_adapters."
+    ),
+    (
+        "GAP-doctor-schema-path: get_doctor_schema_path stops at "
+        "sesslint._resources.schema_path."
+    ),
+    (
+        "GAP-doctor-load-schema: load_doctor_schema stops at "
+        "sesslint._resources.schema_path."
+    ),
+    (
+        "GAP-doctor-minimize-path: RootDiag and DoctorReport to_dict, to_json, "
+        "and render_human call sesslint.report.minimize_path unless paths are "
+        "already shown via the parity shim."
+    ),
+    (
+        "GAP-doctor-check-file: quick_verdicts stops at sesslint.api.check_file "
+        "when at least one regular file is selected."
+    ),
+]
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def pinned_doctor_source() -> bytes:
+    return git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/doctor.py")
+
+
+def verify_pin_digest(blob: bytes) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != DOCTOR_PY_SHA256:
+        raise SystemExit(
+            f"doctor.py pin sha256 mismatch: expected {DOCTOR_PY_SHA256}, got {digest}"
+        )
+
+
+def verify_doctor_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "doctor.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != DOCTOR_RS_SHA256:
+        raise SystemExit(
+            f"doctor.rs sha256 mismatch: expected {DOCTOR_RS_SHA256}, got {digest}"
+        )
+
+
+def load_doctor_module() -> types.ModuleType:
+    blob = pinned_doctor_source()
+    verify_pin_digest(blob)
+    verify_doctor_rs_sha256()
+    root = repo_root()
+    module_path = root / "src" / "sesslint" / "doctor.py"
+    if module_path.read_bytes() == blob:
+        src = root / "src"
+        insert = str(src)
+        if insert not in sys.path:
+            sys.path.insert(0, insert)
+        import importlib
+
+        return importlib.import_module("sesslint.doctor")
+
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_doctor.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_doctor_parity"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned doctor.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def rel_posix(base: Path, path: Path) -> str:
+    return path.relative_to(base).as_posix()
+
+
+def touch(path: Path, *, stamp: float | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8", newline="\n")
+    when = 1_700_000_000.0 if stamp is None else stamp
+    os.utime(path, (when, when))
+
+
+def ensure_count_fixtures(out_dir: Path) -> Path:
+    fixtures = out_dir / "fixtures" / "count_walk"
+    for name in [
+        "b.json",
+        "a.txt",
+        "sesslint.toml",
+        ".sesslint.toml",
+        "c.jsonl",
+        "A.JSON",
+        "keep.JSONL",
+    ]:
+        touch(fixtures / name)
+    touch(fixtures / "m" / "d.json")
+    touch(fixtures / ".git" / "hidden.json")
+    touch(fixtures / ".hg" / "hidden.json")
+    touch(fixtures / ".svn" / "hidden.json")
+    touch(fixtures / "z" / "inner" / "e.json")
+    return fixtures
+
+
+def iso_utc_vectors(doctor: Any) -> list[dict[str, Any]]:
+    samples = [
+        (0.0, "1970-01-01T00:00:00Z"),
+        (1.0, "1970-01-01T00:00:01Z"),
+        (1.9, "1970-01-01T00:00:01Z"),
+        (1.1, "1970-01-01T00:00:01Z"),
+        (-1.0, "1969-12-31T23:59:59Z"),
+        (-1.1, "1969-12-31T23:59:58Z"),
+        (-1.9, "1969-12-31T23:59:58Z"),
+        (0.999_999_4, "1970-01-01T00:00:00Z"),
+        (0.999_999_5, "1970-01-01T00:00:01Z"),
+        (1.999_999_4, "1970-01-01T00:00:01Z"),
+        (1.999_999_5, "1970-01-01T00:00:01Z"),
+        (1_700_000_000.0, "2023-11-14T22:13:20Z"),
+        (1_700_000_000.123_456, "2023-11-14T22:13:20Z"),
+        (-43_200.0, "1969-12-31T12:00:00Z"),
+        (951_782_400.0, "2000-02-29T00:00:00Z"),
+        (1e-10, "1970-01-01T00:00:00Z"),
+        (-0.0, "1970-01-01T00:00:00Z"),
+    ]
+    rows = [
+        {"timestamp": ts, "iso": doctor._iso_utc(ts)} for ts, _ in samples
+    ]
+    return [
+        {
+            "id": "iso_utc_samples",
+            "construct": {"type": "iso_utc", "timestamps": [ts for ts, _ in samples]},
+            "expected": {"rows": rows},
+        },
+        {
+            "id": "iso_utc_errors_nan",
+            "construct": {"type": "iso_utc_error", "timestamp": "nan"},
+            "expected": {
+                "error": "Invalid value NaN (not a number)",
+            },
+        },
+        {
+            "id": "iso_utc_errors_infinity",
+            "construct": {"type": "iso_utc_error", "timestamp": "inf"},
+            "expected": {"error": "timestamp out of range for platform time_t"},
+        },
+        {
+            "id": "iso_utc_errors_neg_infinity",
+            "construct": {"type": "iso_utc_error", "timestamp": "-inf"},
+            "expected": {"error": "timestamp out of range for platform time_t"},
+        },
+        {
+            "id": "iso_utc_errors_huge",
+            "construct": {"type": "iso_utc_error", "timestamp": 1e20},
+            "expected": {"error": "timestamp out of range for platform time_t"},
+        },
+    ]
+
+
+def index_vectors(doctor: Any) -> list[dict[str, Any]]:
+    absent = doctor.IndexDiag(
+        sessions_on_disk=2,
+        index_entries=None,
+        state="absent",
+    )
+    zero = doctor.IndexDiag(sessions_on_disk=0, index_entries=0, state="not-a-closed-state")
+    return [
+        {
+            "id": "index_diag_to_dict_absent",
+            "construct": {"type": "IndexDiag_to_dict", "variant": "absent"},
+            "expected": {"to_dict": absent.to_dict()},
+        },
+        {
+            "id": "index_diag_to_dict_zero",
+            "construct": {"type": "IndexDiag_to_dict", "variant": "zero"},
+            "expected": {"to_dict": zero.to_dict()},
+        },
+    ]
+
+
+def row(name: str, versions: Any, **extra: Any) -> dict[str, object]:
+    out: dict[str, object] = {"name": name, "versions_supported": versions}
+    out.update(extra)
+    return out
+
+
+def primary_report(doctor: Any) -> Any:
+    return doctor.DoctorReport(
+        tool_version="0.5.0",
+        adapters=(
+            row(
+                "synthetic",
+                ["v1", "v2"],
+                default_profile="neutral",
+                description="synthetic adapter row",
+            ),
+            row("wide-name-exceeds-twenty-four", []),
+        ),
+        reader_limits={
+            "max_line_bytes": 8,
+            "max_depth": 3,
+            "max_file_bytes": 100,
+            "max_records": None,
+        },
+        config_path=None,
+        roots=(),
+    )
+
+
+def shown_roots(doctor: Any) -> Any:
+    absent = doctor.RootDiag(
+        agent="claude",
+        path="C:/synthetic/claude",
+        exists=False,
+        source="default",
+        file_count=0,
+        file_count_capped=False,
+        newest_mtime=None,
+        checked=0,
+        verdicts={},
+        top_codes=(),
+        index=None,
+    )
+    present = doctor.RootDiag(
+        agent="codex",
+        path="C:/synthetic/codex",
+        exists=True,
+        source="env",
+        file_count=3,
+        file_count_capped=True,
+        newest_mtime="2023-11-14T22:13:20Z",
+        checked=2,
+        verdicts={"healthy": 0, "warnings": 1, "invalid": 1},
+        top_codes=(("SYN-B", 2), ("SYN-A", 1)),
+        index=doctor.IndexDiag(
+            sessions_on_disk=4,
+            index_entries=None,
+            state="absent",
+        ),
+    )
+    clean = doctor.RootDiag(
+        agent="other",
+        path="C:/synthetic/other",
+        exists=True,
+        source="default",
+        file_count=1,
+        file_count_capped=False,
+        newest_mtime=None,
+        checked=1,
+        verdicts={"healthy": 1},
+        top_codes=(),
+        index=doctor.IndexDiag(
+            sessions_on_disk=1,
+            index_entries=1,
+            state="ok",
+        ),
+    )
+    return doctor.DoctorReport(
+        tool_version="0.5.0",
+        adapters=(),
+        reader_limits={"max_records": None},
+        config_path="C:/synthetic/sesslint.toml",
+        roots=(absent, present, clean),
+    )
+
+
+def report_vectors(doctor: Any) -> list[dict[str, Any]]:
+    primary = primary_report(doctor)
+    not_list = doctor.DoctorReport(
+        tool_version="0.5.0",
+        adapters=(row("n", "plain"),),
+        reader_limits={"z": 1, "a": None},
+        config_path=None,
+        roots=(),
+    )
+    mixed = doctor.DoctorReport(
+        tool_version="t",
+        adapters=(row("n", ["a", 2, None, True, False]),),
+        reader_limits={"m": 0},
+        config_path=None,
+        roots=(),
+    )
+    uni = doctor.DoctorReport(
+        tool_version="t",
+        adapters=(row("caf\u00e9", ["\u2603"]),),
+        reader_limits={},
+        config_path=None,
+        roots=(),
+    )
+
+    def with_shown(report: Any) -> dict[str, Any]:
+        with patch("sesslint.report.minimize_path", side_effect=lambda _p, home=None: "shown"):
+            return {
+                "human": report.render_human(),
+                "json": report.to_json(),
+            }
+
+    vectors: list[dict[str, Any]] = [
+        {
+            "id": "doctor_constants",
+            "construct": {"type": "DOCTOR_CONSTANTS"},
+            "expected": {
+                "DOCTOR_SCHEMA_VERSION": doctor.DOCTOR_SCHEMA_VERSION,
+                "MAX_FILE_COUNT": doctor.MAX_FILE_COUNT,
+                "MAX_QUICK_CHECKS": doctor.MAX_QUICK_CHECKS,
+                "MAX_TOP_CODES": doctor.MAX_TOP_CODES,
+            },
+        },
+        {
+            "id": "empty_report_human_json_keys",
+            "construct": {"type": "DoctorReport", "variant": "primary"},
+            "expected": {
+                "human": primary.render_human(),
+                "json": primary.to_json(),
+                "to_dict_keys": list(primary.to_dict().keys()),
+            },
+        },
+        {
+            "id": "render_versions_type_plain",
+            "construct": {"type": "DoctorReport", "variant": "not_list"},
+            "expected": {
+                "human": not_list.render_human(),
+                "json": not_list.to_json(),
+            },
+        },
+        {
+            "id": "render_versions_mixed_scalars",
+            "construct": {"type": "DoctorReport", "variant": "mixed"},
+            "expected": {
+                "human": mixed.render_human(),
+                "json": mixed.to_json(),
+            },
+        },
+        {
+            "id": "render_unicode_adapter_row",
+            "construct": {"type": "DoctorReport", "variant": "unicode"},
+            "expected": {
+                "human": uni.render_human(),
+                "json": uni.to_json(),
+            },
+        },
+    ]
+
+    missing_versions = doctor.DoctorReport(
+        tool_version="0.5.0",
+        adapters=({"name": "only-name"},),
+        reader_limits={},
+        config_path="C:/synthetic/sesslint.toml",
+        roots=(),
+    )
+    try:
+        missing_versions.render_human()
+        raise SystemExit("render_key_error_versions: expected KeyError")
+    except KeyError as exc:
+        vers_err = repr(exc.args[0])
+
+    missing_name = doctor.DoctorReport(
+        tool_version="0.5.0",
+        adapters=({"versions_supported": ["x"]},),
+        reader_limits={},
+        config_path=None,
+        roots=(),
+    )
+    try:
+        missing_name.render_human()
+        raise SystemExit("render_key_error_name: expected KeyError")
+    except KeyError as exc:
+        name_err = repr(exc.args[0])
+
+    vectors.extend(
+        [
+            {
+                "id": "render_key_error_versions",
+                "construct": {"type": "DoctorReport_render_key_error", "variant": "versions"},
+                "expected": {"error": vers_err},
+            },
+            {
+                "id": "render_key_error_name",
+                "construct": {"type": "DoctorReport_render_key_error", "variant": "name"},
+                "expected": {"error": name_err},
+            },
+        ]
+    )
+    return vectors
+
+
+def count_vectors(out_dir: Path, doctor: Any) -> list[dict[str, Any]]:
+    walk = ensure_count_fixtures(out_dir)
+    rel_walk = rel_posix(out_dir, walk)
+    counted = doctor._count_files(walk)
+    candidates = [rel_posix(walk, path) for path in counted[2]]
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="sesslint-doctor-cap-") as tmp:
+        cap_root = Path(tmp)
+        for index in range(doctor.MAX_FILE_COUNT + 1):
+            touch(cap_root / f"n{index:05d}.txt")
+        cap = doctor._count_files(cap_root)
+
+    missing = walk.parent / "fixtures" / "count_missing" / "no-such"
+    miss = doctor._count_files(missing)
+
+    single = out_dir / "fixtures" / "count_file_root.txt"
+    touch(single)
+    rel_single = rel_posix(out_dir, single)
+    file_root = doctor._count_files(single)
+
+    return [
+        {
+            "id": "count_files_walk_sorted",
+            "construct": {
+                "type": "count_files",
+                "development_path": rel_walk,
+            },
+            "expected": {
+                "count": counted[0],
+                "capped": counted[1],
+                "candidates": candidates,
+            },
+        },
+        {
+            "id": "count_files_missing_dir",
+            "construct": {
+                "type": "count_files",
+                "development_path": rel_posix(out_dir, missing),
+            },
+            "expected": {
+                "count": miss[0],
+                "capped": miss[1],
+                "candidates": [],
+            },
+        },
+        {
+            "id": "count_files_file_root",
+            "construct": {
+                "type": "count_files",
+                "development_path": rel_single,
+            },
+            "expected": {
+                "count": file_root[0],
+                "capped": file_root[1],
+                "candidates": [],
+            },
+        },
+        {
+            "id": "count_files_cap",
+            "construct": {"type": "count_files_cap", "extra_files": doctor.MAX_FILE_COUNT + 1},
+            "expected": {
+                "count": cap[0],
+                "capped": cap[1],
+                "candidates": [],
+            },
+        },
+    ]
+
+
+def make_check_report(
+    *,
+    limitation: str = "",
+    severities: dict[str, int] | None = None,
+    codes: list[str] | None = None,
+) -> Any:
+    sev = severities or {}
+    findings = []
+    for code in codes or []:
+        findings.append(SimpleNamespace(code=code))
+    counts = SimpleNamespace(by_severity=sev)
+    return SimpleNamespace(limitation=limitation, counts=counts, findings=findings)
+
+
+def run_quick_with_reports(
+    doctor: Any, views: list[Any | None], out_dir: Path
+) -> tuple[int, dict[str, int], tuple]:
+    quick = out_dir / "fixtures" / "quick" / "synthetic"
+    quick.mkdir(parents=True, exist_ok=True)
+    files = []
+    for index, _view in enumerate(views):
+        path = quick / f"quick-{index:02d}.json"
+        touch(path, stamp=1_700_000_000.0 - index)
+        files.append(path)
+
+    def fake_check(path: Path) -> Any:
+        index = int(path.stem.split("-")[-1], 10)
+        view = views[index]
+        if view is None:
+            raise RuntimeError("synthetic unreadable")
+        return view
+
+    with patch("sesslint.api.check_file", side_effect=fake_check):
+        return doctor._quick_verdicts(tuple(files))
+
+
+def quick_vectors(doctor: Any, out_dir: Path) -> list[dict[str, Any]]:
+    empty = doctor._quick_verdicts(())
+    sub = out_dir / "fixtures" / "quick" / "sub"
+    sub.mkdir(parents=True, exist_ok=True)
+    missing = out_dir / "fixtures" / "quick" / "nope.json"
+    ignored = doctor._quick_verdicts((sub, missing))
+
+    ruled_views: list[Any | None] = [
+        make_check_report(
+            limitation="Unsupported: synthetic",
+            severities={"fatal": 4, "error": 1},
+            codes=["SYN-Z"],
+        ),
+        None,
+        make_check_report(
+            limitation="Skipped: synthetic",
+            severities={"warning": 9},
+            codes=[],
+        ),
+        make_check_report(
+            severities={"error": 1, "warning": 3},
+            codes=["SYN-B", "SYN-A"],
+        ),
+        make_check_report(
+            limitation="warning-not-a-prefix",
+            severities={"warning": 1, "fatal": 0},
+            codes=["SYN-A"],
+        ),
+    ]
+    ruled = run_quick_with_reports(doctor, ruled_views, out_dir)
+
+    crowded_views: list[Any] = [
+        make_check_report(codes=["SYN-B"]),
+        make_check_report(codes=["SYN-B"]),
+        make_check_report(codes=["SYN-B"]),
+        make_check_report(codes=["SYN-A"]),
+        make_check_report(codes=["SYN-A"]),
+    ]
+    crowded = run_quick_with_reports(doctor, crowded_views, out_dir)
+
+    def verdict_list(verdicts: dict[str, int], *, sorted_keys: bool) -> list[list[Any]]:
+        if sorted_keys:
+            keys = sorted(verdicts)
+        else:
+            keys = list(verdicts)
+        return [[key, verdicts[key]] for key in keys]
+
+    def top_list(top: tuple[tuple[str, int], ...]) -> list[list[Any]]:
+        return [[code, count] for code, count in top]
+
+    def outcome_spec(view: Any | None) -> dict[str, Any]:
+        if view is None:
+            return {"kind": "unreadable"}
+        return {
+            "kind": "report",
+            "limitation": view.limitation,
+            "by_severity": list(view.counts.by_severity.items()),
+            "finding_codes": [f.code for f in view.findings],
+        }
+
+    return [
+        {
+            "id": "quick_verdicts_empty",
+            "construct": {"type": "quick_verdicts", "paths": []},
+            "expected": {
+                "checked": empty[0],
+                "verdicts": verdict_list(empty[1], sorted_keys=True),
+                "top_codes": top_list(empty[2]),
+            },
+        },
+        {
+            "id": "quick_verdicts_ignores_non_files",
+            "construct": {
+                "type": "quick_verdicts",
+                "paths": [
+                    rel_posix(out_dir, sub),
+                    rel_posix(out_dir, missing),
+                ],
+            },
+            "expected": {
+                "checked": ignored[0],
+                "verdicts": verdict_list(ignored[1], sorted_keys=True),
+                "top_codes": top_list(ignored[2]),
+            },
+        },
+        {
+            "id": "verdict_rules_order",
+            "construct": {
+                "type": "verdicts_from_outcomes",
+                "outcomes": [outcome_spec(v) for v in ruled_views],
+            },
+            "expected": {
+                "checked": ruled[0],
+                "verdicts": verdict_list(ruled[1], sorted_keys=False),
+                "top_codes": top_list(ruled[2]),
+            },
+        },
+        {
+            "id": "verdict_top_codes_cap",
+            "construct": {
+                "type": "verdicts_from_outcomes",
+                "outcomes": [outcome_spec(v) for v in crowded_views],
+            },
+            "expected": {
+                "checked": crowded[0],
+                "top_codes": top_list(crowded[2]),
+            },
+        },
+    ]
+
+
+def build_vectors(doctor: Any, out_dir: Path) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+    vectors.extend(iso_utc_vectors(doctor))
+    vectors.extend(index_vectors(doctor))
+    vectors.extend(report_vectors(doctor))
+    vectors.extend(count_vectors(out_dir, doctor))
+    vectors.extend(quick_vectors(doctor, out_dir))
+    return vectors
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "doctor_py_sha256": DOCTOR_PY_SHA256,
+        "doctor_rs_sha256": DOCTOR_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "doctor_py_sha256": DOCTOR_PY_SHA256,
+        "doctor_rs_sha256": DOCTOR_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/doctor/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.doctor parity (iso_utc, count walk, quick "
+            "verdict classification with mocked check_file, report JSON "
+            "and human render)."
+        ),
+        "generator": "rust/parity/vectors/doctor/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    doctor = load_doctor_module()
+    vectors = build_vectors(doctor, out_dir)
+    digest = write_outputs(out_dir, vectors)
+    print(f"wrote {len(vectors)} vectors to {out_dir / 'vectors.json'}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

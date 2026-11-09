@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic cli._json_errors error_document, wants_json, and TrackedStream parity.",
+  "generator": "rust/parity/vectors/cli._json_errors/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "A lone UTF-16 surrogate cannot be stored in Rust str; no \\ud800 error_document vector.",
+    "Rust 1.91 makes std::env::set_var unsafe; parity vectors do not set SESSLINT_FORMAT (env fallback covered by cli unit tests in json_errors.rs)."
+  ]
+}

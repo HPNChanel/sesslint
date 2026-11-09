@@ -1,0 +1,170 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.export",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "export_py_sha256": "0a77cd4c7ee4c82bde229b0b3785bd9242aa868e300d47a8f5d5610996f841f6",
+  "export_rs_sha256": "bc3c5b89f67a703ca529541b97527062afbac71c85e0d57ad0fa8898078a01e2",
+  "known_parity_gaps": [
+    "GAP-cli-export-export-file: Python run() imports `from sesslint import api` after output is set and `args.path.is_file()`; Rust run() returns Display `sesslint.api.export_file is not available` at that import (no ExportRefused import, no getattr(adapter), no json.dumps, no print, no exit 0 or 1)."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "export",
+        "help": "[writes: output file] Export a session artifact to canonical format for repair.",
+        "description": "[writes: output file] Export a supported session artifact to a byte-deterministic canonical file that the repair pipeline accepts.",
+        "arguments": [
+          {
+            "positional": true,
+            "option_strings": [],
+            "dest": "path",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to session file (.json or .jsonl)",
+            "default_keyword": "absent",
+            "effective_default": "none",
+            "required": true
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "nargs": null,
+            "type_name": "Path",
+            "choices": null,
+            "metavar": null,
+            "help": "Path to output canonical file (required)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--adapter"
+            ],
+            "dest": "adapter",
+            "action": "store",
+            "nargs": null,
+            "type_name": null,
+            "choices": [
+              "auto",
+              "canonical",
+              "claude-code-jsonl",
+              "codex-rollout",
+              "openai-agents"
+            ],
+            "metavar": null,
+            "help": "Session format adapter (default: auto)",
+            "default_keyword": {
+              "present": "suppress"
+            },
+            "effective_default": "suppress",
+            "required": false
+          },
+          {
+            "positional": false,
+            "option_strings": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "nargs": "0",
+            "type_name": null,
+            "choices": null,
+            "metavar": null,
+            "help": "Output export summary as JSON",
+            "default_keyword": "absent",
+            "effective_default": "false",
+            "required": false
+          }
+        ],
+        "groups": []
+      }
+    },
+    {
+      "id": "run_missing_output",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-missing.json",
+          "output": null
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: --output is required for export.\n"
+      }
+    },
+    {
+      "id": "run_missing_path",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-missing.json"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Source file not found: fixtures\\par-missing.json\n"
+      }
+    },
+    {
+      "id": "run_broken_symlink",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-broken.json"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Source file not found: fixtures\\par-broken.json\n"
+      }
+    },
+    {
+      "id": "run_directory_path",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-dir"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Source file not found: fixtures\\par-dir\n"
+      }
+    },
+    {
+      "id": "run_symlink_to_directory",
+      "construct": {
+        "type": "run",
+        "args": {
+          "path": "fixtures/par-dir-link"
+        }
+      },
+      "expected": {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "Error: Source file not found: fixtures\\par-dir-link\n"
+      }
+    }
+  ]
+}

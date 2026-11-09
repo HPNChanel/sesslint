@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair package barrel parity (__all__ name list and order from the pinned repair/__init__.py; no session payload text).",
+  "generator": "rust/parity/vectors/repair/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-repair-package-register-not-called: Python repair/__init__.py calls register_all_conservative_recipes(), register_all_salvage_recipes(), and register_all_sl002_recipes() at import time. Rust exposes the three register_all aliases but does not invoke them at crate load.",
+    "GAP-repair-package-string-exports: PRECONDITION_FUNCS, REGISTRY, and run_all_checks appear in Python __all__ and in repair::ALL as names only; they are not re-exported as public Rust values and run_all_checks is not a Rust function.",
+    "GAP-repair-submodule-apis: repair submodules have dedicated module parity vectors; a name in __all__ does not count as barrel behavioral coverage for this card."
+  ]
+}

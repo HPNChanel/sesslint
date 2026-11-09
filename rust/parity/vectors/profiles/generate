@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Generate sesslint.profiles package parity vectors (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROFILE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BUILTIN_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PROFILES_INIT_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+BUILTIN_RS_SHA256 = (
+    "8ac5a563c81e05189577d1177425b26dab911fb1fed4338f7c0abf0c235312fd"
+)
+PROFILE_RS_SHA256 = (
+    "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c"
+)
+MODULE = "sesslint.profiles"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "get_profile and list_profiles are re-exported but not wired to REGISTRY. "
+    "Rust returns sesslint.profiles.builtin is not available. "
+    'Python get_profile("neutral") returns the neutral profile.',
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_blob_matches_head(pin: str, path: str) -> None:
+    pin_text = git_show_blob(f"{pin}:{path}")
+    head_text = git_show_blob(f"HEAD:{path}")
+    if pin_text != head_text:
+        raise SystemExit(
+            f"{path} differs from pin blob; regenerate or align the worktree."
+        )
+
+
+def verify_builtin_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "checks" / "src" / "builtin.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != BUILTIN_RS_SHA256:
+        raise SystemExit(
+            "checks/src/builtin.rs sha256 mismatch: "
+            f"expected {BUILTIN_RS_SHA256}, got {digest}"
+        )
+
+
+def load_python_all() -> list[str]:
+    """`__all__` from pinned `sesslint.profiles` package (`profiles/__init__.py`)."""
+    text = git_show_blob(f"{PROFILES_INIT_PIN}:src/sesslint/profiles/__init__.py")
+    tree = ast.parse(text)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    seq = node.value
+                    if not isinstance(seq, ast.List):
+                        raise SystemExit("__all__ must be a list literal")
+                    names: list[str] = []
+                    for elt in seq.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            names.append(elt.value)
+                        else:
+                            raise SystemExit("__all__ entries must be string literals")
+                    return names
+    raise SystemExit("missing __all__ in profiles/__init__.py")
+
+
+def load_builtin_module() -> types.ModuleType:
+    verify_blob_matches_head(PROFILE_PY_PIN, "src/sesslint/profiles/profile.py")
+    verify_blob_matches_head(BUILTIN_PY_PIN, "src/sesslint/profiles/builtin.py")
+    verify_blob_matches_head(PROFILES_INIT_PIN, "src/sesslint/profiles/__init__.py")
+    verify_builtin_rs_sha256()
+    src = repo_root() / "src"
+    insert = str(src)
+    if insert not in sys.path:
+        sys.path.insert(0, insert)
+
+    source = git_show_blob(f"{BUILTIN_PY_PIN}:src/sesslint/profiles/builtin.py")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_pinned_builtin.py",
+        delete=False,
+    ) as handle:
+        handle.write(source)
+        tmp_path = handle.name
+    try:
+        mod_name = "_sesslint_profiles_builtin_parity_profiles_pkg"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned builtin.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def vectors_from_python(mod: Any, py_all: list[str]) -> list[dict[str, Any]]:
+    expected_all = [
+        "ALL_RULES",
+        "CLAUDE_STRICT_PROFILE",
+        "EffectiveConfig",
+        "NEUTRAL_PROFILE",
+        "OPENAI_STRICT_PROFILE",
+        "Profile",
+        "REGISTRY",
+        "apply_rule_selection",
+        "deselected_rules",
+        "get_profile",
+        "list_profiles",
+        "require_canonical",
+        "resolve_effective_config",
+        "stamp_source_profile",
+    ]
+    if py_all != expected_all:
+        raise SystemExit(f"unexpected __all__: {py_all!r}")
+
+    out: list[dict[str, Any]] = []
+
+    out.append(
+        {
+            "id": "package_all",
+            "construct": {"type": "noop"},
+            "expected": {"names": py_all},
+        }
+    )
+
+    out.append(
+        {
+            "id": "package_registry_order",
+            "construct": {"type": "noop"},
+            "expected": {"keys": list(mod.REGISTRY.keys())},
+        }
+    )
+
+    out.append(
+        {
+            "id": "package_neutral_name",
+            "construct": {"type": "noop"},
+            "expected": {
+                "neutral": mod.NEUTRAL_PROFILE.name,
+                "claude_strict": mod.CLAUDE_STRICT_PROFILE.name,
+                "openai_strict": mod.OPENAI_STRICT_PROFILE.name,
+            },
+        }
+    )
+
+    if len(out) != 3:
+        raise SystemExit(f"expected 3 vectors, got {len(out)}")
+    return out
+
+
+def main() -> int:
+    py_all = load_python_all()
+    mod = load_builtin_module()
+    out_dir = Path(__file__).resolve().parent
+
+    vectors = vectors_from_python(mod, py_all)
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_builtin_rs_sha256": BUILTIN_RS_SHA256,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "python_all": py_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "checks_builtin_rs_sha256": BUILTIN_RS_SHA256,
+        "checks_profile_rs_sha256": PROFILE_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/profiles/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.profiles package parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/profiles/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

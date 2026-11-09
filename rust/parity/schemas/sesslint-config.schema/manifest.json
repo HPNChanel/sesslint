@@ -1,0 +1,18 @@
+{
+  "byte_exact_scope": "Embedded schema blob only; not CLI or producer output bytes.",
+  "generator": "rust/parity/schemas/sesslint-config.schema/generate",
+  "invalid_count": 372,
+  "oracle": "Draft7Validator with exact Decimal number/integer type checks",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema_file": "schemas/sesslint-config.schema.json",
+  "scope": "Advisory config input schema; no config JSON producer exists in pin.",
+  "source_sha256": {
+    "schemas/sesslint-config.schema.json": "c6dab1a0900034ddf37929447efa6cf5e53894ddbdfa9ab15fd3a81e59a68d4f",
+    "src/sesslint/config.py": "779e9e346509a6d147805146306a5ee221f3152110a1077069e280318a8e1c36",
+    "tests/test_config.py": "8ed4cd7d59a8cda8c252d8ca6d84c5862c534d87b991d52723124be45670e077",
+    "tests/test_config_schema.py": "43628876eefe6b6e55eb4bd876e4aac4c782bc1d0b737804f07de4b9e826cf46"
+  },
+  "valid_count": 123,
+  "vector_count": 495,
+  "vectors_sha256": "9f6bf69b98c11498566b3b497fec19d051de6314ef9e47f6f1a5cdfa292be7e8"
+}

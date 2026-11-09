@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.seal-ledger.v1 parity. Schema facts and entry bytes come from the pinned schema document and build_entry. The pinned schema test is not covered.",
+  "generator": "rust/parity/schemas/sesslint.seal-ledger.v1/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "GAP-seal-ledger-schema-load: load_seal_schema imports sesslint._resources and json.loads the schema file. This card reads the pin blob in the generator and does not call load_seal_schema. tests/test_seal.py::test_seal_schema_self_consistent calls load_seal_schema and _entry, so it is not covered.",
+    "GAP-seal-ledger-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-seal-ledger-json-number: a JSON number with a fraction, an exponent, or a value outside i64 is refused. Draft 2020-12 treats 1.0 as an integer and Python int is unbounded. Those values are not invented here.",
+    "GAP-seal-ledger-emit-refusal: build_entry raises SealError text. emit_entry returns schema reasons and does not copy those sentences."
+  ]
+}

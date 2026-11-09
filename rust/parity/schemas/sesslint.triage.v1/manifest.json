@@ -1,0 +1,15 @@
+{
+  "covered_count": 0,
+  "generator": "rust/parity/schemas/sesslint.triage.v1/generate",
+  "module": "sesslint.triage",
+  "not_applicable_count": 19,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.triage.v1.json",
+  "schema_id": "https://sesslint.dev/schemas/sesslint.triage.v1.json",
+  "schema_sha256": "c0ab67bc6a9ca33d04f0d4830444136f4f0a4bb4d08d5213d1adc46f8bab99e4",
+  "test_file": "tests/test_triage.py",
+  "triage_py_sha256": "a1b695b89ac9fc3142f098d51c9ffba01d2f1a20e9cebe202f6a41e26669029d",
+  "vector_count": 78,
+  "vectors_sha256": "982cf7334feef9071ef9e18f9a93e66d9ad0754daa64d9933398a056f3c680b6"
+}

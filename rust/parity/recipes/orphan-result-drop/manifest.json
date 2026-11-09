@@ -1,0 +1,15 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "orphan-result-drop",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "vector_count": 4,
+  "vectors_sha256": "4671f902a84061964b7d97ffb18d3c697622e3ddae61e5b7d8ec9c75e12a77e9",
+  "generator": "rust/parity/recipes/orphan-result-drop/generate",
+  "known_parity_gaps": [
+    "GAP-orphan-result-drop-affected-region: Python affected_region_orphan_result_drop returns a sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
+    "GAP-orphan-result-drop-planner: plan is not executed. A missing canonical_json_bytes call is not a successful plan. No fingerprint is stored. Zero steps are not a diff."
+  ]
+}

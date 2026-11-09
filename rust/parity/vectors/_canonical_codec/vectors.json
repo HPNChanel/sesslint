@@ -1,0 +1,273 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint._canonical_codec",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
+  "known_parity_gaps": [
+    "normalize_canonical_key_order: Rust reify uses BTreeMap sorted keys; Python dict normalization keeps insertion order until json.dumps sort_keys. Parity compares canonical_json_bytes only, not normalize_canonical map order.",
+    "session_event_content_identity: SessionEvent is not ported; content_identity_bytes/hash return Unsupported until the type exists.",
+    "active_codec_env: parity does not set SESSLINT_DISABLE_ACCEL or call set_active_codec; unit tests cover those paths."
+  ],
+  "vectors": [
+    {
+      "id": "canonical_flat_object",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "b": 2,
+          "a": 1
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJhIjoxLCJiIjoyfQ=="
+      }
+    },
+    {
+      "id": "canonical_nested_keys",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "outer": {
+            "z": 1,
+            "a": {
+              "m": 3,
+              "b": 2
+            }
+          }
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJvdXRlciI6eyJhIjp7ImIiOjIsIm0iOjN9LCJ6IjoxfX0="
+      }
+    },
+    {
+      "id": "canonical_list",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "items": [
+            3,
+            1,
+            2
+          ]
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJpdGVtcyI6WzMsMSwyXX0="
+      }
+    },
+    {
+      "id": "canonical_unicode_utf8",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "label": "Tiếng Việt / 日本語 / 🌍"
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJsYWJlbCI6IlRp4bq/bmcgVmnhu4d0IC8g5pel5pys6KqeIC8g8J+MjSJ9"
+      }
+    },
+    {
+      "id": "canonical_control_char_escaped",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "ctrl": "\u0001"
+        },
+        "newline": false
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJjdHJsIjoiXHUwMDAxIn0="
+      }
+    },
+    {
+      "id": "canonical_newline_trailing_lf",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "json",
+        "value": {
+          "b": 2,
+          "a": 1
+        },
+        "newline": true
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJhIjoxLCJiIjoyfQo="
+      }
+    },
+    {
+      "id": "halfway_float_tie_even_digit",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "halfway_float",
+        "bits": "c30fa36fd398d412"
+      },
+      "expected": {
+        "result": "ok",
+        "bytes_b64": "eyJ0aWUiOi0xMTEzMTc4MTIwNTkyMDAyLjJ9"
+      }
+    },
+    {
+      "id": "error_float_nan_in_object",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "float_nan_object"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": "Float value nan is not valid in SessLint canonical JSON"
+      }
+    },
+    {
+      "id": "error_float_inf_in_object",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "float_inf_object"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": "Float value inf is not valid in SessLint canonical JSON"
+      }
+    },
+    {
+      "id": "error_non_string_dict_key",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "non_string_key",
+        "repr": "3"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": "Non-string dictionary key rejected by SessLint codec: 3"
+      }
+    },
+    {
+      "id": "error_cyclic_dict",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "cycle_dict"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": "Cyclic reference detected during canonical serialization"
+      }
+    },
+    {
+      "id": "error_nesting_overflow_dict",
+      "construct": {
+        "type": "canonical_json_bytes",
+        "shape": "nested_dicts",
+        "wraps": 993
+      },
+      "expected": {
+        "result": "error",
+        "raises": "SchemaError",
+        "exact_message": "Object nesting depth exceeded during canonical serialization"
+      }
+    },
+    {
+      "id": "payload_content_hash_synthetic",
+      "construct": {
+        "type": "payload_content_hash",
+        "shape": "json",
+        "value": {
+          "b": 2,
+          "a": 1,
+          "sub": {
+            "k": "v"
+          }
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "digest": "sha256:8e85dbb225e7132386d632db002333c3a8755be9ffa26994cca2e4487cca0916"
+      }
+    },
+    {
+      "id": "plan_fingerprint_synthetic",
+      "construct": {
+        "type": "plan_fingerprint",
+        "shape": "json",
+        "value": {
+          "session_id": "sess_syn",
+          "actions": [
+            {
+              "code": "SYN",
+              "id": "evt_1"
+            }
+          ],
+          "fingerprint": "ignored"
+        },
+        "policy": "conservative"
+      },
+      "expected": {
+        "result": "ok",
+        "fingerprint": "bb243df390ade988670c809893fb56889b4cc5fd10015f0458e323c2f62b2595"
+      }
+    },
+    {
+      "id": "content_identity_bytes_unsupported",
+      "construct": {
+        "type": "content_identity_bytes"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "Unsupported",
+        "exact_message": "sesslint.canonical.SessionEvent is not available"
+      }
+    },
+    {
+      "id": "content_identity_hash_unsupported",
+      "construct": {
+        "type": "content_identity_hash"
+      },
+      "expected": {
+        "result": "error",
+        "raises": "Unsupported",
+        "exact_message": "sesslint.canonical.SessionEvent is not available"
+      }
+    },
+    {
+      "id": "module_all_export_order",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "result": "ok",
+        "names": [
+          "CODEC_INTERFACE_VERSION",
+          "CanonicalCodec",
+          "PurePythonCanonicalCodec",
+          "canonical_json_bytes",
+          "content_identity_bytes",
+          "content_identity_hash",
+          "get_active_codec",
+          "normalize_canonical",
+          "payload_content_hash",
+          "plan_fingerprint",
+          "set_active_codec"
+        ]
+      }
+    }
+  ]
+}

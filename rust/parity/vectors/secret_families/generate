@@ -1,0 +1,1233 @@
+#!/usr/bin/env python3
+"""Generate sesslint.secret_families parity vectors (stdlib only; pinned re.search)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SECRET_FAMILIES_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+MODULE = "sesslint.secret_families"
+SECRET_FAMILIES_RS_SHA256 = (
+    "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f"
+)
+
+FAMILY_LITERALS_KEYS: Final[tuple[str, ...]] = (
+    "anthropic-api-key",
+    "openai-api-key",
+    "openrouter-api-key",
+    "github-pat-classic",
+    "github-pat-fine-grained",
+    "github-oauth-token",
+    "stripe-webhook-secret",
+    "stripe-key",
+    "aws-access-key",
+    "google-api-key",
+    "slack-token",
+    "gitlab-pat",
+    "bearer-token",
+    "npm-token",
+    "huggingface-token",
+    "supabase-pat",
+    "jwt",
+    "private-key-block",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_blob(rev_path: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+        text=True,
+    )
+
+
+def verify_secret_families_py_matches_pin() -> None:
+    pin = git_show_blob(f"{SECRET_FAMILIES_PY_PIN}:src/sesslint/secret_families.py")
+    head = git_show_blob("HEAD:src/sesslint/secret_families.py")
+    if pin != head:
+        raise SystemExit(
+            "src/sesslint/secret_families.py differs from pin blob; "
+            "regenerate or align the worktree."
+        )
+
+
+def verify_secret_families_rs_sha256() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "model" / "src" / "secret_families.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != SECRET_FAMILIES_RS_SHA256:
+        raise SystemExit(
+            "model/src/secret_families.rs sha256 mismatch: "
+            f"expected {SECRET_FAMILIES_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_secret_families() -> tuple[
+    list[tuple[str, re.Pattern[bytes], int]], dict[str, tuple[bytes, ...]]
+]:
+    verify_secret_families_py_matches_pin()
+    source = git_show_blob(f"{SECRET_FAMILIES_PY_PIN}:src/sesslint/secret_families.py")
+    globs: dict[str, Any] = {"__name__": "_parity_secret_families"}
+    exec(compile(source, "<pinned secret_families.py>", "exec"), globs, globs)
+    raw = globs.get("SECRET_FAMILIES")
+    if raw is None:
+        raise SystemExit("pinned module has no SECRET_FAMILIES")
+    lit = globs.get("FAMILY_LITERALS")
+    if lit is None:
+        raise SystemExit("pinned module has no FAMILY_LITERALS")
+    out: list[tuple[str, re.Pattern[bytes], int]] = []
+    for name, pattern, group in raw:
+        out.append((name, pattern, group))
+    return out, lit
+
+
+def family_by_name(
+    patterns: list[tuple[str, re.Pattern[bytes], int]], name: str
+) -> tuple[str, re.Pattern[bytes], int]:
+    for item in patterns:
+        if item[0] == name:
+            return item
+    raise SystemExit(f"unknown family {name!r}")
+
+
+def span_for_search(
+    haystack: bytes, pattern: re.Pattern[bytes], group: int
+) -> tuple[int, int] | None:
+    match = pattern.search(haystack)
+    if match is None:
+        return None
+    return match.span(group)
+
+
+def decode_bytes_blob(obj: dict[str, Any]) -> bytes:
+    if obj.get("kind") != "bytes_hex":
+        raise SystemExit("expected bytes_hex blob")
+    hx = str(obj["hex"])
+    if len(hx) % 2 != 0:
+        raise SystemExit("odd hex length")
+    return bytes.fromhex(hx) if hx else b""
+
+
+def literal_bytes(literals: dict[str, tuple[bytes, ...]], family: str, index: int) -> bytes:
+    return literals[family][index]
+
+
+def assemble_concat_part(
+    part: dict[str, Any], literals: dict[str, tuple[bytes, ...]]
+) -> bytes:
+    kind = part["kind"]
+    if kind == "bytes_hex":
+        return decode_bytes_blob(part)
+    if kind == "family_literal_prefix":
+        return literal_bytes(literals, part["family"], int(part["literal_index"]))
+    raise SystemExit(f"unknown concat part {kind}")
+
+
+def assemble_prefix_mode(
+    recipe: dict[str, Any],
+    mode: dict[str, Any],
+    literals: dict[str, tuple[bytes, ...]],
+) -> bytes:
+    kind = mode["kind"]
+    if kind == "family_literal":
+        return literal_bytes(literals, recipe["family"], int(recipe["literal_index"]))
+    if kind == "family_literal_prefix":
+        return literal_bytes(literals, mode["family"], int(mode["literal_index"]))
+    if kind == "concat":
+        return b"".join(assemble_concat_part(p, literals) for p in mode["parts"])
+    if kind == "pem_header":
+        return b"-----BEGIN " + decode_bytes_blob(mode["middle"]) + literal_bytes(
+            literals, "private-key-block", 0
+        )
+    if kind == "generic":
+        if mode["keyword"] != "password":
+            raise SystemExit("unknown generic keyword")
+        return b"password"
+    raise SystemExit(f"unknown prefix_mode {kind}")
+
+
+def assemble_recipe(
+    recipe: dict[str, Any], literals: dict[str, tuple[bytes, ...]]
+) -> bytes:
+    out = bytearray()
+    out.extend(decode_bytes_blob(recipe["lead"]))
+    out.extend(assemble_prefix_mode(recipe, recipe["prefix_mode"], literals))
+    family = recipe["family"]
+    if "segment_lengths" in recipe:
+        segs = recipe["segment_lengths"]
+        fill = int(recipe["fill_byte"])
+        out.extend(bytes([fill]) * int(segs[0]))
+        out.append(ord("."))
+        out.extend(bytes([fill]) * int(segs[1]))
+        out.append(ord("."))
+        out.extend(bytes([fill]) * int(segs[2]))
+    elif family == "generic-credential-assignment":
+        out.extend(decode_bytes_blob(recipe["between"]))
+        out.extend(bytes([int(recipe["fill_byte"])]) * int(recipe["body_length"]))
+    else:
+        bl = recipe.get("body_length")
+        if bl is not None:
+            n = int(bl)
+            out.extend(bytes([int(recipe["fill_byte"])]) * n)
+    out.extend(decode_bytes_blob(recipe["tail"]))
+    return bytes(out)
+
+
+def build_vectors() -> list[dict[str, Any]]:
+    patterns, literals = load_pinned_secret_families()
+    vectors: list[dict[str, Any]] = []
+
+    def add(vid: str, family: str, recipe: dict[str, Any]) -> None:
+        hay = assemble_recipe(recipe, literals)
+        _, pattern, group = family_by_name(patterns, family)
+        span = span_for_search(hay, pattern, group)
+        vectors.append(
+            {
+                "id": vid,
+                "family": family,
+                "construct": {"type": "secret_family_search", "recipe": recipe},
+                "expected": {"span": list(span) if span is not None else None},
+            }
+        )
+
+    glues = (("letter", "78"), ("digit", "31"), ("us", "5f"), ("hy", "2d"))
+
+    # --- anthropic-api-key ---
+    fam = "anthropic-api-key"
+    add(
+        f"{fam}__match_sk_ant",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- openai-api-key ---
+    fam = "openai-api-key"
+    add(
+        f"{fam}__match_sk",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- openrouter-api-key ---
+    fam = "openrouter-api-key"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 48,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 47,
+            "fill_byte": 102,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 48,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- github-pat-classic ---
+    fam = "github-pat-classic"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 36,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 35,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 36,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- github-pat-fine-grained ---
+    fam = "github-pat-fine-grained"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 22,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 21,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 22,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- github-oauth-token ---
+    fam = "github-oauth-token"
+    for idx in range(4):
+        add(
+            f"{fam}__match_literal_{idx}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": "20"},
+                "family": fam,
+                "literal_index": idx,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 36,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": "20"},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 35,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 36,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- stripe-webhook-secret ---
+    fam = "stripe-webhook-secret"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 24,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 23,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 24,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- stripe-key (four literals; 16 alnum body after prefix; lead is boundary) ---
+    fam = "stripe-key"
+    for idx in range(4):
+        add(
+            f"{fam}__match_literal_{idx}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": "20"},
+                "family": fam,
+                "literal_index": idx,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 16,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": "20"},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 15,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 16,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- aws-access-key ---
+    fam = "aws-access-key"
+    add(
+        f"{fam}__match_akia",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 16,
+            "fill_byte": 48,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__match_asia",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 1,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 16,
+            "fill_byte": 65,
+            "tail": {"kind": "bytes_hex", "hex": "20"},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 15,
+            "fill_byte": 48,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 16,
+                "fill_byte": 48,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- google-api-key ---
+    fam = "google-api-key"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- slack-token (short literal xox + letter + hyphen) ---
+    fam = "slack-token"
+    slack_prefix = {
+        "kind": "concat",
+        "parts": [
+            {"kind": "family_literal_prefix", "family": fam, "literal_index": 0},
+            {"kind": "bytes_hex", "hex": "62"},
+            {"kind": "bytes_hex", "hex": "2d"},
+        ],
+    }
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": slack_prefix,
+            "body_length": 16,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": slack_prefix,
+            "body_length": 15,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": None,
+                "prefix_mode": slack_prefix,
+                "body_length": 16,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- gitlab-pat ---
+    fam = "gitlab-pat"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- bearer-token ---
+    fam = "bearer-token"
+    bearer_prefix = {
+        "kind": "concat",
+        "parts": [
+            {"kind": "family_literal_prefix", "family": fam, "literal_index": 0},
+            {"kind": "bytes_hex", "hex": "20"},
+        ],
+    }
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": bearer_prefix,
+            "body_length": 16,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": bearer_prefix,
+            "body_length": 15,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": None,
+                "prefix_mode": bearer_prefix,
+                "body_length": 16,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- npm-token ---
+    fam = "npm-token"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- huggingface-token ---
+    fam = "huggingface-token"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 20,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 19,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 20,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- supabase-pat (tail 'A' is uppercase; not part of [0-9a-f] run) ---
+    fam = "supabase-pat"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 40,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": "41"},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "body_length": 39,
+            "fill_byte": 48,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "body_length": 40,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- telegram-bot-token ---
+    fam = "telegram-bot-token"
+    tele_prefix = {
+        "kind": "concat",
+        "parts": [
+            {"kind": "bytes_hex", "hex": "3132333435363738"},
+            {"kind": "bytes_hex", "hex": "3a"},
+        ],
+    }
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": tele_prefix,
+            "body_length": 35,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": tele_prefix,
+            "body_length": 34,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": None,
+                "prefix_mode": tele_prefix,
+                "body_length": 35,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- jwt ---
+    fam = "jwt"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "segment_lengths": [10, 10, 10],
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": 0,
+            "prefix_mode": {"kind": "family_literal"},
+            "segment_lengths": [9, 10, 10],
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": 0,
+                "prefix_mode": {"kind": "family_literal"},
+                "segment_lengths": [10, 10, 10],
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- private-key-block ---
+    # Truncated header: middle ends at PRIVATE KEY---- (missing final hyphen vs PEM_END).
+    fam = "private-key-block"
+    pem_trunc_middle_hex = "50524956415445204b45592d2d2d2d"
+    add(
+        f"{fam}__match",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": {
+                "kind": "pem_header",
+                "middle": {"kind": "bytes_hex", "hex": ""},
+            },
+            "body_length": None,
+            "fill_byte": None,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short_truncated_suffix",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": {
+                "kind": "pem_header",
+                "middle": {"kind": "bytes_hex", "hex": pem_trunc_middle_hex},
+            },
+            "body_length": None,
+            "fill_byte": None,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": None,
+                "prefix_mode": {
+                    "kind": "pem_header",
+                    "middle": {"kind": "bytes_hex", "hex": ""},
+                },
+                "body_length": None,
+                "fill_byte": None,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # --- generic-credential-assignment (group 1); glued still matches ---
+    fam = "generic-credential-assignment"
+    add(
+        f"{fam}__match_group1",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": {
+                "kind": "generic",
+                "keyword": "password",
+            },
+            "between": {"kind": "bytes_hex", "hex": "3d"},
+            "body_length": 8,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    add(
+        f"{fam}__too_short",
+        fam,
+        {
+            "lead": {"kind": "bytes_hex", "hex": ""},
+            "family": fam,
+            "literal_index": None,
+            "prefix_mode": {
+                "kind": "generic",
+                "keyword": "password",
+            },
+            "between": {"kind": "bytes_hex", "hex": "3d"},
+            "body_length": 7,
+            "fill_byte": 97,
+            "tail": {"kind": "bytes_hex", "hex": ""},
+        },
+    )
+    for tag, gh in glues:
+        add(
+            f"{fam}__glued_{tag}_still_matches_group1",
+            fam,
+            {
+                "lead": {"kind": "bytes_hex", "hex": gh},
+                "family": fam,
+                "literal_index": None,
+                "prefix_mode": {
+                    "kind": "generic",
+                    "keyword": "password",
+                },
+                "between": {"kind": "bytes_hex", "hex": "3d"},
+                "body_length": 8,
+                "fill_byte": 97,
+                "tail": {"kind": "bytes_hex", "hex": ""},
+            },
+        )
+
+    # Coverage checks (families / literal keys)
+    names_in_patterns = {n for n, _, _ in patterns}
+    names_in_vectors = {v["family"] for v in vectors}
+    if names_in_patterns != names_in_vectors:
+        raise SystemExit(
+            "family coverage mismatch:\n"
+            f"  patterns only: {sorted(names_in_patterns - names_in_vectors)}\n"
+            f"  vectors only: {sorted(names_in_vectors - names_in_patterns)}"
+        )
+
+    covered_literals: set[tuple[str, int | None]] = set()
+    for v in vectors:
+        r = v["construct"]["recipe"]
+        fam_name = r["family"]
+        if fam_name == "slack-token":
+            covered_literals.add((fam_name, 0))
+        elif fam_name == "bearer-token":
+            covered_literals.add((fam_name, 0))
+        elif fam_name == "telegram-bot-token":
+            pass
+        elif fam_name == "private-key-block":
+            covered_literals.add((fam_name, 0))
+        elif fam_name == "generic-credential-assignment":
+            pass
+        else:
+            idx = r.get("literal_index")
+            if isinstance(idx, int):
+                covered_literals.add((fam_name, idx))
+
+    for key in FAMILY_LITERALS_KEYS:
+        if key == "telegram-bot-token":
+            continue
+        if key == "generic-credential-assignment":
+            continue
+        if key == "slack-token":
+            need = {(key, 0)}
+        elif key == "bearer-token":
+            need = {(key, 0)}
+        elif key == "private-key-block":
+            need = {(key, 0)}
+        elif key == "github-oauth-token":
+            need = {(key, i) for i in range(4)}
+        elif key == "stripe-key":
+            need = {(key, i) for i in range(4)}
+        elif key == "aws-access-key":
+            need = {(key, 0), (key, 1)}
+        else:
+            need = {(key, 0)}
+        missing = need - covered_literals
+        if missing:
+            raise SystemExit(f"missing literal coverage for {key}: {sorted(missing)}")
+
+    return vectors
+
+
+def main() -> int:
+    verify_secret_families_rs_sha256()
+    out_dir = Path(__file__).resolve().parent
+    vectors = build_vectors()
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "secret_families_rs_sha256": SECRET_FAMILIES_RS_SHA256,
+        "family_literal_keys": list(FAMILY_LITERALS_KEYS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "secret_families_rs_sha256": SECRET_FAMILIES_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/secret_families/generate",
+        "family_literal_keys": list(FAMILY_LITERALS_KEYS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.secret_families parity (stdlib-only vectors; "
+            "no session payload text)."
+        ),
+        "generator": "rust/parity/vectors/secret_families/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

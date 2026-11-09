@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+"""Generate sesslint.sarif parity vectors (stdlib only; pinned git show)."""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SARIF_PY_SHA256 = (
+    "4d0486958ccdf9150141f8692c3949c24b7958f42488534d3f61c0be90975b50"
+)
+SARIF_RS_SHA256 = (
+    "bbc5ac3d9222cf573b5a29d6b58099b684e75d237abad815603cfea190df302b"
+)
+MODULE = "sesslint.sarif"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-sarif-scan-report: scan_report_sarif aggregates sesslint.scan.ScanReport "
+    "file findings in Python. Rust scan_report_sarif stops with "
+    "sesslint.scan.ScanReport is not available before JSON is built.",
+    "GAP-sarif-minimize-sha1: _artifact_uri calls minimize_path for absolute paths "
+    "(character index 1 is ':' or leading '/'); Python uses hashlib.sha1 for some "
+    "spellings. Rust returns hashlib.sha1 is not available and emits no URI.",
+    "GAP-sarif-cli-check: tests/test_sarif.py CLI cases call sesslint.cli.main with "
+    "--format sarif; parity vectors call build_sarif and render_sarif only.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = ("tests/test_sarif.py",)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/test_sarif.py::test_build_sarif_level_mapping": ("build_sarif_level_mapping",),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show(rel: str) -> str:
+    return subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:src/sesslint/{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/sarif.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != SARIF_PY_SHA256:
+        raise SystemExit(
+            f"sarif.py pin sha256 mismatch: expected {SARIF_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "report" / "src" / "sarif.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != SARIF_RS_SHA256:
+        raise SystemExit(
+            f"sarif.rs sha256 mismatch: expected {SARIF_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def mod_to_paths(mod: str) -> list[str]:
+    tail = mod[len("sesslint.") :].replace(".", "/")
+    return [f"{tail}.py", f"{tail}/__init__.py"]
+
+
+def discover_imports(source: str) -> set[str]:
+    found: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("sesslint."):
+                    found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("sesslint."):
+                found.add(node.module)
+    return found
+
+
+def closure(root_mod: str) -> list[str]:
+    queue = [root_mod]
+    seen: set[str] = set()
+    order: list[str] = []
+    while queue:
+        mod = queue.pop(0)
+        if mod in seen:
+            continue
+        seen.add(mod)
+        source = None
+        for candidate in mod_to_paths(mod):
+            try:
+                source = git_show(candidate)
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if source is None:
+            continue
+        order.append(mod)
+        for imp in discover_imports(source):
+            if imp not in seen:
+                queue.append(imp)
+    return order
+
+
+def ensure_packages() -> None:
+    for pkg in (
+        "sesslint",
+        "sesslint.repair",
+        "sesslint.profiles",
+        "sesslint.adapters",
+        "sesslint.checks",
+        "sesslint.scan",
+    ):
+        mod = types.ModuleType(pkg)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[pkg] = mod
+    scan = sys.modules["sesslint.scan"]
+
+    class ScanReport:
+        def __init__(self, files: tuple[Any, ...]) -> None:
+            self.files = files
+
+    class FileResult:
+        def __init__(self, findings: tuple[Any, ...]) -> None:
+            self.findings = findings
+
+    scan.ScanReport = ScanReport  # type: ignore[attr-defined]
+    scan.FileResult = FileResult  # type: ignore[attr-defined]
+
+
+def load_module(mod: str) -> None:
+    if mod == "sesslint.sarif":
+        return
+    source = None
+    rel = None
+    for candidate in mod_to_paths(mod):
+        try:
+            source = git_show(candidate)
+            rel = candidate
+            break
+        except subprocess.CalledProcessError:
+            continue
+    if source is None or rel is None:
+        raise ModuleNotFoundError(mod)
+    code = compile(source, f"<{PYTHON_COMMIT}:{rel}>", "exec")
+    module = types.ModuleType(mod)
+    module.__file__ = f"<{PYTHON_COMMIT}:{rel}>"
+    sys.modules[mod] = module
+    try:
+        exec(code, module.__dict__)  # noqa: S102
+    except Exception:
+        del sys.modules[mod]
+        raise
+    parent, _, child = mod.rpartition(".")
+    if parent in sys.modules:
+        setattr(sys.modules[parent], child, module)
+
+
+def load_sarif_from_temp() -> types.ModuleType:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/sarif.py")
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        suffix="_pinned_sarif.py",
+        delete=False,
+    ) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        mod_name = "sesslint.sarif"
+        spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit("failed to create import spec for pinned sarif.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        package = sys.modules["sesslint"]
+        setattr(package, "sarif", mod)
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def load_pinned_sarif() -> Any:
+    verify_pin_hashes()
+    ensure_packages()
+    deps = [m for m in closure("sesslint.sarif") if m != "sesslint.sarif"]
+    pending = list(deps)
+    for _ in range(96):
+        if not pending:
+            break
+        nxt: list[str] = []
+        progress = False
+        for mod in pending:
+            try:
+                load_module(mod)
+                progress = True
+            except Exception:
+                nxt.append(mod)
+        pending = nxt
+        if pending and not progress:
+            raise SystemExit(f"stuck loading: {pending[:8]}")
+    return load_sarif_from_temp()
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    if "sesslint-wt-" in text or "FOR_WORK" in text:
+        raise SystemExit("committed output contains a checkout path")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def rule_levels(doc: dict[str, Any]) -> dict[str, str]:
+    rules = doc["runs"][0]["tool"]["driver"]["rules"]
+    return {
+        row["id"]: row["defaultConfiguration"]["level"]
+        for row in rules
+    }
+
+
+def synthetic_relative_finding() -> Any:
+    from sesslint.codes import SL001, Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    return make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="synthetic path marker",
+        source=SourceRef(path="folder name/#?-%-ä.jsonl", line=1, record_id=None),
+        evidence={},
+    )
+
+
+def synthetic_abs_colon_finding() -> Any:
+    from sesslint.codes import SL001, Repairability, Severity  # noqa: WPS433
+    from sesslint.finding import SourceRef, make_finding  # noqa: WPS433
+
+    return make_finding(
+        code=SL001,
+        severity=Severity.ERROR,
+        repairability=Repairability.MANUAL,
+        message_template="synthetic absolute marker",
+        source=SourceRef(path="\u00e9:name.jsonl", line=2, record_id=None),
+        evidence={},
+        fingerprint="0123456789abcdef",
+    )
+
+
+def vector_specs(sarif: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+
+    def add(row: dict[str, Any]) -> None:
+        specs.append(row)
+
+    add(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": {
+                "sarif_version": sarif.SARIF_VERSION,
+                "sarif_schema": sarif.SARIF_SCHEMA,
+                "tool_information_uri": sarif.TOOL_INFORMATION_URI,
+            },
+        }
+    )
+
+    empty_doc = sarif.build_sarif([], tool_version="0.0.0-test")
+    levels = rule_levels(empty_doc)
+    add(
+        {
+            "id": "build_sarif_level_mapping",
+            "construct": {
+                "type": "build_sarif",
+                "findings": [],
+                "tool_version": "0.0.0-test",
+            },
+            "expected": {
+                "sl003_level": levels["SL003"],
+                "sl101_level": levels["SL101"],
+                "levels_allowed": sorted(set(levels.values())) <= ["error", "note", "warning"],
+                "rule_levels": levels,
+            },
+        }
+    )
+
+    rule_ids = [row["id"] for row in empty_doc["runs"][0]["tool"]["driver"]["rules"]]
+    add(
+        {
+            "id": "build_sarif_empty_registry",
+            "construct": {
+                "type": "build_sarif",
+                "findings": [],
+                "tool_version": "0.0.0-test",
+            },
+            "expected": {
+                "version": empty_doc["version"],
+                "rule_count": len(rule_ids),
+                "rule_ids_sorted": rule_ids == sorted(rule_ids),
+                "results_len": len(empty_doc["runs"][0]["results"]),
+            },
+        }
+    )
+
+    finding = synthetic_relative_finding()
+    rendered_once = sarif.render_sarif([finding], tool_version="test")
+    rendered_twice = sarif.render_sarif([finding], tool_version="test")
+    uri = json.loads(rendered_once)["runs"][0]["results"][0]["locations"][0][
+        "physicalLocation"
+    ]["artifactLocation"]["uri"]
+    add(
+        {
+            "id": "render_sarif_relative_percent_encode",
+            "construct": {
+                "type": "render_sarif",
+                "finding": {
+                    "code": "SL001",
+                    "severity": "error",
+                    "path": "folder name/#?-%-ä.jsonl",
+                    "line": 1,
+                    "fingerprint": finding.fingerprint,
+                    "message": finding.message,
+                },
+                "tool_version": "test",
+            },
+            "expected": {
+                "artifact_uri": uri,
+                "json": rendered_once,
+                "deterministic": rendered_once == rendered_twice,
+            },
+        }
+    )
+
+    add(
+        {
+            "id": "scan_report_sarif_gap",
+            "construct": {"type": "scan_report_sarif"},
+            "expected": {
+                "rust_assertion": {"mode": "gap_scan_report"},
+            },
+        }
+    )
+
+    abs_finding = synthetic_abs_colon_finding()
+    abs_json = sarif.render_sarif([abs_finding], tool_version="pin-abs")
+    add(
+        {
+            "id": "render_sarif_absolute_char_colon_pin",
+            "construct": {
+                "type": "render_sarif",
+                "finding": {
+                    "code": "SL001",
+                    "severity": "error",
+                    "path": "\u00e9:name.jsonl",
+                    "line": 2,
+                    "fingerprint": "0123456789abcdef",
+                    "message": abs_finding.message,
+                },
+                "tool_version": "pin-abs",
+            },
+            "expected": {
+                "pin_json": abs_json,
+                "rust_assertion": {"mode": "gap_minimize_sha1"},
+            },
+        }
+    )
+
+    return specs
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = subprocess.check_output(
+        ["git", "show", f"{PYTHON_COMMIT}:{rel}"],
+        cwd=repo_root(),
+        text=True,
+        encoding="utf-8",
+    )
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    out: list[str] = []
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            out.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            out.append(line.split("(")[0].replace("def ", "").strip())
+    return out
+
+
+def write_coverage(out_dir: Path, vector_ids: frozenset[str]) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qual = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                if needed:
+                    row["reason"] = (
+                        "Vectors call build_sarif with the pin test inputs and "
+                        "record the pin rule level map."
+                    )
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                row["reason"] = (
+                    "Test invokes sesslint.cli.main or checks CLI exit/stdout; "
+                    "vectors exercise build_sarif and render_sarif only."
+                )
+                not_applicable += 1
+            rows.append(row)
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def main() -> int:
+    sarif = load_pinned_sarif()
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(sarif)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "sarif_py_sha256": SARIF_PY_SHA256,
+        "sarif_rs_sha256": SARIF_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "sarif_py_sha256": SARIF_PY_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/sarif/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic SARIF parity for module constants, build_sarif level map, "
+            "relative URI percent-encoding, and documented scan-report/minimize gaps."
+        ),
+        "generator": "rust/parity/vectors/sarif/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    covered, not_applicable = write_coverage(out_dir, frozenset(v["id"] for v in vectors))
+    print(f"wrote {len(vectors)} vectors to {vectors_path}")
+    print(f"sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

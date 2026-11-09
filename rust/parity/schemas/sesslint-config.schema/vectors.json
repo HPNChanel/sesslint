@@ -1,0 +1,2480 @@
+{
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "id": "empty",
+      "input": "{}",
+      "valid": true
+    },
+    {
+      "id": "profile-valid",
+      "input": "{\"profile\": \"claude-strict\"}",
+      "valid": true
+    },
+    {
+      "id": "profile-matrix-00",
+      "input": "{\"profile\": null}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-01",
+      "input": "{\"profile\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-02",
+      "input": "{\"profile\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-03",
+      "input": "{\"profile\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-04",
+      "input": "{\"profile\": 0}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-05",
+      "input": "{\"profile\": -1}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-06",
+      "input": "{\"profile\": 1}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-07",
+      "input": "{\"profile\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-08",
+      "input": "{\"profile\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-09",
+      "input": "{\"profile\": true}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-10",
+      "input": "{\"profile\": false}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-11",
+      "input": "{\"profile\": []}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-12",
+      "input": "{\"profile\": {}}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-13",
+      "input": "{\"profile\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-14",
+      "input": "{\"profile\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-15",
+      "input": "{\"profile\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-16",
+      "input": "{\"profile\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-17",
+      "input": "{\"profile\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-18",
+      "input": "{\"profile\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-19",
+      "input": "{\"profile\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-matrix-20",
+      "input": "{\"profile\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "profile-enum-0",
+      "input": "{\"profile\": \"claude-strict\"}",
+      "valid": true
+    },
+    {
+      "id": "profile-enum-space-0",
+      "input": "{\"profile\": \" claude-strict \"}",
+      "valid": false
+    },
+    {
+      "id": "profile-enum-1",
+      "input": "{\"profile\": \"neutral\"}",
+      "valid": true
+    },
+    {
+      "id": "profile-enum-space-1",
+      "input": "{\"profile\": \" neutral \"}",
+      "valid": false
+    },
+    {
+      "id": "profile-enum-2",
+      "input": "{\"profile\": \"openai-strict\"}",
+      "valid": true
+    },
+    {
+      "id": "profile-enum-space-2",
+      "input": "{\"profile\": \" openai-strict \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-valid",
+      "input": "{\"adapter\": \"auto\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-matrix-00",
+      "input": "{\"adapter\": null}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-01",
+      "input": "{\"adapter\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-02",
+      "input": "{\"adapter\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-03",
+      "input": "{\"adapter\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-04",
+      "input": "{\"adapter\": 0}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-05",
+      "input": "{\"adapter\": -1}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-06",
+      "input": "{\"adapter\": 1}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-07",
+      "input": "{\"adapter\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-08",
+      "input": "{\"adapter\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-09",
+      "input": "{\"adapter\": true}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-10",
+      "input": "{\"adapter\": false}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-11",
+      "input": "{\"adapter\": []}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-12",
+      "input": "{\"adapter\": {}}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-13",
+      "input": "{\"adapter\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-14",
+      "input": "{\"adapter\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-15",
+      "input": "{\"adapter\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-16",
+      "input": "{\"adapter\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-17",
+      "input": "{\"adapter\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-18",
+      "input": "{\"adapter\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-19",
+      "input": "{\"adapter\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-matrix-20",
+      "input": "{\"adapter\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-0",
+      "input": "{\"adapter\": \"auto\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-0",
+      "input": "{\"adapter\": \" auto \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-1",
+      "input": "{\"adapter\": \"canonical\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-1",
+      "input": "{\"adapter\": \" canonical \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-2",
+      "input": "{\"adapter\": \"claude\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-2",
+      "input": "{\"adapter\": \" claude \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-3",
+      "input": "{\"adapter\": \"claude-code-jsonl\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-3",
+      "input": "{\"adapter\": \" claude-code-jsonl \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-4",
+      "input": "{\"adapter\": \"codex\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-4",
+      "input": "{\"adapter\": \" codex \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-5",
+      "input": "{\"adapter\": \"codex-rollout\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-5",
+      "input": "{\"adapter\": \" codex-rollout \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-6",
+      "input": "{\"adapter\": \"openai\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-6",
+      "input": "{\"adapter\": \" openai \"}",
+      "valid": false
+    },
+    {
+      "id": "adapter-enum-7",
+      "input": "{\"adapter\": \"openai-agents\"}",
+      "valid": true
+    },
+    {
+      "id": "adapter-enum-space-7",
+      "input": "{\"adapter\": \" openai-agents \"}",
+      "valid": false
+    },
+    {
+      "id": "policy-valid",
+      "input": "{\"policy\": \"conservative\"}",
+      "valid": true
+    },
+    {
+      "id": "policy-matrix-00",
+      "input": "{\"policy\": null}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-01",
+      "input": "{\"policy\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-02",
+      "input": "{\"policy\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-03",
+      "input": "{\"policy\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-04",
+      "input": "{\"policy\": 0}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-05",
+      "input": "{\"policy\": -1}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-06",
+      "input": "{\"policy\": 1}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-07",
+      "input": "{\"policy\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-08",
+      "input": "{\"policy\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-09",
+      "input": "{\"policy\": true}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-10",
+      "input": "{\"policy\": false}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-11",
+      "input": "{\"policy\": []}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-12",
+      "input": "{\"policy\": {}}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-13",
+      "input": "{\"policy\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-14",
+      "input": "{\"policy\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-15",
+      "input": "{\"policy\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-16",
+      "input": "{\"policy\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-17",
+      "input": "{\"policy\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-18",
+      "input": "{\"policy\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-19",
+      "input": "{\"policy\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-matrix-20",
+      "input": "{\"policy\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "policy-enum-0",
+      "input": "{\"policy\": \"conservative\"}",
+      "valid": true
+    },
+    {
+      "id": "policy-enum-space-0",
+      "input": "{\"policy\": \" conservative \"}",
+      "valid": false
+    },
+    {
+      "id": "policy-enum-1",
+      "input": "{\"policy\": \"salvage\"}",
+      "valid": true
+    },
+    {
+      "id": "policy-enum-space-1",
+      "input": "{\"policy\": \" salvage \"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-valid",
+      "input": "{\"fail_on\": \"error\"}",
+      "valid": true
+    },
+    {
+      "id": "fail_on-matrix-00",
+      "input": "{\"fail_on\": null}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-01",
+      "input": "{\"fail_on\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-02",
+      "input": "{\"fail_on\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-03",
+      "input": "{\"fail_on\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-04",
+      "input": "{\"fail_on\": 0}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-05",
+      "input": "{\"fail_on\": -1}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-06",
+      "input": "{\"fail_on\": 1}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-07",
+      "input": "{\"fail_on\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-08",
+      "input": "{\"fail_on\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-09",
+      "input": "{\"fail_on\": true}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-10",
+      "input": "{\"fail_on\": false}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-11",
+      "input": "{\"fail_on\": []}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-12",
+      "input": "{\"fail_on\": {}}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-13",
+      "input": "{\"fail_on\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-14",
+      "input": "{\"fail_on\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-15",
+      "input": "{\"fail_on\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-16",
+      "input": "{\"fail_on\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-17",
+      "input": "{\"fail_on\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-18",
+      "input": "{\"fail_on\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-19",
+      "input": "{\"fail_on\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-matrix-20",
+      "input": "{\"fail_on\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-enum-0",
+      "input": "{\"fail_on\": \"error\"}",
+      "valid": true
+    },
+    {
+      "id": "fail_on-enum-space-0",
+      "input": "{\"fail_on\": \" error \"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on-enum-1",
+      "input": "{\"fail_on\": \"warning\"}",
+      "valid": true
+    },
+    {
+      "id": "fail_on-enum-space-1",
+      "input": "{\"fail_on\": \" warning \"}",
+      "valid": false
+    },
+    {
+      "id": "select-valid",
+      "input": "{\"select\": [\"synthetic\"]}",
+      "valid": true
+    },
+    {
+      "id": "select-matrix-00",
+      "input": "{\"select\": null}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-01",
+      "input": "{\"select\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-02",
+      "input": "{\"select\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-03",
+      "input": "{\"select\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-04",
+      "input": "{\"select\": 0}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-05",
+      "input": "{\"select\": -1}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-06",
+      "input": "{\"select\": 1}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-07",
+      "input": "{\"select\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-08",
+      "input": "{\"select\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-09",
+      "input": "{\"select\": true}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-10",
+      "input": "{\"select\": false}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-11",
+      "input": "{\"select\": []}",
+      "valid": true
+    },
+    {
+      "id": "select-matrix-12",
+      "input": "{\"select\": {}}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-13",
+      "input": "{\"select\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-14",
+      "input": "{\"select\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-15",
+      "input": "{\"select\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-16",
+      "input": "{\"select\": [\"x\"]}",
+      "valid": true
+    },
+    {
+      "id": "select-matrix-17",
+      "input": "{\"select\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-18",
+      "input": "{\"select\": [\"\\u200b\"]}",
+      "valid": true
+    },
+    {
+      "id": "select-matrix-19",
+      "input": "{\"select\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "select-matrix-20",
+      "input": "{\"select\": [\"\\ud83d\\ude00\"]}",
+      "valid": true
+    },
+    {
+      "id": "ignore-valid",
+      "input": "{\"ignore\": [\"synthetic\"]}",
+      "valid": true
+    },
+    {
+      "id": "ignore-matrix-00",
+      "input": "{\"ignore\": null}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-01",
+      "input": "{\"ignore\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-02",
+      "input": "{\"ignore\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-03",
+      "input": "{\"ignore\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-04",
+      "input": "{\"ignore\": 0}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-05",
+      "input": "{\"ignore\": -1}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-06",
+      "input": "{\"ignore\": 1}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-07",
+      "input": "{\"ignore\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-08",
+      "input": "{\"ignore\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-09",
+      "input": "{\"ignore\": true}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-10",
+      "input": "{\"ignore\": false}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-11",
+      "input": "{\"ignore\": []}",
+      "valid": true
+    },
+    {
+      "id": "ignore-matrix-12",
+      "input": "{\"ignore\": {}}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-13",
+      "input": "{\"ignore\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-14",
+      "input": "{\"ignore\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-15",
+      "input": "{\"ignore\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-16",
+      "input": "{\"ignore\": [\"x\"]}",
+      "valid": true
+    },
+    {
+      "id": "ignore-matrix-17",
+      "input": "{\"ignore\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-18",
+      "input": "{\"ignore\": [\"\\u200b\"]}",
+      "valid": true
+    },
+    {
+      "id": "ignore-matrix-19",
+      "input": "{\"ignore\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "ignore-matrix-20",
+      "input": "{\"ignore\": [\"\\ud83d\\ude00\"]}",
+      "valid": true
+    },
+    {
+      "id": "skip_undetected-valid",
+      "input": "{\"skip_undetected\": true}",
+      "valid": true
+    },
+    {
+      "id": "skip_undetected-matrix-00",
+      "input": "{\"skip_undetected\": null}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-01",
+      "input": "{\"skip_undetected\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-02",
+      "input": "{\"skip_undetected\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-03",
+      "input": "{\"skip_undetected\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-04",
+      "input": "{\"skip_undetected\": 0}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-05",
+      "input": "{\"skip_undetected\": -1}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-06",
+      "input": "{\"skip_undetected\": 1}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-07",
+      "input": "{\"skip_undetected\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-08",
+      "input": "{\"skip_undetected\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-09",
+      "input": "{\"skip_undetected\": true}",
+      "valid": true
+    },
+    {
+      "id": "skip_undetected-matrix-10",
+      "input": "{\"skip_undetected\": false}",
+      "valid": true
+    },
+    {
+      "id": "skip_undetected-matrix-11",
+      "input": "{\"skip_undetected\": []}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-12",
+      "input": "{\"skip_undetected\": {}}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-13",
+      "input": "{\"skip_undetected\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-14",
+      "input": "{\"skip_undetected\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-15",
+      "input": "{\"skip_undetected\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-16",
+      "input": "{\"skip_undetected\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-17",
+      "input": "{\"skip_undetected\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-18",
+      "input": "{\"skip_undetected\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-19",
+      "input": "{\"skip_undetected\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "skip_undetected-matrix-20",
+      "input": "{\"skip_undetected\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-valid",
+      "input": "{\"confidence_min\": 0.5}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-00",
+      "input": "{\"confidence_min\": null}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-01",
+      "input": "{\"confidence_min\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-02",
+      "input": "{\"confidence_min\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-03",
+      "input": "{\"confidence_min\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-04",
+      "input": "{\"confidence_min\": 0}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-05",
+      "input": "{\"confidence_min\": -1}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-06",
+      "input": "{\"confidence_min\": 1}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-07",
+      "input": "{\"confidence_min\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-08",
+      "input": "{\"confidence_min\": 4.5}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-matrix-09",
+      "input": "{\"confidence_min\": true}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-10",
+      "input": "{\"confidence_min\": false}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-11",
+      "input": "{\"confidence_min\": []}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-12",
+      "input": "{\"confidence_min\": {}}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-13",
+      "input": "{\"confidence_min\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-14",
+      "input": "{\"confidence_min\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-15",
+      "input": "{\"confidence_min\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-16",
+      "input": "{\"confidence_min\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-17",
+      "input": "{\"confidence_min\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-18",
+      "input": "{\"confidence_min\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-19",
+      "input": "{\"confidence_min\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-matrix-20",
+      "input": "{\"confidence_min\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "confidence_min-decimal-0",
+      "input": "{\"confidence_min\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-1",
+      "input": "{\"confidence_min\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-2",
+      "input": "{\"confidence_min\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-3",
+      "input": "{\"confidence_min\":0e9999999}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-4",
+      "input": "{\"confidence_min\":-0.0}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-5",
+      "input": "{\"confidence_min\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-6",
+      "input": "{\"confidence_min\":1e-400}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-7",
+      "input": "{\"confidence_min\":1.0000000000000001}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-8",
+      "input": "{\"confidence_min\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "confidence_min-decimal-9",
+      "input": "{\"confidence_min\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-valid",
+      "input": "{\"margin_min\": 0.5}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-00",
+      "input": "{\"margin_min\": null}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-01",
+      "input": "{\"margin_min\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-02",
+      "input": "{\"margin_min\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-03",
+      "input": "{\"margin_min\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-04",
+      "input": "{\"margin_min\": 0}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-05",
+      "input": "{\"margin_min\": -1}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-06",
+      "input": "{\"margin_min\": 1}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-07",
+      "input": "{\"margin_min\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-08",
+      "input": "{\"margin_min\": 4.5}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-matrix-09",
+      "input": "{\"margin_min\": true}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-10",
+      "input": "{\"margin_min\": false}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-11",
+      "input": "{\"margin_min\": []}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-12",
+      "input": "{\"margin_min\": {}}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-13",
+      "input": "{\"margin_min\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-14",
+      "input": "{\"margin_min\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-15",
+      "input": "{\"margin_min\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-16",
+      "input": "{\"margin_min\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-17",
+      "input": "{\"margin_min\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-18",
+      "input": "{\"margin_min\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-19",
+      "input": "{\"margin_min\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-matrix-20",
+      "input": "{\"margin_min\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "margin_min-decimal-0",
+      "input": "{\"margin_min\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-1",
+      "input": "{\"margin_min\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-2",
+      "input": "{\"margin_min\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-3",
+      "input": "{\"margin_min\":0e9999999}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-4",
+      "input": "{\"margin_min\":-0.0}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-5",
+      "input": "{\"margin_min\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-6",
+      "input": "{\"margin_min\":1e-400}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-7",
+      "input": "{\"margin_min\":1.0000000000000001}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-8",
+      "input": "{\"margin_min\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "margin_min-decimal-9",
+      "input": "{\"margin_min\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "max_files-valid",
+      "input": "{\"max_files\": 4}",
+      "valid": true
+    },
+    {
+      "id": "max_files-matrix-00",
+      "input": "{\"max_files\": null}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-01",
+      "input": "{\"max_files\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-02",
+      "input": "{\"max_files\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-03",
+      "input": "{\"max_files\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-04",
+      "input": "{\"max_files\": 0}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-05",
+      "input": "{\"max_files\": -1}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-06",
+      "input": "{\"max_files\": 1}",
+      "valid": true
+    },
+    {
+      "id": "max_files-matrix-07",
+      "input": "{\"max_files\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "max_files-matrix-08",
+      "input": "{\"max_files\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-09",
+      "input": "{\"max_files\": true}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-10",
+      "input": "{\"max_files\": false}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-11",
+      "input": "{\"max_files\": []}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-12",
+      "input": "{\"max_files\": {}}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-13",
+      "input": "{\"max_files\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-14",
+      "input": "{\"max_files\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-15",
+      "input": "{\"max_files\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-16",
+      "input": "{\"max_files\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-17",
+      "input": "{\"max_files\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-18",
+      "input": "{\"max_files\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-19",
+      "input": "{\"max_files\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-matrix-20",
+      "input": "{\"max_files\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_files-decimal-0",
+      "input": "{\"max_files\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "max_files-decimal-1",
+      "input": "{\"max_files\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "max_files-decimal-2",
+      "input": "{\"max_files\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "max_files-decimal-3",
+      "input": "{\"max_files\":0e9999999}",
+      "valid": false
+    },
+    {
+      "id": "max_files-decimal-4",
+      "input": "{\"max_files\":-0.0}",
+      "valid": false
+    },
+    {
+      "id": "max_files-decimal-5",
+      "input": "{\"max_files\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "max_files-decimal-6",
+      "input": "{\"max_files\":1e-400}",
+      "valid": false
+    },
+    {
+      "id": "max_files-decimal-7",
+      "input": "{\"max_files\":1.0000000000000001}",
+      "valid": false
+    },
+    {
+      "id": "max_files-decimal-8",
+      "input": "{\"max_files\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "max_files-decimal-9",
+      "input": "{\"max_files\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-valid",
+      "input": "{\"max_bytes\": 4}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-matrix-00",
+      "input": "{\"max_bytes\": null}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-01",
+      "input": "{\"max_bytes\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-02",
+      "input": "{\"max_bytes\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-03",
+      "input": "{\"max_bytes\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-04",
+      "input": "{\"max_bytes\": 0}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-05",
+      "input": "{\"max_bytes\": -1}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-06",
+      "input": "{\"max_bytes\": 1}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-matrix-07",
+      "input": "{\"max_bytes\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-matrix-08",
+      "input": "{\"max_bytes\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-09",
+      "input": "{\"max_bytes\": true}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-10",
+      "input": "{\"max_bytes\": false}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-11",
+      "input": "{\"max_bytes\": []}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-12",
+      "input": "{\"max_bytes\": {}}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-13",
+      "input": "{\"max_bytes\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-14",
+      "input": "{\"max_bytes\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-15",
+      "input": "{\"max_bytes\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-16",
+      "input": "{\"max_bytes\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-17",
+      "input": "{\"max_bytes\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-18",
+      "input": "{\"max_bytes\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-19",
+      "input": "{\"max_bytes\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-matrix-20",
+      "input": "{\"max_bytes\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-decimal-0",
+      "input": "{\"max_bytes\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-decimal-1",
+      "input": "{\"max_bytes\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-decimal-2",
+      "input": "{\"max_bytes\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-decimal-3",
+      "input": "{\"max_bytes\":0e9999999}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-decimal-4",
+      "input": "{\"max_bytes\":-0.0}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-decimal-5",
+      "input": "{\"max_bytes\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-decimal-6",
+      "input": "{\"max_bytes\":1e-400}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-decimal-7",
+      "input": "{\"max_bytes\":1.0000000000000001}",
+      "valid": false
+    },
+    {
+      "id": "max_bytes-decimal-8",
+      "input": "{\"max_bytes\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "max_bytes-decimal-9",
+      "input": "{\"max_bytes\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": false
+    },
+    {
+      "id": "exclude-valid",
+      "input": "{\"exclude\": [\"synthetic\"]}",
+      "valid": true
+    },
+    {
+      "id": "exclude-matrix-00",
+      "input": "{\"exclude\": null}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-01",
+      "input": "{\"exclude\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-02",
+      "input": "{\"exclude\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-03",
+      "input": "{\"exclude\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-04",
+      "input": "{\"exclude\": 0}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-05",
+      "input": "{\"exclude\": -1}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-06",
+      "input": "{\"exclude\": 1}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-07",
+      "input": "{\"exclude\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-08",
+      "input": "{\"exclude\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-09",
+      "input": "{\"exclude\": true}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-10",
+      "input": "{\"exclude\": false}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-11",
+      "input": "{\"exclude\": []}",
+      "valid": true
+    },
+    {
+      "id": "exclude-matrix-12",
+      "input": "{\"exclude\": {}}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-13",
+      "input": "{\"exclude\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-14",
+      "input": "{\"exclude\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-15",
+      "input": "{\"exclude\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-16",
+      "input": "{\"exclude\": [\"x\"]}",
+      "valid": true
+    },
+    {
+      "id": "exclude-matrix-17",
+      "input": "{\"exclude\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-18",
+      "input": "{\"exclude\": [\"\\u200b\"]}",
+      "valid": true
+    },
+    {
+      "id": "exclude-matrix-19",
+      "input": "{\"exclude\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclude-matrix-20",
+      "input": "{\"exclude\": [\"\\ud83d\\ude00\"]}",
+      "valid": true
+    },
+    {
+      "id": "ext-valid",
+      "input": "{\"ext\": [\"synthetic\"]}",
+      "valid": true
+    },
+    {
+      "id": "ext-matrix-00",
+      "input": "{\"ext\": null}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-01",
+      "input": "{\"ext\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-02",
+      "input": "{\"ext\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-03",
+      "input": "{\"ext\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-04",
+      "input": "{\"ext\": 0}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-05",
+      "input": "{\"ext\": -1}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-06",
+      "input": "{\"ext\": 1}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-07",
+      "input": "{\"ext\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-08",
+      "input": "{\"ext\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-09",
+      "input": "{\"ext\": true}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-10",
+      "input": "{\"ext\": false}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-11",
+      "input": "{\"ext\": []}",
+      "valid": true
+    },
+    {
+      "id": "ext-matrix-12",
+      "input": "{\"ext\": {}}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-13",
+      "input": "{\"ext\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-14",
+      "input": "{\"ext\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-15",
+      "input": "{\"ext\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-16",
+      "input": "{\"ext\": [\"x\"]}",
+      "valid": true
+    },
+    {
+      "id": "ext-matrix-17",
+      "input": "{\"ext\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-18",
+      "input": "{\"ext\": [\"\\u200b\"]}",
+      "valid": true
+    },
+    {
+      "id": "ext-matrix-19",
+      "input": "{\"ext\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "ext-matrix-20",
+      "input": "{\"ext\": [\"\\ud83d\\ude00\"]}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-valid",
+      "input": "{\"max_file_bytes\": 4}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-matrix-00",
+      "input": "{\"max_file_bytes\": null}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-01",
+      "input": "{\"max_file_bytes\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-02",
+      "input": "{\"max_file_bytes\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-03",
+      "input": "{\"max_file_bytes\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-04",
+      "input": "{\"max_file_bytes\": 0}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-05",
+      "input": "{\"max_file_bytes\": -1}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-06",
+      "input": "{\"max_file_bytes\": 1}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-matrix-07",
+      "input": "{\"max_file_bytes\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-matrix-08",
+      "input": "{\"max_file_bytes\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-09",
+      "input": "{\"max_file_bytes\": true}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-10",
+      "input": "{\"max_file_bytes\": false}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-11",
+      "input": "{\"max_file_bytes\": []}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-12",
+      "input": "{\"max_file_bytes\": {}}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-13",
+      "input": "{\"max_file_bytes\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-14",
+      "input": "{\"max_file_bytes\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-15",
+      "input": "{\"max_file_bytes\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-16",
+      "input": "{\"max_file_bytes\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-17",
+      "input": "{\"max_file_bytes\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-18",
+      "input": "{\"max_file_bytes\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-19",
+      "input": "{\"max_file_bytes\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-matrix-20",
+      "input": "{\"max_file_bytes\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-decimal-0",
+      "input": "{\"max_file_bytes\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-decimal-1",
+      "input": "{\"max_file_bytes\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-decimal-2",
+      "input": "{\"max_file_bytes\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-decimal-3",
+      "input": "{\"max_file_bytes\":0e9999999}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-decimal-4",
+      "input": "{\"max_file_bytes\":-0.0}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-decimal-5",
+      "input": "{\"max_file_bytes\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-decimal-6",
+      "input": "{\"max_file_bytes\":1e-400}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-decimal-7",
+      "input": "{\"max_file_bytes\":1.0000000000000001}",
+      "valid": false
+    },
+    {
+      "id": "max_file_bytes-decimal-8",
+      "input": "{\"max_file_bytes\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "max_file_bytes-decimal-9",
+      "input": "{\"max_file_bytes\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-valid",
+      "input": "{\"max_findings_per_code\": 4}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-matrix-00",
+      "input": "{\"max_findings_per_code\": null}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-01",
+      "input": "{\"max_findings_per_code\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-02",
+      "input": "{\"max_findings_per_code\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-03",
+      "input": "{\"max_findings_per_code\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-04",
+      "input": "{\"max_findings_per_code\": 0}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-05",
+      "input": "{\"max_findings_per_code\": -1}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-06",
+      "input": "{\"max_findings_per_code\": 1}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-matrix-07",
+      "input": "{\"max_findings_per_code\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-matrix-08",
+      "input": "{\"max_findings_per_code\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-09",
+      "input": "{\"max_findings_per_code\": true}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-10",
+      "input": "{\"max_findings_per_code\": false}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-11",
+      "input": "{\"max_findings_per_code\": []}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-12",
+      "input": "{\"max_findings_per_code\": {}}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-13",
+      "input": "{\"max_findings_per_code\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-14",
+      "input": "{\"max_findings_per_code\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-15",
+      "input": "{\"max_findings_per_code\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-16",
+      "input": "{\"max_findings_per_code\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-17",
+      "input": "{\"max_findings_per_code\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-18",
+      "input": "{\"max_findings_per_code\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-19",
+      "input": "{\"max_findings_per_code\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-matrix-20",
+      "input": "{\"max_findings_per_code\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-decimal-0",
+      "input": "{\"max_findings_per_code\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-decimal-1",
+      "input": "{\"max_findings_per_code\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-decimal-2",
+      "input": "{\"max_findings_per_code\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-decimal-3",
+      "input": "{\"max_findings_per_code\":0e9999999}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-decimal-4",
+      "input": "{\"max_findings_per_code\":-0.0}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-decimal-5",
+      "input": "{\"max_findings_per_code\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-decimal-6",
+      "input": "{\"max_findings_per_code\":1e-400}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-decimal-7",
+      "input": "{\"max_findings_per_code\":1.0000000000000001}",
+      "valid": false
+    },
+    {
+      "id": "max_findings_per_code-decimal-8",
+      "input": "{\"max_findings_per_code\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "max_findings_per_code-decimal-9",
+      "input": "{\"max_findings_per_code\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-valid",
+      "input": "{\"timestamp_skew_ms\": 4}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-00",
+      "input": "{\"timestamp_skew_ms\": null}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-01",
+      "input": "{\"timestamp_skew_ms\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-02",
+      "input": "{\"timestamp_skew_ms\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-03",
+      "input": "{\"timestamp_skew_ms\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-04",
+      "input": "{\"timestamp_skew_ms\": 0}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-05",
+      "input": "{\"timestamp_skew_ms\": -1}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-06",
+      "input": "{\"timestamp_skew_ms\": 1}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-07",
+      "input": "{\"timestamp_skew_ms\": 4.0}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-08",
+      "input": "{\"timestamp_skew_ms\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-09",
+      "input": "{\"timestamp_skew_ms\": true}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-10",
+      "input": "{\"timestamp_skew_ms\": false}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-11",
+      "input": "{\"timestamp_skew_ms\": []}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-12",
+      "input": "{\"timestamp_skew_ms\": {}}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-13",
+      "input": "{\"timestamp_skew_ms\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-14",
+      "input": "{\"timestamp_skew_ms\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-15",
+      "input": "{\"timestamp_skew_ms\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-16",
+      "input": "{\"timestamp_skew_ms\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-17",
+      "input": "{\"timestamp_skew_ms\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-18",
+      "input": "{\"timestamp_skew_ms\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-19",
+      "input": "{\"timestamp_skew_ms\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-matrix-20",
+      "input": "{\"timestamp_skew_ms\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-0",
+      "input": "{\"timestamp_skew_ms\":4e0}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-1",
+      "input": "{\"timestamp_skew_ms\":40e-1}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-2",
+      "input": "{\"timestamp_skew_ms\":4.00}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-3",
+      "input": "{\"timestamp_skew_ms\":0e9999999}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-4",
+      "input": "{\"timestamp_skew_ms\":-0.0}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-5",
+      "input": "{\"timestamp_skew_ms\":1e400}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-6",
+      "input": "{\"timestamp_skew_ms\":1e-400}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-7",
+      "input": "{\"timestamp_skew_ms\":1.0000000000000001}",
+      "valid": false
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-8",
+      "input": "{\"timestamp_skew_ms\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": true
+    },
+    {
+      "id": "timestamp_skew_ms-decimal-9",
+      "input": "{\"timestamp_skew_ms\":-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-valid",
+      "input": "{\"fail_on_unsupported\": true}",
+      "valid": true
+    },
+    {
+      "id": "fail_on_unsupported-matrix-00",
+      "input": "{\"fail_on_unsupported\": null}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-01",
+      "input": "{\"fail_on_unsupported\": \"\"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-02",
+      "input": "{\"fail_on_unsupported\": \" \"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-03",
+      "input": "{\"fail_on_unsupported\": \"bogus\"}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-04",
+      "input": "{\"fail_on_unsupported\": 0}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-05",
+      "input": "{\"fail_on_unsupported\": -1}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-06",
+      "input": "{\"fail_on_unsupported\": 1}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-07",
+      "input": "{\"fail_on_unsupported\": 4.0}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-08",
+      "input": "{\"fail_on_unsupported\": 4.5}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-09",
+      "input": "{\"fail_on_unsupported\": true}",
+      "valid": true
+    },
+    {
+      "id": "fail_on_unsupported-matrix-10",
+      "input": "{\"fail_on_unsupported\": false}",
+      "valid": true
+    },
+    {
+      "id": "fail_on_unsupported-matrix-11",
+      "input": "{\"fail_on_unsupported\": []}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-12",
+      "input": "{\"fail_on_unsupported\": {}}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-13",
+      "input": "{\"fail_on_unsupported\": [1]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-14",
+      "input": "{\"fail_on_unsupported\": [\"\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-15",
+      "input": "{\"fail_on_unsupported\": [\" \"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-16",
+      "input": "{\"fail_on_unsupported\": [\"x\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-17",
+      "input": "{\"fail_on_unsupported\": [\"\\u001c\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-18",
+      "input": "{\"fail_on_unsupported\": [\"\\u200b\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-19",
+      "input": "{\"fail_on_unsupported\": [\"\\u0085\"]}",
+      "valid": false
+    },
+    {
+      "id": "fail_on_unsupported-matrix-20",
+      "input": "{\"fail_on_unsupported\": [\"\\ud83d\\ude00\"]}",
+      "valid": false
+    },
+    {
+      "id": "full-without-select",
+      "input": "{\"profile\": \"claude-strict\", \"adapter\": \"auto\", \"policy\": \"conservative\", \"fail_on\": \"error\", \"ignore\": [\"synthetic\"], \"skip_undetected\": true, \"confidence_min\": 0.5, \"margin_min\": 0.5, \"max_files\": 4, \"max_bytes\": 4, \"exclude\": [\"synthetic\"], \"ext\": [\"synthetic\"], \"max_file_bytes\": 4, \"max_findings_per_code\": 4, \"timestamp_skew_ms\": 4, \"fail_on_unsupported\": true}",
+      "valid": true
+    },
+    {
+      "id": "full-without-ignore",
+      "input": "{\"profile\": \"claude-strict\", \"adapter\": \"auto\", \"policy\": \"conservative\", \"fail_on\": \"error\", \"select\": [\"synthetic\"], \"skip_undetected\": true, \"confidence_min\": 0.5, \"margin_min\": 0.5, \"max_files\": 4, \"max_bytes\": 4, \"exclude\": [\"synthetic\"], \"ext\": [\"synthetic\"], \"max_file_bytes\": 4, \"max_findings_per_code\": 4, \"timestamp_skew_ms\": 4, \"fail_on_unsupported\": true}",
+      "valid": true
+    },
+    {
+      "id": "full-mutually-exclusive",
+      "input": "{\"profile\": \"claude-strict\", \"adapter\": \"auto\", \"policy\": \"conservative\", \"fail_on\": \"error\", \"select\": [\"synthetic\"], \"ignore\": [\"synthetic\"], \"skip_undetected\": true, \"confidence_min\": 0.5, \"margin_min\": 0.5, \"max_files\": 4, \"max_bytes\": 4, \"exclude\": [\"synthetic\"], \"ext\": [\"synthetic\"], \"max_file_bytes\": 4, \"max_findings_per_code\": 4, \"timestamp_skew_ms\": 4, \"fail_on_unsupported\": true}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-0-0",
+      "input": "{\"select\": [], \"ignore\": []}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-0-1",
+      "input": "{\"select\": [], \"ignore\": [\"SL102\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-0-2",
+      "input": "{\"select\": [], \"ignore\": null}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-1-0",
+      "input": "{\"select\": [\"SL101\"], \"ignore\": []}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-1-1",
+      "input": "{\"select\": [\"SL101\"], \"ignore\": [\"SL102\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-1-2",
+      "input": "{\"select\": [\"SL101\"], \"ignore\": null}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-2-0",
+      "input": "{\"select\": null, \"ignore\": []}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-2-1",
+      "input": "{\"select\": null, \"ignore\": [\"SL102\"]}",
+      "valid": false
+    },
+    {
+      "id": "exclusive-2-2",
+      "input": "{\"select\": null, \"ignore\": null}",
+      "valid": false
+    },
+    {
+      "id": "root-0",
+      "input": "null",
+      "valid": false
+    },
+    {
+      "id": "root-1",
+      "input": "[]",
+      "valid": false
+    },
+    {
+      "id": "root-2",
+      "input": "1",
+      "valid": false
+    },
+    {
+      "id": "root-3",
+      "input": "true",
+      "valid": false
+    },
+    {
+      "id": "root-4",
+      "input": "\"config\"",
+      "valid": false
+    },
+    {
+      "id": "root-5",
+      "input": "{\"unknown\": true}",
+      "valid": false
+    },
+    {
+      "id": "root-6",
+      "input": "{\"format\": \"auto\"}",
+      "valid": false
+    },
+    {
+      "id": "root-7",
+      "input": "{\"PROFILE\": \"neutral\"}",
+      "valid": false
+    }
+  ]
+}

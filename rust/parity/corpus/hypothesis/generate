@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""Fail-closed extra parity corpus from tests/fuzz strategy shapes (RX-P1.3e).
+
+Replays the value shapes already declared in tests/fuzz at the pinned commit.
+Does not import hypothesis. Does not read fixtures or session payloads.
+One fixed seed. Stdlib only. No wall clock. LF text artifacts.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import random
+import sys
+from pathlib import Path
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
+
+PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SEED = 42
+SCHEMA = "sesslint.parity-hypothesis-corpus/v1"
+HERE = Path(__file__).resolve().parent
+TS = "2026-09-06T12:00:00Z"
+ID_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-."
+TEXT_CHARS = "abcXYZ012-_ "
+LINE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- ."
+KINDS = ("message", "tool_call", "tool_result", "checkpoint")
+ACTORS = ("user", "assistant", "system", "tool")
+ADAPTER_FIELDS = (
+    "id",
+    "parent_id",
+    "seq",
+    "ts",
+    "actor",
+    "kind",
+    "type",
+    "payload",
+    "message",
+    "items",
+    "data",
+)
+STRATEGIES = (
+    "tests/fuzz/test_fuzz_adapter_shapes.py",
+    "tests/fuzz/test_fuzz_canonical.py",
+    "tests/fuzz/test_fuzz_graph.py",
+    "tests/fuzz/test_fuzz_jsonl.py",
+    "tests/fuzz/test_repair_invariants.py",
+    "tests/fuzz/test_stateful_sessions.py",
+)
+
+
+def refuse(reason: str) -> int:
+    sys.stderr.write(f"reason={reason}\n")
+    return 2
+
+
+def dump_json(doc: object) -> bytes:
+    text = json.dumps(doc, ensure_ascii=True, indent=2, sort_keys=True)
+    data = (text + "\n").encode("ascii")
+    if b"\r" in data:
+        raise ValueError("crlf")
+    return data
+
+
+def dump_line(doc: object) -> bytes:
+    text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    data = (text + "\n").encode("ascii")
+    if b"\r" in data:
+        raise ValueError("crlf")
+    return data
+
+
+def pick(rng: random.Random, items: tuple[T, ...]) -> T:
+    return items[rng.randrange(len(items))]
+
+
+def text(rng: random.Random, max_size: int, alphabet: str) -> str:
+    n = rng.randint(0, max_size)
+    if n == 0:
+        return ""
+    return "".join(alphabet[rng.randrange(len(alphabet))] for _ in range(n))
+
+
+def ident(rng: random.Random) -> str:
+    n = rng.randint(1, 20)
+    return "".join(ID_CHARS[rng.randrange(len(ID_CHARS))] for _ in range(n))
+
+
+def primitive(rng: random.Random, text_max: int) -> object:
+    kind = rng.randrange(4)
+    if kind == 0:
+        return None
+    if kind == 1:
+        return bool(rng.randrange(2))
+    if kind == 2:
+        return rng.randint(-1_000_000, 1_000_000)
+    return text(rng, text_max, TEXT_CHARS)
+
+
+def json_value(
+    rng: random.Random,
+    *,
+    max_leaves: int,
+    list_max: int,
+    dict_max: int,
+    key_max: int,
+    text_max: int,
+    depth: int,
+) -> object:
+    if max_leaves <= 1 or depth <= 0 or rng.randrange(2) == 0:
+        return primitive(rng, text_max)
+    if rng.randrange(2) == 0:
+        n = rng.randint(0, min(list_max, max_leaves))
+        return [
+            json_value(
+                rng,
+                max_leaves=max(1, max_leaves - i),
+                list_max=list_max,
+                dict_max=dict_max,
+                key_max=key_max,
+                text_max=text_max,
+                depth=depth - 1,
+            )
+            for i in range(n)
+        ]
+    n = rng.randint(0, min(dict_max, max_leaves))
+    out: dict[str, object] = {}
+    for i in range(n):
+        out[text(rng, key_max, TEXT_CHARS)] = json_value(
+            rng,
+            max_leaves=max(1, max_leaves - i),
+            list_max=list_max,
+            dict_max=dict_max,
+            key_max=key_max,
+            text_max=text_max,
+            depth=depth - 1,
+        )
+    return out
+
+
+def header(session_id: str, created_at: str = TS) -> dict[str, str]:
+    return {
+        "created_at": created_at,
+        "schema_version": "sesslint.session/v1",
+        "session_id": session_id,
+    }
+
+
+def event(
+    *,
+    event_id: str,
+    seq: int,
+    kind: str,
+    actor: str,
+    ts: str,
+    parent_id: str | None,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "actor": actor,
+        "id": event_id,
+        "kind": kind,
+        "parent_id": parent_id,
+        "payload": payload,
+        "seq": seq,
+        "ts": ts,
+    }
+
+
+def jsonl(session_id: str, events: list[dict[str, object]], *, tail: bytes = b"") -> bytes:
+    body = dump_line(header(session_id)) + b"".join(dump_line(item) for item in events)
+    data = body + tail
+    if tail and b"\r" in tail:
+        raise ValueError("crlf")
+    return data
+
+
+def build_jsonl_arbitrary(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_jsonl.py: st.binary(max_size=32768)
+    return rng.randbytes(rng.randint(0, 32768))
+
+
+def build_jsonl_lines(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_jsonl.py: lists of text or json.dumps(dict)
+    n = rng.randint(0, 30)
+    lines: list[str] = []
+    for _ in range(n):
+        if rng.randrange(2) == 0:
+            lines.append(text(rng, 200, LINE_CHARS))
+            continue
+        keys = rng.randint(0, 5)
+        record = {
+            text(rng, 10, TEXT_CHARS): pick(
+                rng,
+                (rng.randint(-1_000_000, 1_000_000), text(rng, 20, TEXT_CHARS), None),
+            )
+            for _ in range(keys)
+        }
+        lines.append(json.dumps(record, ensure_ascii=True, separators=(",", ":"), sort_keys=True))
+    data = ("\n".join(lines) + ("\n" if lines else "")).encode("ascii")
+    if b"\r" in data:
+        raise ValueError("crlf")
+    return data
+
+
+def build_canonical_bytes(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_canonical.py: st.binary(max_size=32768)
+    return rng.randbytes(rng.randint(0, 32768))
+
+
+def build_canonical_event(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_canonical.py: fixed_dictionaries valid event
+    parent: str | None = None if rng.randrange(2) == 0 else ident(rng)
+    payload = {
+        text(rng, 10, TEXT_CHARS): text(rng, 20, TEXT_CHARS) for _ in range(rng.randint(0, 3))
+    }
+    rec = event(
+        event_id=ident(rng),
+        seq=rng.randint(0, 1000),
+        kind=pick(rng, KINDS),
+        actor=pick(rng, ACTORS),
+        ts=TS,
+        parent_id=parent,
+        payload=payload,
+    )
+    return jsonl("hyp-canonical-event", [rec])
+
+
+def build_graph(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_graph.py: n in 5..60 and parent index list
+    n = rng.randint(5, 60)
+    parents = [rng.randint(-2, n + 5) for _ in range(n)]
+    node_ids = [f"n_{i}" for i in range(n)]
+    events: list[dict[str, object]] = []
+    for i, p_idx in enumerate(parents):
+        if p_idx == -2:
+            parent: str | None = None
+        elif p_idx == -1:
+            parent = "ghost_missing_parent"
+        elif 0 <= p_idx < n:
+            parent = node_ids[p_idx]
+        else:
+            parent = f"external_{p_idx}"
+        events.append(
+            event(
+                event_id=node_ids[i],
+                seq=i,
+                kind="message",
+                actor="assistant",
+                ts=TS,
+                parent_id=parent,
+                payload={},
+            )
+        )
+    return jsonl("hyp-graph", events)
+
+
+def build_repair_torn(rng: random.Random) -> bytes:
+    # tests/fuzz/test_repair_invariants.py: TEXTS + torn JSON object prefix
+    n = rng.randint(1, 12)
+    events: list[dict[str, object]] = []
+    for index in range(n):
+        events.append(
+            event(
+                event_id=f"event-{index}",
+                seq=index,
+                kind="message",
+                actor="user" if index % 2 == 0 else "assistant",
+                ts=f"2026-10-08T00:00:{index:02d}Z",
+                parent_id=None if index == 0 else f"event-{index - 1}",
+                payload={"text": text(rng, 32, TEXT_CHARS)},
+            )
+        )
+    tail = b'{"id":"incomplete","payload":{"text":"cut'
+    return jsonl("n4-synthetic", events, tail=tail)
+
+
+def build_stateful(rng: random.Random) -> bytes:
+    # tests/fuzz/test_stateful_sessions.py: synthetic events then duplicate one
+    count = rng.randint(2, 8)
+    records: list[dict[str, object]] = []
+    for idx in range(count):
+        parent = None if idx == 0 else f"evt_{idx - 1:04d}"
+        records.append(
+            event(
+                event_id=f"evt_{idx:04d}",
+                seq=idx,
+                kind="message",
+                actor="user" if idx % 2 == 0 else "assistant",
+                ts=f"2026-01-01T00:00:{idx % 60:02d}Z",
+                parent_id=parent,
+                payload={"text": f"synthetic-{idx}"},
+            )
+        )
+    pos = rng.randint(0, len(records) - 1)
+    records.insert(pos, dict(records[pos]))
+    doc = {
+        "created_at": "2026-01-01T00:00:00Z",
+        "events": records,
+        "schema": "sesslint.session/v1",
+        "version": 1,
+    }
+    return dump_line(doc)
+
+
+def build_adapter_mutate(rng: random.Random) -> bytes:
+    # tests/fuzz/test_fuzz_adapter_shapes.py: mutate a known field on a synthetic envelope
+    records = [
+        event(
+            event_id="evt_0000",
+            seq=0,
+            kind="message",
+            actor="user",
+            ts=TS,
+            parent_id=None,
+            payload={"text": "synthetic-0"},
+        ),
+        event(
+            event_id="evt_0001",
+            seq=1,
+            kind="message",
+            actor="assistant",
+            ts=TS,
+            parent_id="evt_0000",
+            payload={"text": "synthetic-1"},
+        ),
+    ]
+    field = pick(rng, ADAPTER_FIELDS)
+    records[-1][field] = json_value(
+        rng,
+        max_leaves=12,
+        list_max=3,
+        dict_max=3,
+        key_max=12,
+        text_max=48,
+        depth=4,
+    )
+    data = b"".join(dump_line(record) for record in records)
+    return data
+
+
+SAMPLES: tuple[tuple[str, Callable[[random.Random], bytes]], ...] = (
+    ("adapter_mutate.jsonl", build_adapter_mutate),
+    ("canonical_bytes.bin", build_canonical_bytes),
+    ("canonical_event.jsonl", build_canonical_event),
+    ("graph.jsonl", build_graph),
+    ("jsonl_arbitrary.bin", build_jsonl_arbitrary),
+    ("jsonl_lines.jsonl", build_jsonl_lines),
+    ("repair_torn.jsonl", build_repair_torn),
+    ("stateful.json", build_stateful),
+)
+
+
+def provenance_doc() -> dict[str, object]:
+    return {
+        "contains_real_data": False,
+        "description": (
+            "Frozen extra parity corpus. Stdlib replay of tests/fuzz strategy "
+            "shapes at the pinned commit. Synthetic placeholders only."
+        ),
+        "generator": "rust/parity/corpus/hypothesis/generate",
+        "origin": "synthetic",
+        "pin": PIN,
+        "seed": SEED,
+        "strategies": list(STRATEGIES),
+    }
+
+
+def build_tree(seed: int) -> dict[str, bytes]:
+    rng = random.Random(seed)
+    files: dict[str, bytes] = {}
+    entries: list[dict[str, str]] = []
+    for name, builder in SAMPLES:
+        body = builder(rng)
+        files[name] = body
+        entries.append({"path": name, "sha256": hashlib.sha256(body).hexdigest()})
+    entries.sort(key=lambda item: item["path"])
+    files["PROVENANCE.json"] = dump_json(provenance_doc())
+    files["manifest.json"] = dump_json(
+        {
+            "entries": entries,
+            "pin": PIN,
+            "schema": SCHEMA,
+            "seed": seed,
+            "source": "tests/fuzz",
+        }
+    )
+    return files
+
+
+def write_tree(target: Path, files: dict[str, bytes]) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    for name, body in files.items():
+        path = target / name
+        if path.resolve().parent != target.resolve():
+            raise ValueError("escape")
+        path.write_bytes(body)
+        written = path.read_bytes()
+        if written != body:
+            raise ValueError("write_mismatch")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="generate", add_help=False)
+    parser.add_argument("--output", default=str(HERE))
+    parser.add_argument("--check", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    if sys.version_info < (3, 11):
+        return refuse("python_too_old")
+    args = parse_args(argv)
+    try:
+        files = build_tree(SEED)
+    except ValueError as exc:
+        return refuse(str(exc) or "build_failed")
+    target = Path(args.output)
+    if args.check:
+        for name, body in files.items():
+            path = target / name
+            try:
+                existing = path.read_bytes()
+            except OSError:
+                return refuse("file_missing")
+            if existing != body:
+                return refuse("bytes_mismatch")
+        digest = hashlib.sha256(
+            b"".join(files[name] for name in sorted(files))
+        ).hexdigest()
+        sys.stdout.write(f"pin={PIN}\n")
+        sys.stdout.write(f"seed={SEED}\n")
+        sys.stdout.write(f"files={len(files)}\n")
+        sys.stdout.write(f"samples={len(SAMPLES)}\n")
+        sys.stdout.write(f"tree_sha256={digest}\n")
+        sys.stdout.write("check=ok\n")
+        sys.stdout.flush()
+        return 0
+    try:
+        write_tree(target, files)
+    except OSError:
+        return refuse("write_failed")
+    except ValueError as exc:
+        return refuse(str(exc) or "write_failed")
+    digest = hashlib.sha256(b"".join(files[name] for name in sorted(files))).hexdigest()
+    sys.stdout.write(f"pin={PIN}\n")
+    sys.stdout.write(f"seed={SEED}\n")
+    sys.stdout.write(f"files={len(files)}\n")
+    sys.stdout.write(f"samples={len(SAMPLES)}\n")
+    sys.stdout.write(f"tree_sha256={digest}\n")
+    sys.stdout.write(f"output={target.as_posix()}\n")
+    sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

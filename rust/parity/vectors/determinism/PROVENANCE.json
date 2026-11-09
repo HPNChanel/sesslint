@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.determinism parity vectors (hashes and structural fields only, no session payloads).",
+  "generator": "rust/parity/vectors/determinism/generate",
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "known_parity_gaps": [
+    "NaN, Infinity: canonical_json_bytes rejects non-finite floats; Rust codec error text may differ from Python json module errors - do not assert message parity for these cases.",
+    "Lone surrogate in a JSON string: Python json may accept invalid Unicode; Rust canonical codec behavior may differ - not asserted here.",
+    "stable_sort_findings with a non-Finding item: Python raises TypeError; Rust only accepts Finding and does not model mixed lists.",
+    "JSON integers outside i64: Rust Value uses i64; very large integers are not represented in the Rust parity harness."
+  ]
+}

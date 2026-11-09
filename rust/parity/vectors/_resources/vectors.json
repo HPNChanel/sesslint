@@ -1,0 +1,74 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint._resources",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "_resources_py_sha256": "bf5ba2eb993aa99447a4ab5c1643b8c7ef20a66513afe79b5fbeb244531e0234",
+  "vectors": [
+    {
+      "id": "development_file_returns_path",
+      "construct": {
+        "type": "schema_path",
+        "name": "session.schema.json",
+        "development_path": "fixtures/regular_schema.json"
+      },
+      "expected": {
+        "path": "fixtures/regular_schema.json"
+      }
+    },
+    {
+      "id": "schema_name_ignored_other",
+      "construct": {
+        "type": "schema_path",
+        "name": "other-name.json",
+        "development_path": "fixtures/regular_schema.json"
+      },
+      "expected": {
+        "path": "fixtures/regular_schema.json"
+      }
+    },
+    {
+      "id": "schema_name_ignored_share_style",
+      "construct": {
+        "type": "schema_path",
+        "name": "../share/sesslint/schemas/x.json",
+        "development_path": "fixtures/regular_schema.json"
+      },
+      "expected": {
+        "path": "fixtures/regular_schema.json"
+      }
+    },
+    {
+      "id": "missing_development_path",
+      "construct": {
+        "type": "schema_path",
+        "name": "sesslint-parity-missing.schema.json",
+        "development_path": "fixtures/missing_schema.json"
+      },
+      "expected": {
+        "path": "fixtures/missing_schema.json"
+      }
+    },
+    {
+      "id": "directory_development_path",
+      "construct": {
+        "type": "schema_path",
+        "name": "session.schema.json",
+        "development_path": "fixtures/dir_as_dev"
+      },
+      "expected": {
+        "path": "fixtures/dir_as_dev"
+      }
+    },
+    {
+      "id": "metadata_error_under_file",
+      "construct": {
+        "type": "schema_path",
+        "name": "session.schema.json",
+        "development_path": "fixtures/regular_schema.json/nested_under_file.json"
+      },
+      "expected": {
+        "path": "fixtures/regular_schema.json/nested_under_file.json"
+      }
+    }
+  ]
+}

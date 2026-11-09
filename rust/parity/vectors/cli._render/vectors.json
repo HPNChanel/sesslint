@@ -1,0 +1,525 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._render",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "render_py_sha256": "fd6ce2d886484c2c40ca3907a6801fa86e73a484008e6a3828bac29aa1afddf2",
+  "known_parity_gaps": [
+    "GAP-render-write-baseline: _emit_check_report calls _write_baseline_arg before any renderer import; Rust write_baseline_arg is unavailable.",
+    "GAP-render-minimize-path: --skip-undetected json branch imports sesslint.report.minimize_path before emit_text.",
+    "GAP-render-build-repro-metadata: json report branch imports sesslint.report.build_repro_metadata before render_json.",
+    "GAP-render-render-json: json report branch imports sesslint.report.render_json.",
+    "GAP-render-render-human: default human report branch imports sesslint.report.render_human and should_color after render_human.",
+    "GAP-render-render-sarif: sarif report and skip-sarif branches import sesslint.sarif.render_sarif.",
+    "GAP-render-render-html: html report branch imports sesslint.html_report.render_html."
+  ],
+  "vectors": [
+    {
+      "id": "scan_buckets_padding_and_rollups",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 1,
+            "invalid": 1,
+            "unsupported": 1,
+            "unreadable": 1,
+            "skipped": 1,
+            "total": 5
+          },
+          "skipped_reason_totals": {
+            "other": 1,
+            "max-bytes-cap-exceeded": 0
+          },
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a",
+              "cache_hit": true
+            },
+            {
+              "verdict": "invalid",
+              "path": "synthetic-b",
+              "error_count": 2,
+              "warning_count": 3
+            },
+            {
+              "verdict": "unsupported",
+              "path": "synthetic-c"
+            },
+            {
+              "verdict": "unsupported",
+              "path": "synthetic-d",
+              "skipped_reason": ""
+            },
+            {
+              "verdict": "unsupported",
+              "path": "synthetic-e",
+              "skipped_reason": "reader-limit"
+            },
+            {
+              "verdict": "unreadable",
+              "path": "synthetic-f"
+            },
+            {
+              "verdict": "skipped",
+              "path": "synthetic-g"
+            },
+            {
+              "verdict": "skipped",
+              "path": "synthetic-h",
+              "skipped_reason": "",
+              "cache_hit": true
+            },
+            {
+              "verdict": "other",
+              "path": "synthetic-i",
+              "skipped_reason": "cap"
+            }
+          ],
+          "summary": {
+            "by_code": [
+              {
+                "code": "SL302",
+                "severity": "warning",
+                "count": 4,
+                "files": 2
+              },
+              {
+                "code": "SL301",
+                "severity": "error",
+                "count": 1,
+                "files": 1
+              }
+            ],
+            "worst_files": [
+              {
+                "path": "synthetic-b",
+                "error_count": 2,
+                "warning_count": 0
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=1 invalid=1 unsupported=1 unreadable=1 skipped=1 (total=5)\nSkipped reasons: other=1 max-bytes-cap-exceeded=0\nHint: resource budget exhausted -- raise --max-bytes/--max-files to scan remaining files.\n--------------------------------------------------------------------------------\n  [HEALTHY]            synthetic-a [cache-hit]\n  [INVALID]            synthetic-b (2 error(s), 3 warning(s))\n  [UNSUPPORTED]        synthetic-c (unsupported version)\n  [UNSUPPORTED]        synthetic-d (unsupported version)\n  [UNSUPPORTED]        synthetic-e (reader-limit)\n  [UNREADABLE]         synthetic-f (read error or non-UTF8)\n  [SKIPPED]            synthetic-g (reason: None)\n  [SKIPPED]            synthetic-h (reason: ) [cache-hit]\n  [SKIPPED]            synthetic-i (reason: cap)\n--------------------------------------------------------------------------------\nFindings by code:\n  SL302  warning  4 finding(s) in 2 file(s)\n  SL301  error    1 finding(s) in 1 file(s)\nWorst files:\n  synthetic-b  (2 error(s), 0 warning(s))"
+      }
+    },
+    {
+      "id": "scan_color_healthy_tag",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": true,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 1,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 1
+          },
+          "skipped_reason_totals": {},
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=1 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=1)\n--------------------------------------------------------------------------------\n  \u001b[32m[HEALTHY]\u001b[0m            synthetic-a"
+      }
+    },
+    {
+      "id": "scan_absent_summary_three_lines",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 0,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 0
+          },
+          "skipped_reason_totals": {},
+          "files": [],
+          "summary": null
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=0 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=0)\n--------------------------------------------------------------------------------"
+      }
+    },
+    {
+      "id": "scan_only_worst_files_summary",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 0,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 0
+          },
+          "skipped_reason_totals": {},
+          "files": [],
+          "summary": {
+            "by_code": [],
+            "worst_files": [
+              {
+                "path": "synthetic-z",
+                "error_count": 0,
+                "warning_count": 1
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=0 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=0)\n--------------------------------------------------------------------------------\n--------------------------------------------------------------------------------\nWorst files:\n  synthetic-z  (0 error(s), 1 warning(s))"
+      }
+    },
+    {
+      "id": "scan_files_cap_zero_still_hints",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 0,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 1,
+            "total": 1
+          },
+          "skipped_reason_totals": {
+            "max-files-cap-exceeded": 0
+          },
+          "files": []
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=0 invalid=0 unsupported=0 unreadable=0 skipped=1 (total=1)\nSkipped reasons: max-files-cap-exceeded=0\nHint: resource budget exhausted -- raise --max-bytes/--max-files to scan remaining files.\n--------------------------------------------------------------------------------"
+      }
+    },
+    {
+      "id": "scan_unknown_skip_reason_no_hint",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 0,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 1,
+            "total": 1
+          },
+          "skipped_reason_totals": {
+            "other": 3
+          },
+          "files": []
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=0 invalid=0 unsupported=0 unreadable=0 skipped=1 (total=1)\nSkipped reasons: other=3\n--------------------------------------------------------------------------------"
+      }
+    },
+    {
+      "id": "scan_secret_and_index_rollup_order",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 2,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 2
+          },
+          "skipped_reason_totals": {},
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a",
+              "findings": [
+                {
+                  "code": "SL009",
+                  "evidence": "falsy"
+                },
+                {
+                  "code": "SL009",
+                  "evidence": "falsy"
+                },
+                {
+                  "code": "SL009 ",
+                  "evidence": "falsy"
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "file-not-in-index"
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "file-not-in-index"
+                  }
+                }
+              ]
+            },
+            {
+              "verdict": "healthy",
+              "path": "synthetic-b",
+              "findings": [
+                {
+                  "code": "SL009",
+                  "evidence": "falsy"
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-entry-no-file"
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-malformed"
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-truncated"
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": {
+                      "kind": "not_str"
+                    }
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": "falsy"
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {}
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=2 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=2)\n--------------------------------------------------------------------------------\n  [HEALTHY]            synthetic-a\n  [HEALTHY]            synthetic-b\n--------------------------------------------------------------------------------\n  secret-shaped material: 2 file(s)\n--------------------------------------------------------------------------------\n  index divergence: 2 session file(s) not listed in vendor index, 1 dangling index entry, malformed index, truncated index (resumable by explicit id; see docs/codes/SL402.md)"
+      }
+    },
+    {
+      "id": "scan_dangling_plural_index_line",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 1,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 1
+          },
+          "skipped_reason_totals": {},
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a",
+              "findings": [
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-entry-no-file"
+                  }
+                },
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-entry-no-file"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=1 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=1)\n--------------------------------------------------------------------------------\n  [HEALTHY]            synthetic-a\n--------------------------------------------------------------------------------\n  index divergence: 2 dangling index entries (see docs/codes/SL402.md)"
+      }
+    },
+    {
+      "id": "scan_unknown_divergence_kind_empty_parts",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 1,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 1
+          },
+          "skipped_reason_totals": {},
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a",
+              "findings": [
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "file-not-in-index "
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=1 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=1)\n--------------------------------------------------------------------------------\n  [HEALTHY]            synthetic-a\n--------------------------------------------------------------------------------\n  index divergence:  (see docs/codes/SL402.md)"
+      }
+    },
+    {
+      "id": "scan_divergence_last_write_wins",
+      "construct": {
+        "type": "format_scan_report_human",
+        "color": false,
+        "scan_report": {
+          "root_path": "synthetic-root",
+          "totals": {
+            "healthy": 1,
+            "invalid": 0,
+            "unsupported": 0,
+            "unreadable": 0,
+            "skipped": 0,
+            "total": 1
+          },
+          "skipped_reason_totals": {},
+          "files": [
+            {
+              "verdict": "healthy",
+              "path": "synthetic-a",
+              "findings": [
+                {
+                  "code": "SL402",
+                  "evidence": {
+                    "divergence": "index-truncated"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "[read-only] Scan report for: synthetic-root\nTotals: healthy=1 invalid=0 unsupported=0 unreadable=0 skipped=0 (total=1)\n--------------------------------------------------------------------------------\n  [HEALTHY]            synthetic-a\n--------------------------------------------------------------------------------\n  index divergence: truncated index (see docs/codes/SL402.md)"
+      }
+    },
+    {
+      "id": "emit_skip_undetected_human_html_format",
+      "construct": {
+        "type": "emit_check_report",
+        "quiet": false,
+        "display_path": "synthetic-dir\\synthetic.json",
+        "report": {
+          "limitation": "Unsupported: synthetic",
+          "counts": {
+            "total": 4
+          }
+        },
+        "args": {
+          "skip_undetected": "yes",
+          "output_format": "html"
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "exit_code": 0,
+        "stderr": "skipped (format-undetected): synthetic-dir\\synthetic.json\n"
+      }
+    },
+    {
+      "id": "emit_skip_undetected_quiet_stdin",
+      "construct": {
+        "type": "emit_check_report",
+        "quiet": true,
+        "display_path": "<stdin>",
+        "report": {
+          "limitation": "Unsupported: synthetic",
+          "counts": {
+            "total": 0
+          }
+        },
+        "args": {
+          "skip_undetected": true
+        }
+      },
+      "expected": {
+        "result": "ok",
+        "exit_code": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "id": "emit_fail_on_unsupported_bad_int",
+      "construct": {
+        "type": "emit_check_report",
+        "quiet": false,
+        "display_path": "synthetic.json",
+        "report": {
+          "limitation": "Unsupported: synthetic",
+          "counts": {
+            "total": 0
+          }
+        },
+        "args": {
+          "fail_on_unsupported": "nope"
+        }
+      },
+      "expected": {
+        "result": "error",
+        "message": "invalid literal for int() with base 10: 'nope'",
+        "stderr": ""
+      }
+    }
+  ]
+}

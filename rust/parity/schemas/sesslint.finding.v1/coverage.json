@@ -1,0 +1,39 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.finding",
+  "not_applicable_count": 5,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "get_finding_schema_path and load_finding_schema open the schema file, then make_finding, to_dict, and parse_finding_dict round-trip one finding. validate_finding_json does not resolve a path and does not construct a Finding. emitter_to_dict is one object, not that round-trip.",
+      "status": "not_applicable",
+      "test": "tests/test_finding.py::test_schema_file_matches_dataclass",
+      "vector_id": null
+    },
+    {
+      "note": "load_finding_schema compares the required set and the property set, including source path, line, and record_id, with the Finding model. validate_finding_json checks one instance. Recording those names in facts is not that loader call.",
+      "status": "not_applicable",
+      "test": "tests/test_finding.py::test_finding_schema_structure_anti_drift",
+      "vector_id": null
+    },
+    {
+      "note": "get_finding_schema_path follows the prefix share directory when the repo schema is hidden. No vector resolves a schema path.",
+      "status": "not_applicable",
+      "test": "tests/test_finding.py::test_get_finding_schema_path_prefix_resolution",
+      "vector_id": null
+    },
+    {
+      "note": "load_finding_schema raises FileNotFoundError when the schema path is missing. validate_finding_json does not open a path.",
+      "status": "not_applicable",
+      "test": "tests/test_finding.py::test_schema_loader_file_not_found",
+      "vector_id": null
+    },
+    {
+      "note": "the test reads the schema file and compares the code, severity, and repairability enums with codes.py as sets. validate_finding_json accepts or rejects one value. One accepted code is not that lockstep sweep.",
+      "status": "not_applicable",
+      "test": "tests/test_codes.py::test_codes_and_taxonomies_match_finding_schema_anti_drift",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.finding.v1.json"
+}

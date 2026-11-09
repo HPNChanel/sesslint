@@ -1,0 +1,6158 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.adapters.metadata",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "metadata_py_sha256": "0476945fab0e06501492c2e773aac50c57484b0e7bfc22c1fb98575177bdeac0",
+  "metadata_rs_sha256": "8256a693817a3af850588b5887cc390fd5dd6660b6d69f0be8a26ba9ec984f69",
+  "known_parity_gaps": [
+    "GAP-metadata-finding-fingerprint: UnknownMetadataTracker.findings on a non-empty group buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec and does not return Finding objects. The harness drives the tracker and checks empty_ok, finding_error before the codec, or gap_fingerprint. Pin snapshots of _groups stay in the vector and are not asserted, because those fields are private."
+  ],
+  "vectors": [
+    {
+      "id": "module_semantic_keys",
+      "construct": {
+        "type": "module_semantic_keys"
+      },
+      "expected": {
+        "semantic_keys": [
+          "callId",
+          "call_id",
+          "checkpoint",
+          "checkpoints",
+          "content",
+          "correlation_id",
+          "events",
+          "forked_from_id",
+          "history",
+          "id",
+          "input",
+          "items",
+          "leafUuid",
+          "logicalParentUuid",
+          "message",
+          "message_id",
+          "messages",
+          "output",
+          "parentId",
+          "parentUuid",
+          "parent_id",
+          "parent_thread_id",
+          "parent_uuid",
+          "previous_response_id",
+          "record_id",
+          "role",
+          "snapshot",
+          "toolUseId",
+          "tool_call_id",
+          "tool_use_id",
+          "turnId",
+          "turn_id",
+          "uuid"
+        ],
+        "semantic_key_count": 33
+      }
+    },
+    {
+      "id": "semantic_key_callId_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "callId"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_callId_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "callId"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_call_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "call_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_call_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "call_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_checkpoint_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "checkpoint"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_checkpoint_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "checkpoint"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_checkpoints_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "checkpoints"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_checkpoints_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "checkpoints"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_content_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "content"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_content_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "content"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_correlation_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "correlation_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_correlation_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "correlation_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_events_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "events"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_events_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "events"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_forked_from_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "forked_from_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_forked_from_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "forked_from_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_history_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "history"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_history_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "history"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_input_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "input"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_input_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "input"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_items_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "items"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_items_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "items"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_leafUuid_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "leafUuid"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_leafUuid_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "leafUuid"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_logicalParentUuid_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "logicalParentUuid"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_logicalParentUuid_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "logicalParentUuid"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_message_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "message"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_message_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "message"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_message_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "message_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_message_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "message_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_messages_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "messages"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_messages_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "messages"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_output_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "output"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_output_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "output"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_parentId_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parentId"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_parentId_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parentId"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_parentUuid_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parentUuid"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_parentUuid_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parentUuid"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_parent_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_parent_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_parent_thread_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_thread_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_parent_thread_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_thread_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_parent_uuid_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_uuid"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_parent_uuid_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent_uuid"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_previous_response_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "previous_response_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_previous_response_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "previous_response_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_record_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "record_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_record_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "record_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_role_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "role"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_role_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "role"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_snapshot_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "snapshot"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_snapshot_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "snapshot"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_toolUseId_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "toolUseId"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_toolUseId_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "toolUseId"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_tool_call_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "tool_call_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_tool_call_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "tool_call_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_tool_use_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "tool_use_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_tool_use_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "tool_use_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_turnId_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "turnId"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_turnId_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "turnId"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_turn_id_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "turn_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_turn_id_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "turn_id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_key_uuid_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "uuid"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_key_uuid_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "uuid"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "semantic_items_empty_list",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "items"
+              },
+              "value": {
+                "kind": "list",
+                "items": []
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "semantic_items_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "items"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "prefix_or_exact_critical_",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical_"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_or_exact_critical_state",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical_state"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_or_exact_unknown_critical",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown_critical"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_or_exact_unknown_critical_state",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown_critical_state"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_or_exact_unknown_criticality",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown_criticality"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_or_exact_critical_unknown_critical",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical_unknown_critical"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "prefix_none_critical_state",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical_state"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "prefix_none_unknown_critical",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown_critical"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "prefix_none_unknown_criticality",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown_criticality"
+              },
+              "value": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_type",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "type"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_sessionId",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "sessionId"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_session_id",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "session_id"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_timestamp",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "timestamp"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_cwd",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "cwd"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_subtype",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "subtype"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_name",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "name"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_uuid_extra",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "uuid_extra"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_parent",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "parent"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_critical",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_unknown",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "unknown"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_Critical_state",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "Critical_state"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "bookkeeping_Unknown_critical",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "Unknown_critical"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "nested_id_none_role_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "role"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "nested_payload_without_semantic",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "id"
+              },
+              "value": {
+                "kind": "none"
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "payload"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "note"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "sibling_left_role",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "left"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "role"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "right"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "note"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "sibling_right_role",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "left"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "note"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "key": {
+                "kind": "str",
+                "text": "right"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "role"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "list_wrap_snapshot",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "wrap"
+              },
+              "value": {
+                "kind": "list",
+                "items": [
+                  {
+                    "kind": "scalar"
+                  },
+                  {
+                    "kind": "none"
+                  },
+                  {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "map",
+                        "entries": [
+                          {
+                            "key": {
+                              "kind": "str",
+                              "text": "note"
+                            },
+                            "value": {
+                              "kind": "scalar"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "map",
+                    "entries": [
+                      {
+                        "key": {
+                          "kind": "str",
+                          "text": "snapshot"
+                        },
+                        "value": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "list_wrap_without_snapshot",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "wrap"
+              },
+              "value": {
+                "kind": "list",
+                "items": [
+                  {
+                    "kind": "scalar"
+                  },
+                  {
+                    "kind": "none"
+                  },
+                  {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "map",
+                        "entries": [
+                          {
+                            "key": {
+                              "kind": "str",
+                              "text": "note"
+                            },
+                            "value": {
+                              "kind": "scalar"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "non_str_key_nested_role",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "non_str"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "role"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "non_str_key_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "non_str"
+              },
+              "value": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "critical_prefix_nested_map",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": [
+            {
+              "key": {
+                "kind": "str",
+                "text": "critical_"
+              },
+              "value": {
+                "kind": "map",
+                "entries": [
+                  {
+                    "key": {
+                      "kind": "str",
+                      "text": "note"
+                    },
+                    "value": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "root_none",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "none"
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "root_scalar",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "scalar"
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "root_empty_map",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "map",
+          "entries": []
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "root_list_nested_id",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "map",
+              "entries": [
+                {
+                  "key": {
+                    "kind": "str",
+                    "text": "id"
+                  },
+                  "value": {
+                    "kind": "scalar"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": true
+      }
+    },
+    {
+      "id": "root_list_scalar_only",
+      "construct": {
+        "type": "has_semantic_fields",
+        "value": {
+          "kind": "list",
+          "items": [
+            {
+              "kind": "scalar"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "has_semantic": false
+      }
+    },
+    {
+      "id": "tracker_empty_flush",
+      "construct": {
+        "type": "tracker_run",
+        "steps": []
+      },
+      "expected": {
+        "groups": [],
+        "flush": {
+          "mode": "empty_ok",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_empty_whitespace_path",
+      "construct": {
+        "type": "tracker_run",
+        "steps": []
+      },
+      "expected": {
+        "groups": [],
+        "flush": {
+          "mode": "empty_ok",
+          "path": "   "
+        }
+      }
+    },
+    {
+      "id": "tracker_repeated_notes_keep_first_line",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 3
+          },
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 9
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 2,
+            "first_line": 3,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_empty_string_discriminator",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "",
+            "line": 4
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<str:len=0>",
+            "count": 1,
+            "first_line": 4,
+            "redacted": true
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_truncated_discriminator",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "line": 2
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<str:len=65>",
+            "count": 1,
+            "first_line": 2,
+            "redacted": true
+          },
+          {
+            "discriminator": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_truncated_whitespace_types_share_group",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "foo bar",
+            "line": 2
+          },
+          {
+            "action": "note",
+            "raw_type": "baz qux",
+            "line": 5
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<str:len=7>",
+            "count": 2,
+            "first_line": 2,
+            "redacted": true
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_accented_len_discriminator",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "éé",
+            "line": 6
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<str:len=2>",
+            "count": 1,
+            "first_line": 6,
+            "redacted": true
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_exactly_thirty_two_groups",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "kind0",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind1",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind2",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind3",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind4",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind5",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind6",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind7",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind8",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind9",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind10",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind11",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind12",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind13",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind14",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind15",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind16",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind17",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind18",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind19",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind20",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind21",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind22",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind23",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind24",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind25",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind26",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind27",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind28",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind29",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind30",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind31",
+            "line": 1
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "kind0",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind1",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind10",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind11",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind12",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind13",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind14",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind15",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind16",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind17",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind18",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind19",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind2",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind20",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind21",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind22",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind23",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind24",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind25",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind26",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind27",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind28",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind29",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind3",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind30",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind31",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind4",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind5",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind6",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind7",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind8",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind9",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_overflow_third_bucket",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_0",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "future_1",
+            "line": 2
+          },
+          {
+            "action": "note",
+            "raw_type": "future_2",
+            "line": 3
+          },
+          {
+            "action": "note",
+            "raw_type": "future_3",
+            "line": 4
+          },
+          {
+            "action": "note",
+            "raw_type": "future_4",
+            "line": 5
+          },
+          {
+            "action": "note",
+            "raw_type": "future_5",
+            "line": 6
+          },
+          {
+            "action": "note",
+            "raw_type": "future_6",
+            "line": 7
+          },
+          {
+            "action": "note",
+            "raw_type": "future_7",
+            "line": 8
+          },
+          {
+            "action": "note",
+            "raw_type": "future_8",
+            "line": 9
+          },
+          {
+            "action": "note",
+            "raw_type": "future_9",
+            "line": 10
+          },
+          {
+            "action": "note",
+            "raw_type": "future_10",
+            "line": 11
+          },
+          {
+            "action": "note",
+            "raw_type": "future_11",
+            "line": 12
+          },
+          {
+            "action": "note",
+            "raw_type": "future_12",
+            "line": 13
+          },
+          {
+            "action": "note",
+            "raw_type": "future_13",
+            "line": 14
+          },
+          {
+            "action": "note",
+            "raw_type": "future_14",
+            "line": 15
+          },
+          {
+            "action": "note",
+            "raw_type": "future_15",
+            "line": 16
+          },
+          {
+            "action": "note",
+            "raw_type": "future_16",
+            "line": 17
+          },
+          {
+            "action": "note",
+            "raw_type": "future_17",
+            "line": 18
+          },
+          {
+            "action": "note",
+            "raw_type": "future_18",
+            "line": 19
+          },
+          {
+            "action": "note",
+            "raw_type": "future_19",
+            "line": 20
+          },
+          {
+            "action": "note",
+            "raw_type": "future_20",
+            "line": 21
+          },
+          {
+            "action": "note",
+            "raw_type": "future_21",
+            "line": 22
+          },
+          {
+            "action": "note",
+            "raw_type": "future_22",
+            "line": 23
+          },
+          {
+            "action": "note",
+            "raw_type": "future_23",
+            "line": 24
+          },
+          {
+            "action": "note",
+            "raw_type": "future_24",
+            "line": 25
+          },
+          {
+            "action": "note",
+            "raw_type": "future_25",
+            "line": 26
+          },
+          {
+            "action": "note",
+            "raw_type": "future_26",
+            "line": 27
+          },
+          {
+            "action": "note",
+            "raw_type": "future_27",
+            "line": 28
+          },
+          {
+            "action": "note",
+            "raw_type": "future_28",
+            "line": 29
+          },
+          {
+            "action": "note",
+            "raw_type": "future_29",
+            "line": 30
+          },
+          {
+            "action": "note",
+            "raw_type": "future_30",
+            "line": 31
+          },
+          {
+            "action": "note",
+            "raw_type": "future_31",
+            "line": 32
+          },
+          {
+            "action": "note",
+            "raw_type": "future_32",
+            "line": 33
+          },
+          {
+            "action": "note",
+            "raw_type": "future_33",
+            "line": 34
+          },
+          {
+            "action": "note",
+            "raw_type": "future_34",
+            "line": 35
+          },
+          {
+            "action": "note",
+            "raw_type": "future_35",
+            "line": 36
+          },
+          {
+            "action": "note",
+            "raw_type": "future_36",
+            "line": 37
+          },
+          {
+            "action": "note",
+            "raw_type": "future_37",
+            "line": 38
+          },
+          {
+            "action": "note",
+            "raw_type": "future_38",
+            "line": 39
+          },
+          {
+            "action": "note",
+            "raw_type": "future_39",
+            "line": 40
+          },
+          {
+            "action": "note",
+            "raw_type": "future_40",
+            "line": 41
+          },
+          {
+            "action": "note",
+            "raw_type": "future_41",
+            "line": 42
+          },
+          {
+            "action": "note",
+            "raw_type": "future_42",
+            "line": 43
+          },
+          {
+            "action": "note",
+            "raw_type": "future_43",
+            "line": 44
+          },
+          {
+            "action": "note",
+            "raw_type": "future_44",
+            "line": 45
+          },
+          {
+            "action": "note",
+            "raw_type": "future_45",
+            "line": 46
+          },
+          {
+            "action": "note",
+            "raw_type": "future_46",
+            "line": 47
+          },
+          {
+            "action": "note",
+            "raw_type": "future_47",
+            "line": 48
+          },
+          {
+            "action": "note",
+            "raw_type": "future_48",
+            "line": 49
+          },
+          {
+            "action": "note",
+            "raw_type": "future_49",
+            "line": 50
+          },
+          {
+            "action": "note",
+            "raw_type": "future_50",
+            "line": 51
+          },
+          {
+            "action": "note",
+            "raw_type": "future_51",
+            "line": 52
+          },
+          {
+            "action": "note",
+            "raw_type": "future_52",
+            "line": 53
+          },
+          {
+            "action": "note",
+            "raw_type": "future_53",
+            "line": 54
+          },
+          {
+            "action": "note",
+            "raw_type": "future_54",
+            "line": 55
+          },
+          {
+            "action": "note",
+            "raw_type": "future_55",
+            "line": 56
+          },
+          {
+            "action": "note",
+            "raw_type": "future_56",
+            "line": 57
+          },
+          {
+            "action": "note",
+            "raw_type": "future_57",
+            "line": 58
+          },
+          {
+            "action": "note",
+            "raw_type": "future_58",
+            "line": 59
+          },
+          {
+            "action": "note",
+            "raw_type": "future_59",
+            "line": 60
+          },
+          {
+            "action": "note",
+            "raw_type": "future_60",
+            "line": 61
+          },
+          {
+            "action": "note",
+            "raw_type": "future_61",
+            "line": 62
+          },
+          {
+            "action": "note",
+            "raw_type": "future_62",
+            "line": 63
+          },
+          {
+            "action": "note",
+            "raw_type": "future_63",
+            "line": 64
+          },
+          {
+            "action": "note",
+            "raw_type": "future_64",
+            "line": 65
+          },
+          {
+            "action": "note",
+            "raw_type": "future_65",
+            "line": 66
+          },
+          {
+            "action": "note",
+            "raw_type": "future_66",
+            "line": 67
+          },
+          {
+            "action": "note",
+            "raw_type": "future_67",
+            "line": 68
+          },
+          {
+            "action": "note",
+            "raw_type": "future_68",
+            "line": 69
+          },
+          {
+            "action": "note",
+            "raw_type": "future_69",
+            "line": 70
+          },
+          {
+            "action": "note",
+            "raw_type": "future_70",
+            "line": 71
+          },
+          {
+            "action": "note",
+            "raw_type": "future_71",
+            "line": 72
+          },
+          {
+            "action": "note",
+            "raw_type": "future_72",
+            "line": 73
+          },
+          {
+            "action": "note",
+            "raw_type": "future_73",
+            "line": 74
+          },
+          {
+            "action": "note",
+            "raw_type": "future_74",
+            "line": 75
+          },
+          {
+            "action": "note",
+            "raw_type": "future_75",
+            "line": 76
+          },
+          {
+            "action": "note",
+            "raw_type": "future_76",
+            "line": 77
+          },
+          {
+            "action": "note",
+            "raw_type": "future_77",
+            "line": 78
+          },
+          {
+            "action": "note",
+            "raw_type": "future_78",
+            "line": 79
+          },
+          {
+            "action": "note",
+            "raw_type": "future_79",
+            "line": 80
+          },
+          {
+            "action": "note",
+            "raw_type": "future_80",
+            "line": 81
+          },
+          {
+            "action": "note",
+            "raw_type": "future_81",
+            "line": 82
+          },
+          {
+            "action": "note",
+            "raw_type": "future_82",
+            "line": 83
+          },
+          {
+            "action": "note",
+            "raw_type": "future_83",
+            "line": 84
+          },
+          {
+            "action": "note",
+            "raw_type": "future_84",
+            "line": 85
+          },
+          {
+            "action": "note",
+            "raw_type": "future_85",
+            "line": 86
+          },
+          {
+            "action": "note",
+            "raw_type": "future_86",
+            "line": 87
+          },
+          {
+            "action": "note",
+            "raw_type": "future_87",
+            "line": 88
+          },
+          {
+            "action": "note",
+            "raw_type": "future_88",
+            "line": 89
+          },
+          {
+            "action": "note",
+            "raw_type": "future_89",
+            "line": 90
+          },
+          {
+            "action": "note",
+            "raw_type": "future_90",
+            "line": 91
+          },
+          {
+            "action": "note",
+            "raw_type": "future_91",
+            "line": 92
+          },
+          {
+            "action": "note",
+            "raw_type": "future_92",
+            "line": 93
+          },
+          {
+            "action": "note",
+            "raw_type": "future_93",
+            "line": 94
+          },
+          {
+            "action": "note",
+            "raw_type": "future_94",
+            "line": 95
+          },
+          {
+            "action": "note",
+            "raw_type": "future_95",
+            "line": 96
+          },
+          {
+            "action": "note",
+            "raw_type": "future_96",
+            "line": 97
+          },
+          {
+            "action": "note",
+            "raw_type": "future_97",
+            "line": 98
+          },
+          {
+            "action": "note",
+            "raw_type": "future_98",
+            "line": 99
+          },
+          {
+            "action": "note",
+            "raw_type": "future_99",
+            "line": 100
+          },
+          {
+            "action": "note",
+            "raw_type": "future_100",
+            "line": 101
+          },
+          {
+            "action": "note",
+            "raw_type": "future_101",
+            "line": 102
+          },
+          {
+            "action": "note",
+            "raw_type": "future_102",
+            "line": 103
+          },
+          {
+            "action": "note",
+            "raw_type": "future_103",
+            "line": 104
+          },
+          {
+            "action": "note",
+            "raw_type": "future_104",
+            "line": 105
+          },
+          {
+            "action": "note",
+            "raw_type": "future_105",
+            "line": 106
+          },
+          {
+            "action": "note",
+            "raw_type": "future_106",
+            "line": 107
+          },
+          {
+            "action": "note",
+            "raw_type": "future_107",
+            "line": 108
+          },
+          {
+            "action": "note",
+            "raw_type": "future_108",
+            "line": 109
+          },
+          {
+            "action": "note",
+            "raw_type": "future_109",
+            "line": 110
+          },
+          {
+            "action": "note",
+            "raw_type": "future_110",
+            "line": 111
+          },
+          {
+            "action": "note",
+            "raw_type": "future_111",
+            "line": 112
+          },
+          {
+            "action": "note",
+            "raw_type": "future_112",
+            "line": 113
+          },
+          {
+            "action": "note",
+            "raw_type": "future_113",
+            "line": 114
+          },
+          {
+            "action": "note",
+            "raw_type": "future_114",
+            "line": 115
+          },
+          {
+            "action": "note",
+            "raw_type": "future_115",
+            "line": 116
+          },
+          {
+            "action": "note",
+            "raw_type": "future_116",
+            "line": 117
+          },
+          {
+            "action": "note",
+            "raw_type": "future_117",
+            "line": 118
+          },
+          {
+            "action": "note",
+            "raw_type": "future_118",
+            "line": 119
+          },
+          {
+            "action": "note",
+            "raw_type": "future_119",
+            "line": 120
+          },
+          {
+            "action": "note",
+            "raw_type": "future_120",
+            "line": 121
+          },
+          {
+            "action": "note",
+            "raw_type": "future_121",
+            "line": 122
+          },
+          {
+            "action": "note",
+            "raw_type": "future_122",
+            "line": 123
+          },
+          {
+            "action": "note",
+            "raw_type": "future_123",
+            "line": 124
+          },
+          {
+            "action": "note",
+            "raw_type": "future_124",
+            "line": 125
+          },
+          {
+            "action": "note",
+            "raw_type": "future_125",
+            "line": 126
+          },
+          {
+            "action": "note",
+            "raw_type": "future_126",
+            "line": 127
+          },
+          {
+            "action": "note",
+            "raw_type": "future_127",
+            "line": 128
+          },
+          {
+            "action": "note",
+            "raw_type": "future_128",
+            "line": 129
+          },
+          {
+            "action": "note",
+            "raw_type": "future_129",
+            "line": 130
+          },
+          {
+            "action": "note",
+            "raw_type": "future_130",
+            "line": 131
+          },
+          {
+            "action": "note",
+            "raw_type": "future_131",
+            "line": 132
+          },
+          {
+            "action": "note",
+            "raw_type": "future_132",
+            "line": 133
+          },
+          {
+            "action": "note",
+            "raw_type": "future_133",
+            "line": 134
+          },
+          {
+            "action": "note",
+            "raw_type": "future_134",
+            "line": 135
+          },
+          {
+            "action": "note",
+            "raw_type": "future_135",
+            "line": 136
+          },
+          {
+            "action": "note",
+            "raw_type": "future_136",
+            "line": 137
+          },
+          {
+            "action": "note",
+            "raw_type": "future_137",
+            "line": 138
+          },
+          {
+            "action": "note",
+            "raw_type": "future_138",
+            "line": 139
+          },
+          {
+            "action": "note",
+            "raw_type": "future_139",
+            "line": 140
+          },
+          {
+            "action": "note",
+            "raw_type": "future_140",
+            "line": 141
+          },
+          {
+            "action": "note",
+            "raw_type": "future_141",
+            "line": 142
+          },
+          {
+            "action": "note",
+            "raw_type": "future_142",
+            "line": 143
+          },
+          {
+            "action": "note",
+            "raw_type": "future_143",
+            "line": 144
+          },
+          {
+            "action": "note",
+            "raw_type": "future_144",
+            "line": 145
+          },
+          {
+            "action": "note",
+            "raw_type": "future_145",
+            "line": 146
+          },
+          {
+            "action": "note",
+            "raw_type": "future_146",
+            "line": 147
+          },
+          {
+            "action": "note",
+            "raw_type": "future_147",
+            "line": 148
+          },
+          {
+            "action": "note",
+            "raw_type": "future_148",
+            "line": 149
+          },
+          {
+            "action": "note",
+            "raw_type": "future_149",
+            "line": 150
+          },
+          {
+            "action": "note",
+            "raw_type": "future_150",
+            "line": 151
+          },
+          {
+            "action": "note",
+            "raw_type": "future_151",
+            "line": 152
+          },
+          {
+            "action": "note",
+            "raw_type": "future_152",
+            "line": 153
+          },
+          {
+            "action": "note",
+            "raw_type": "future_153",
+            "line": 154
+          },
+          {
+            "action": "note",
+            "raw_type": "future_154",
+            "line": 155
+          },
+          {
+            "action": "note",
+            "raw_type": "future_155",
+            "line": 156
+          },
+          {
+            "action": "note",
+            "raw_type": "future_156",
+            "line": 157
+          },
+          {
+            "action": "note",
+            "raw_type": "future_157",
+            "line": 158
+          },
+          {
+            "action": "note",
+            "raw_type": "future_158",
+            "line": 159
+          },
+          {
+            "action": "note",
+            "raw_type": "future_159",
+            "line": 160
+          },
+          {
+            "action": "note",
+            "raw_type": "future_160",
+            "line": 161
+          },
+          {
+            "action": "note",
+            "raw_type": "future_161",
+            "line": 162
+          },
+          {
+            "action": "note",
+            "raw_type": "future_162",
+            "line": 163
+          },
+          {
+            "action": "note",
+            "raw_type": "future_163",
+            "line": 164
+          },
+          {
+            "action": "note",
+            "raw_type": "future_164",
+            "line": 165
+          },
+          {
+            "action": "note",
+            "raw_type": "future_165",
+            "line": 166
+          },
+          {
+            "action": "note",
+            "raw_type": "future_166",
+            "line": 167
+          },
+          {
+            "action": "note",
+            "raw_type": "future_167",
+            "line": 168
+          },
+          {
+            "action": "note",
+            "raw_type": "future_168",
+            "line": 169
+          },
+          {
+            "action": "note",
+            "raw_type": "future_169",
+            "line": 170
+          },
+          {
+            "action": "note",
+            "raw_type": "future_170",
+            "line": 171
+          },
+          {
+            "action": "note",
+            "raw_type": "future_171",
+            "line": 172
+          },
+          {
+            "action": "note",
+            "raw_type": "future_172",
+            "line": 173
+          },
+          {
+            "action": "note",
+            "raw_type": "future_173",
+            "line": 174
+          },
+          {
+            "action": "note",
+            "raw_type": "future_174",
+            "line": 175
+          },
+          {
+            "action": "note",
+            "raw_type": "future_175",
+            "line": 176
+          },
+          {
+            "action": "note",
+            "raw_type": "future_176",
+            "line": 177
+          },
+          {
+            "action": "note",
+            "raw_type": "future_177",
+            "line": 178
+          },
+          {
+            "action": "note",
+            "raw_type": "future_178",
+            "line": 179
+          },
+          {
+            "action": "note",
+            "raw_type": "future_179",
+            "line": 180
+          },
+          {
+            "action": "note",
+            "raw_type": "future_180",
+            "line": 181
+          },
+          {
+            "action": "note",
+            "raw_type": "future_181",
+            "line": 182
+          },
+          {
+            "action": "note",
+            "raw_type": "future_182",
+            "line": 183
+          },
+          {
+            "action": "note",
+            "raw_type": "future_183",
+            "line": 184
+          },
+          {
+            "action": "note",
+            "raw_type": "future_184",
+            "line": 185
+          },
+          {
+            "action": "note",
+            "raw_type": "future_185",
+            "line": 186
+          },
+          {
+            "action": "note",
+            "raw_type": "future_186",
+            "line": 187
+          },
+          {
+            "action": "note",
+            "raw_type": "future_187",
+            "line": 188
+          },
+          {
+            "action": "note",
+            "raw_type": "future_188",
+            "line": 189
+          },
+          {
+            "action": "note",
+            "raw_type": "future_189",
+            "line": 190
+          },
+          {
+            "action": "note",
+            "raw_type": "future_190",
+            "line": 191
+          },
+          {
+            "action": "note",
+            "raw_type": "future_191",
+            "line": 192
+          },
+          {
+            "action": "note",
+            "raw_type": "future_192",
+            "line": 193
+          },
+          {
+            "action": "note",
+            "raw_type": "future_193",
+            "line": 194
+          },
+          {
+            "action": "note",
+            "raw_type": "future_194",
+            "line": 195
+          },
+          {
+            "action": "note",
+            "raw_type": "future_195",
+            "line": 196
+          },
+          {
+            "action": "note",
+            "raw_type": "future_196",
+            "line": 197
+          },
+          {
+            "action": "note",
+            "raw_type": "future_197",
+            "line": 198
+          },
+          {
+            "action": "note",
+            "raw_type": "future_198",
+            "line": 199
+          },
+          {
+            "action": "note",
+            "raw_type": "future_199",
+            "line": 200
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<other-types>",
+            "count": 168,
+            "first_line": 33,
+            "redacted": true
+          },
+          {
+            "discriminator": "future_0",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_1",
+            "count": 1,
+            "first_line": 2,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_10",
+            "count": 1,
+            "first_line": 11,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_11",
+            "count": 1,
+            "first_line": 12,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_12",
+            "count": 1,
+            "first_line": 13,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_13",
+            "count": 1,
+            "first_line": 14,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_14",
+            "count": 1,
+            "first_line": 15,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_15",
+            "count": 1,
+            "first_line": 16,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_16",
+            "count": 1,
+            "first_line": 17,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_17",
+            "count": 1,
+            "first_line": 18,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_18",
+            "count": 1,
+            "first_line": 19,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_19",
+            "count": 1,
+            "first_line": 20,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_2",
+            "count": 1,
+            "first_line": 3,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_20",
+            "count": 1,
+            "first_line": 21,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_21",
+            "count": 1,
+            "first_line": 22,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_22",
+            "count": 1,
+            "first_line": 23,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_23",
+            "count": 1,
+            "first_line": 24,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_24",
+            "count": 1,
+            "first_line": 25,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_25",
+            "count": 1,
+            "first_line": 26,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_26",
+            "count": 1,
+            "first_line": 27,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_27",
+            "count": 1,
+            "first_line": 28,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_28",
+            "count": 1,
+            "first_line": 29,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_29",
+            "count": 1,
+            "first_line": 30,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_3",
+            "count": 1,
+            "first_line": 4,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_30",
+            "count": 1,
+            "first_line": 31,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_31",
+            "count": 1,
+            "first_line": 32,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_4",
+            "count": 1,
+            "first_line": 5,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_5",
+            "count": 1,
+            "first_line": 6,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_6",
+            "count": 1,
+            "first_line": 7,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_7",
+            "count": 1,
+            "first_line": 8,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_8",
+            "count": 1,
+            "first_line": 9,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_9",
+            "count": 1,
+            "first_line": 10,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_overflow_then_repeat_distinct",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_0",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "future_1",
+            "line": 2
+          },
+          {
+            "action": "note",
+            "raw_type": "future_2",
+            "line": 3
+          },
+          {
+            "action": "note",
+            "raw_type": "future_3",
+            "line": 4
+          },
+          {
+            "action": "note",
+            "raw_type": "future_4",
+            "line": 5
+          },
+          {
+            "action": "note",
+            "raw_type": "future_5",
+            "line": 6
+          },
+          {
+            "action": "note",
+            "raw_type": "future_6",
+            "line": 7
+          },
+          {
+            "action": "note",
+            "raw_type": "future_7",
+            "line": 8
+          },
+          {
+            "action": "note",
+            "raw_type": "future_8",
+            "line": 9
+          },
+          {
+            "action": "note",
+            "raw_type": "future_9",
+            "line": 10
+          },
+          {
+            "action": "note",
+            "raw_type": "future_10",
+            "line": 11
+          },
+          {
+            "action": "note",
+            "raw_type": "future_11",
+            "line": 12
+          },
+          {
+            "action": "note",
+            "raw_type": "future_12",
+            "line": 13
+          },
+          {
+            "action": "note",
+            "raw_type": "future_13",
+            "line": 14
+          },
+          {
+            "action": "note",
+            "raw_type": "future_14",
+            "line": 15
+          },
+          {
+            "action": "note",
+            "raw_type": "future_15",
+            "line": 16
+          },
+          {
+            "action": "note",
+            "raw_type": "future_16",
+            "line": 17
+          },
+          {
+            "action": "note",
+            "raw_type": "future_17",
+            "line": 18
+          },
+          {
+            "action": "note",
+            "raw_type": "future_18",
+            "line": 19
+          },
+          {
+            "action": "note",
+            "raw_type": "future_19",
+            "line": 20
+          },
+          {
+            "action": "note",
+            "raw_type": "future_20",
+            "line": 21
+          },
+          {
+            "action": "note",
+            "raw_type": "future_21",
+            "line": 22
+          },
+          {
+            "action": "note",
+            "raw_type": "future_22",
+            "line": 23
+          },
+          {
+            "action": "note",
+            "raw_type": "future_23",
+            "line": 24
+          },
+          {
+            "action": "note",
+            "raw_type": "future_24",
+            "line": 25
+          },
+          {
+            "action": "note",
+            "raw_type": "future_25",
+            "line": 26
+          },
+          {
+            "action": "note",
+            "raw_type": "future_26",
+            "line": 27
+          },
+          {
+            "action": "note",
+            "raw_type": "future_27",
+            "line": 28
+          },
+          {
+            "action": "note",
+            "raw_type": "future_28",
+            "line": 29
+          },
+          {
+            "action": "note",
+            "raw_type": "future_29",
+            "line": 30
+          },
+          {
+            "action": "note",
+            "raw_type": "future_30",
+            "line": 31
+          },
+          {
+            "action": "note",
+            "raw_type": "future_31",
+            "line": 32
+          },
+          {
+            "action": "note",
+            "raw_type": "future_32",
+            "line": 33
+          },
+          {
+            "action": "note",
+            "raw_type": "future_33",
+            "line": 34
+          },
+          {
+            "action": "note",
+            "raw_type": "future_34",
+            "line": 35
+          },
+          {
+            "action": "note",
+            "raw_type": "future_35",
+            "line": 36
+          },
+          {
+            "action": "note",
+            "raw_type": "future_36",
+            "line": 37
+          },
+          {
+            "action": "note",
+            "raw_type": "future_37",
+            "line": 38
+          },
+          {
+            "action": "note",
+            "raw_type": "future_38",
+            "line": 39
+          },
+          {
+            "action": "note",
+            "raw_type": "future_39",
+            "line": 40
+          },
+          {
+            "action": "note",
+            "raw_type": "future_40",
+            "line": 41
+          },
+          {
+            "action": "note",
+            "raw_type": "future_41",
+            "line": 42
+          },
+          {
+            "action": "note",
+            "raw_type": "future_42",
+            "line": 43
+          },
+          {
+            "action": "note",
+            "raw_type": "future_43",
+            "line": 44
+          },
+          {
+            "action": "note",
+            "raw_type": "future_44",
+            "line": 45
+          },
+          {
+            "action": "note",
+            "raw_type": "future_45",
+            "line": 46
+          },
+          {
+            "action": "note",
+            "raw_type": "future_46",
+            "line": 47
+          },
+          {
+            "action": "note",
+            "raw_type": "future_47",
+            "line": 48
+          },
+          {
+            "action": "note",
+            "raw_type": "future_48",
+            "line": 49
+          },
+          {
+            "action": "note",
+            "raw_type": "future_49",
+            "line": 50
+          },
+          {
+            "action": "note",
+            "raw_type": "future_50",
+            "line": 51
+          },
+          {
+            "action": "note",
+            "raw_type": "future_51",
+            "line": 52
+          },
+          {
+            "action": "note",
+            "raw_type": "future_52",
+            "line": 53
+          },
+          {
+            "action": "note",
+            "raw_type": "future_53",
+            "line": 54
+          },
+          {
+            "action": "note",
+            "raw_type": "future_54",
+            "line": 55
+          },
+          {
+            "action": "note",
+            "raw_type": "future_55",
+            "line": 56
+          },
+          {
+            "action": "note",
+            "raw_type": "future_56",
+            "line": 57
+          },
+          {
+            "action": "note",
+            "raw_type": "future_57",
+            "line": 58
+          },
+          {
+            "action": "note",
+            "raw_type": "future_58",
+            "line": 59
+          },
+          {
+            "action": "note",
+            "raw_type": "future_59",
+            "line": 60
+          },
+          {
+            "action": "note",
+            "raw_type": "future_60",
+            "line": 61
+          },
+          {
+            "action": "note",
+            "raw_type": "future_61",
+            "line": 62
+          },
+          {
+            "action": "note",
+            "raw_type": "future_62",
+            "line": 63
+          },
+          {
+            "action": "note",
+            "raw_type": "future_63",
+            "line": 64
+          },
+          {
+            "action": "note",
+            "raw_type": "future_64",
+            "line": 65
+          },
+          {
+            "action": "note",
+            "raw_type": "future_65",
+            "line": 66
+          },
+          {
+            "action": "note",
+            "raw_type": "future_66",
+            "line": 67
+          },
+          {
+            "action": "note",
+            "raw_type": "future_67",
+            "line": 68
+          },
+          {
+            "action": "note",
+            "raw_type": "future_68",
+            "line": 69
+          },
+          {
+            "action": "note",
+            "raw_type": "future_69",
+            "line": 70
+          },
+          {
+            "action": "note",
+            "raw_type": "future_70",
+            "line": 71
+          },
+          {
+            "action": "note",
+            "raw_type": "future_71",
+            "line": 72
+          },
+          {
+            "action": "note",
+            "raw_type": "future_72",
+            "line": 73
+          },
+          {
+            "action": "note",
+            "raw_type": "future_73",
+            "line": 74
+          },
+          {
+            "action": "note",
+            "raw_type": "future_74",
+            "line": 75
+          },
+          {
+            "action": "note",
+            "raw_type": "future_75",
+            "line": 76
+          },
+          {
+            "action": "note",
+            "raw_type": "future_76",
+            "line": 77
+          },
+          {
+            "action": "note",
+            "raw_type": "future_77",
+            "line": 78
+          },
+          {
+            "action": "note",
+            "raw_type": "future_78",
+            "line": 79
+          },
+          {
+            "action": "note",
+            "raw_type": "future_79",
+            "line": 80
+          },
+          {
+            "action": "note",
+            "raw_type": "future_80",
+            "line": 81
+          },
+          {
+            "action": "note",
+            "raw_type": "future_81",
+            "line": 82
+          },
+          {
+            "action": "note",
+            "raw_type": "future_82",
+            "line": 83
+          },
+          {
+            "action": "note",
+            "raw_type": "future_83",
+            "line": 84
+          },
+          {
+            "action": "note",
+            "raw_type": "future_84",
+            "line": 85
+          },
+          {
+            "action": "note",
+            "raw_type": "future_85",
+            "line": 86
+          },
+          {
+            "action": "note",
+            "raw_type": "future_86",
+            "line": 87
+          },
+          {
+            "action": "note",
+            "raw_type": "future_87",
+            "line": 88
+          },
+          {
+            "action": "note",
+            "raw_type": "future_88",
+            "line": 89
+          },
+          {
+            "action": "note",
+            "raw_type": "future_89",
+            "line": 90
+          },
+          {
+            "action": "note",
+            "raw_type": "future_90",
+            "line": 91
+          },
+          {
+            "action": "note",
+            "raw_type": "future_91",
+            "line": 92
+          },
+          {
+            "action": "note",
+            "raw_type": "future_92",
+            "line": 93
+          },
+          {
+            "action": "note",
+            "raw_type": "future_93",
+            "line": 94
+          },
+          {
+            "action": "note",
+            "raw_type": "future_94",
+            "line": 95
+          },
+          {
+            "action": "note",
+            "raw_type": "future_95",
+            "line": 96
+          },
+          {
+            "action": "note",
+            "raw_type": "future_96",
+            "line": 97
+          },
+          {
+            "action": "note",
+            "raw_type": "future_97",
+            "line": 98
+          },
+          {
+            "action": "note",
+            "raw_type": "future_98",
+            "line": 99
+          },
+          {
+            "action": "note",
+            "raw_type": "future_99",
+            "line": 100
+          },
+          {
+            "action": "note",
+            "raw_type": "future_100",
+            "line": 101
+          },
+          {
+            "action": "note",
+            "raw_type": "future_101",
+            "line": 102
+          },
+          {
+            "action": "note",
+            "raw_type": "future_102",
+            "line": 103
+          },
+          {
+            "action": "note",
+            "raw_type": "future_103",
+            "line": 104
+          },
+          {
+            "action": "note",
+            "raw_type": "future_104",
+            "line": 105
+          },
+          {
+            "action": "note",
+            "raw_type": "future_105",
+            "line": 106
+          },
+          {
+            "action": "note",
+            "raw_type": "future_106",
+            "line": 107
+          },
+          {
+            "action": "note",
+            "raw_type": "future_107",
+            "line": 108
+          },
+          {
+            "action": "note",
+            "raw_type": "future_108",
+            "line": 109
+          },
+          {
+            "action": "note",
+            "raw_type": "future_109",
+            "line": 110
+          },
+          {
+            "action": "note",
+            "raw_type": "future_110",
+            "line": 111
+          },
+          {
+            "action": "note",
+            "raw_type": "future_111",
+            "line": 112
+          },
+          {
+            "action": "note",
+            "raw_type": "future_112",
+            "line": 113
+          },
+          {
+            "action": "note",
+            "raw_type": "future_113",
+            "line": 114
+          },
+          {
+            "action": "note",
+            "raw_type": "future_114",
+            "line": 115
+          },
+          {
+            "action": "note",
+            "raw_type": "future_115",
+            "line": 116
+          },
+          {
+            "action": "note",
+            "raw_type": "future_116",
+            "line": 117
+          },
+          {
+            "action": "note",
+            "raw_type": "future_117",
+            "line": 118
+          },
+          {
+            "action": "note",
+            "raw_type": "future_118",
+            "line": 119
+          },
+          {
+            "action": "note",
+            "raw_type": "future_119",
+            "line": 120
+          },
+          {
+            "action": "note",
+            "raw_type": "future_120",
+            "line": 121
+          },
+          {
+            "action": "note",
+            "raw_type": "future_121",
+            "line": 122
+          },
+          {
+            "action": "note",
+            "raw_type": "future_122",
+            "line": 123
+          },
+          {
+            "action": "note",
+            "raw_type": "future_123",
+            "line": 124
+          },
+          {
+            "action": "note",
+            "raw_type": "future_124",
+            "line": 125
+          },
+          {
+            "action": "note",
+            "raw_type": "future_125",
+            "line": 126
+          },
+          {
+            "action": "note",
+            "raw_type": "future_126",
+            "line": 127
+          },
+          {
+            "action": "note",
+            "raw_type": "future_127",
+            "line": 128
+          },
+          {
+            "action": "note",
+            "raw_type": "future_128",
+            "line": 129
+          },
+          {
+            "action": "note",
+            "raw_type": "future_129",
+            "line": 130
+          },
+          {
+            "action": "note",
+            "raw_type": "future_130",
+            "line": 131
+          },
+          {
+            "action": "note",
+            "raw_type": "future_131",
+            "line": 132
+          },
+          {
+            "action": "note",
+            "raw_type": "future_132",
+            "line": 133
+          },
+          {
+            "action": "note",
+            "raw_type": "future_133",
+            "line": 134
+          },
+          {
+            "action": "note",
+            "raw_type": "future_134",
+            "line": 135
+          },
+          {
+            "action": "note",
+            "raw_type": "future_135",
+            "line": 136
+          },
+          {
+            "action": "note",
+            "raw_type": "future_136",
+            "line": 137
+          },
+          {
+            "action": "note",
+            "raw_type": "future_137",
+            "line": 138
+          },
+          {
+            "action": "note",
+            "raw_type": "future_138",
+            "line": 139
+          },
+          {
+            "action": "note",
+            "raw_type": "future_139",
+            "line": 140
+          },
+          {
+            "action": "note",
+            "raw_type": "future_140",
+            "line": 141
+          },
+          {
+            "action": "note",
+            "raw_type": "future_141",
+            "line": 142
+          },
+          {
+            "action": "note",
+            "raw_type": "future_142",
+            "line": 143
+          },
+          {
+            "action": "note",
+            "raw_type": "future_143",
+            "line": 144
+          },
+          {
+            "action": "note",
+            "raw_type": "future_144",
+            "line": 145
+          },
+          {
+            "action": "note",
+            "raw_type": "future_145",
+            "line": 146
+          },
+          {
+            "action": "note",
+            "raw_type": "future_146",
+            "line": 147
+          },
+          {
+            "action": "note",
+            "raw_type": "future_147",
+            "line": 148
+          },
+          {
+            "action": "note",
+            "raw_type": "future_148",
+            "line": 149
+          },
+          {
+            "action": "note",
+            "raw_type": "future_149",
+            "line": 150
+          },
+          {
+            "action": "note",
+            "raw_type": "future_150",
+            "line": 151
+          },
+          {
+            "action": "note",
+            "raw_type": "future_151",
+            "line": 152
+          },
+          {
+            "action": "note",
+            "raw_type": "future_152",
+            "line": 153
+          },
+          {
+            "action": "note",
+            "raw_type": "future_153",
+            "line": 154
+          },
+          {
+            "action": "note",
+            "raw_type": "future_154",
+            "line": 155
+          },
+          {
+            "action": "note",
+            "raw_type": "future_155",
+            "line": 156
+          },
+          {
+            "action": "note",
+            "raw_type": "future_156",
+            "line": 157
+          },
+          {
+            "action": "note",
+            "raw_type": "future_157",
+            "line": 158
+          },
+          {
+            "action": "note",
+            "raw_type": "future_158",
+            "line": 159
+          },
+          {
+            "action": "note",
+            "raw_type": "future_159",
+            "line": 160
+          },
+          {
+            "action": "note",
+            "raw_type": "future_160",
+            "line": 161
+          },
+          {
+            "action": "note",
+            "raw_type": "future_161",
+            "line": 162
+          },
+          {
+            "action": "note",
+            "raw_type": "future_162",
+            "line": 163
+          },
+          {
+            "action": "note",
+            "raw_type": "future_163",
+            "line": 164
+          },
+          {
+            "action": "note",
+            "raw_type": "future_164",
+            "line": 165
+          },
+          {
+            "action": "note",
+            "raw_type": "future_165",
+            "line": 166
+          },
+          {
+            "action": "note",
+            "raw_type": "future_166",
+            "line": 167
+          },
+          {
+            "action": "note",
+            "raw_type": "future_167",
+            "line": 168
+          },
+          {
+            "action": "note",
+            "raw_type": "future_168",
+            "line": 169
+          },
+          {
+            "action": "note",
+            "raw_type": "future_169",
+            "line": 170
+          },
+          {
+            "action": "note",
+            "raw_type": "future_170",
+            "line": 171
+          },
+          {
+            "action": "note",
+            "raw_type": "future_171",
+            "line": 172
+          },
+          {
+            "action": "note",
+            "raw_type": "future_172",
+            "line": 173
+          },
+          {
+            "action": "note",
+            "raw_type": "future_173",
+            "line": 174
+          },
+          {
+            "action": "note",
+            "raw_type": "future_174",
+            "line": 175
+          },
+          {
+            "action": "note",
+            "raw_type": "future_175",
+            "line": 176
+          },
+          {
+            "action": "note",
+            "raw_type": "future_176",
+            "line": 177
+          },
+          {
+            "action": "note",
+            "raw_type": "future_177",
+            "line": 178
+          },
+          {
+            "action": "note",
+            "raw_type": "future_178",
+            "line": 179
+          },
+          {
+            "action": "note",
+            "raw_type": "future_179",
+            "line": 180
+          },
+          {
+            "action": "note",
+            "raw_type": "future_180",
+            "line": 181
+          },
+          {
+            "action": "note",
+            "raw_type": "future_181",
+            "line": 182
+          },
+          {
+            "action": "note",
+            "raw_type": "future_182",
+            "line": 183
+          },
+          {
+            "action": "note",
+            "raw_type": "future_183",
+            "line": 184
+          },
+          {
+            "action": "note",
+            "raw_type": "future_184",
+            "line": 185
+          },
+          {
+            "action": "note",
+            "raw_type": "future_185",
+            "line": 186
+          },
+          {
+            "action": "note",
+            "raw_type": "future_186",
+            "line": 187
+          },
+          {
+            "action": "note",
+            "raw_type": "future_187",
+            "line": 188
+          },
+          {
+            "action": "note",
+            "raw_type": "future_188",
+            "line": 189
+          },
+          {
+            "action": "note",
+            "raw_type": "future_189",
+            "line": 190
+          },
+          {
+            "action": "note",
+            "raw_type": "future_190",
+            "line": 191
+          },
+          {
+            "action": "note",
+            "raw_type": "future_191",
+            "line": 192
+          },
+          {
+            "action": "note",
+            "raw_type": "future_192",
+            "line": 193
+          },
+          {
+            "action": "note",
+            "raw_type": "future_193",
+            "line": 194
+          },
+          {
+            "action": "note",
+            "raw_type": "future_194",
+            "line": 195
+          },
+          {
+            "action": "note",
+            "raw_type": "future_195",
+            "line": 196
+          },
+          {
+            "action": "note",
+            "raw_type": "future_196",
+            "line": 197
+          },
+          {
+            "action": "note",
+            "raw_type": "future_197",
+            "line": 198
+          },
+          {
+            "action": "note",
+            "raw_type": "future_198",
+            "line": 199
+          },
+          {
+            "action": "note",
+            "raw_type": "future_199",
+            "line": 200
+          },
+          {
+            "action": "note",
+            "raw_type": "future_0",
+            "line": 500
+          },
+          {
+            "action": "note",
+            "raw_type": "future_32",
+            "line": 501
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<other-types>",
+            "count": 169,
+            "first_line": 33,
+            "redacted": true
+          },
+          {
+            "discriminator": "future_0",
+            "count": 2,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_1",
+            "count": 1,
+            "first_line": 2,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_10",
+            "count": 1,
+            "first_line": 11,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_11",
+            "count": 1,
+            "first_line": 12,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_12",
+            "count": 1,
+            "first_line": 13,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_13",
+            "count": 1,
+            "first_line": 14,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_14",
+            "count": 1,
+            "first_line": 15,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_15",
+            "count": 1,
+            "first_line": 16,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_16",
+            "count": 1,
+            "first_line": 17,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_17",
+            "count": 1,
+            "first_line": 18,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_18",
+            "count": 1,
+            "first_line": 19,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_19",
+            "count": 1,
+            "first_line": 20,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_2",
+            "count": 1,
+            "first_line": 3,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_20",
+            "count": 1,
+            "first_line": 21,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_21",
+            "count": 1,
+            "first_line": 22,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_22",
+            "count": 1,
+            "first_line": 23,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_23",
+            "count": 1,
+            "first_line": 24,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_24",
+            "count": 1,
+            "first_line": 25,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_25",
+            "count": 1,
+            "first_line": 26,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_26",
+            "count": 1,
+            "first_line": 27,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_27",
+            "count": 1,
+            "first_line": 28,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_28",
+            "count": 1,
+            "first_line": 29,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_29",
+            "count": 1,
+            "first_line": 30,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_3",
+            "count": 1,
+            "first_line": 4,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_30",
+            "count": 1,
+            "first_line": 31,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_31",
+            "count": 1,
+            "first_line": 32,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_4",
+            "count": 1,
+            "first_line": 5,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_5",
+            "count": 1,
+            "first_line": 6,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_6",
+            "count": 1,
+            "first_line": 7,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_7",
+            "count": 1,
+            "first_line": 8,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_8",
+            "count": 1,
+            "first_line": 9,
+            "redacted": false
+          },
+          {
+            "discriminator": "future_9",
+            "count": 1,
+            "first_line": 10,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_line_zero_finding_error",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 0
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 0,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "finding_error",
+          "path": "syn-metadata-parity.jsonl",
+          "error_contains": "SourceRef.line must be a positive integer or None, got 0"
+        }
+      }
+    },
+    {
+      "id": "tracker_negative_line_finding_error",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": -1
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": -1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "finding_error",
+          "path": "syn-metadata-parity.jsonl",
+          "error_contains": "SourceRef.line must be a positive integer or None, got -1"
+        }
+      }
+    },
+    {
+      "id": "tracker_empty_path_finding_error",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 1
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "finding_error",
+          "path": "",
+          "error_contains": "SourceRef.path must be a non-empty string, got ''"
+        }
+      }
+    },
+    {
+      "id": "tracker_whitespace_path_finding_error",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 1
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "finding_error",
+          "path": "   ",
+          "error_contains": "SourceRef.path must be a non-empty string, got '   '"
+        }
+      }
+    },
+    {
+      "id": "tracker_newline_path_finding_error",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 1
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "finding_error",
+          "path": "a\nb",
+          "error_contains": "Forbidden control or newline characters in SourceRef.path: 'a\\nb'"
+        }
+      }
+    },
+    {
+      "id": "tracker_valid_single_group_gap",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 3
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 3,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    },
+    {
+      "id": "tracker_valid_padded_path_gap",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "future_status",
+            "line": 3
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "future_status",
+            "count": 1,
+            "first_line": 3,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "  syn-metadata-parity.jsonl  "
+        }
+      }
+    },
+    {
+      "id": "tracker_many_groups_gap",
+      "construct": {
+        "type": "tracker_run",
+        "steps": [
+          {
+            "action": "note",
+            "raw_type": "kind0",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind1",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind2",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind3",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind4",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind5",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind6",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind7",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind8",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind9",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind10",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind11",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind12",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind13",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind14",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind15",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind16",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind17",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind18",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind19",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind20",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind21",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind22",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind23",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind24",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind25",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind26",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind27",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind28",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind29",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind30",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind31",
+            "line": 1
+          },
+          {
+            "action": "note",
+            "raw_type": "kind32",
+            "line": 2
+          }
+        ]
+      },
+      "expected": {
+        "groups": [
+          {
+            "discriminator": "<other-types>",
+            "count": 1,
+            "first_line": 2,
+            "redacted": true
+          },
+          {
+            "discriminator": "kind0",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind1",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind10",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind11",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind12",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind13",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind14",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind15",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind16",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind17",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind18",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind19",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind2",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind20",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind21",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind22",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind23",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind24",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind25",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind26",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind27",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind28",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind29",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind3",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind30",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind31",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind4",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind5",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind6",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind7",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind8",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          },
+          {
+            "discriminator": "kind9",
+            "count": 1,
+            "first_line": 1,
+            "redacted": false
+          }
+        ],
+        "flush": {
+          "mode": "gap_fingerprint",
+          "path": "syn-metadata-parity.jsonl"
+        }
+      }
+    }
+  ]
+}
