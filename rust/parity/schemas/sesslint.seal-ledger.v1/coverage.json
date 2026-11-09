@@ -1,0 +1,16 @@
+{
+  "module": "sesslint.seal",
+  "schema_file": "schemas/sesslint.seal-ledger.v1.json",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "covered_count": 0,
+  "not_applicable_count": 1,
+  "rows": [
+    {
+      "test": "tests/test_seal.py::test_seal_schema_self_consistent",
+      "column": "column_0",
+      "status": "not_applicable",
+      "vector_id": null,
+      "note": "calls load_seal_schema and _entry; _entry calls build_entry. One build_entry or validate_json vector is not that whole test."
+    }
+  ]
+}

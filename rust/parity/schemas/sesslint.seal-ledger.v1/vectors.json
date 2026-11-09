@@ -1,0 +1,367 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.seal",
+  "schema_file": "schemas/sesslint.seal-ledger.v1.json",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema_sha256": "30acd9dafb53e66867ae08bdcce92ecd867eff4ba6265c99af94e902503e805b",
+  "seal_py_sha256": "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28",
+  "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
+  "known_parity_gaps": [
+    "GAP-seal-ledger-schema-load: load_seal_schema imports sesslint._resources and json.loads the schema file. This card reads the pin blob in the generator and does not call load_seal_schema. tests/test_seal.py::test_seal_schema_self_consistent calls load_seal_schema and _entry, so it is not covered.",
+    "GAP-seal-ledger-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-seal-ledger-json-number: a JSON number with a fraction, an exponent, or a value outside i64 is refused. Draft 2020-12 treats 1.0 as an integer and Python int is unbounded. Those values are not invented here.",
+    "GAP-seal-ledger-emit-refusal: build_entry raises SealError text. emit_entry returns schema reasons and does not copy those sentences."
+  ],
+  "vectors": [
+    {
+      "id": "schema_facts",
+      "construct": {
+        "type": "schema_facts",
+        "fn": "schema_document",
+        "mode": "pin"
+      },
+      "expected": {
+        "draft": "https://json-schema.org/draft/2020-12/schema",
+        "id": "https://sesslint.dev/schemas/sesslint.seal-ledger/v1",
+        "root_type": "object",
+        "additional_properties": false,
+        "required": [
+          "schema",
+          "seq",
+          "prev_sha256",
+          "file_sha256",
+          "tool",
+          "verdict",
+          "codes",
+          "report_sha256",
+          "sealed_at",
+          "entry_sha256"
+        ],
+        "properties": [
+          "schema",
+          "seq",
+          "prev_sha256",
+          "file_sha256",
+          "path",
+          "tool",
+          "verdict",
+          "codes",
+          "report_sha256",
+          "sealed_at",
+          "genesis_of",
+          "entry_sha256"
+        ],
+        "schema_const": "sesslint.seal-ledger/v1",
+        "seal_schema_id": "sesslint.seal-ledger/v1",
+        "genesis": "GENESIS",
+        "tool_enum": [
+          "check",
+          "verify",
+          "repair"
+        ],
+        "seq_minimum": 1,
+        "seq_type": "integer",
+        "code_name_pattern": "^SL[0-9]{3}$",
+        "code_minimum": 0,
+        "code_value_type": "integer",
+        "path_min_length": 1,
+        "verdict_min_length": 1,
+        "patterns": {
+          "prev_sha256": "^(GENESIS|[0-9a-f]{64})$",
+          "file_sha256": "^[0-9a-f]{64}$",
+          "report_sha256": "^[0-9a-f]{64}$",
+          "sealed_at": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "genesis_of": "^[0-9a-f]{64}$",
+          "entry_sha256": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    {
+      "id": "emit_path_omitted",
+      "construct": {
+        "type": "emit",
+        "fn": "build_entry",
+        "mode": "ok",
+        "seq": 1,
+        "prev_sha256": "GENESIS",
+        "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "path": null,
+        "tool": "check",
+        "verdict": "healthy",
+        "codes": [
+          [
+            "SL101",
+            2
+          ]
+        ],
+        "report_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "genesis_of": null,
+        "sealed_at": "2026-01-01T00:00:00Z"
+      },
+      "expected": {
+        "mode": "ok",
+        "entry_sha256": "052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8",
+        "object_utf8": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}",
+        "line_utf8": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}\n",
+        "keys": [
+          "schema",
+          "seq",
+          "prev_sha256",
+          "file_sha256",
+          "tool",
+          "verdict",
+          "codes",
+          "report_sha256",
+          "sealed_at",
+          "entry_sha256"
+        ],
+        "required_subset_of_entry": true,
+        "entry_subset_of_properties": true
+      }
+    },
+    {
+      "id": "emit_path_and_genesis",
+      "construct": {
+        "type": "emit",
+        "fn": "build_entry",
+        "mode": "ok",
+        "seq": 2,
+        "prev_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "file_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "path": "sess.jsonl",
+        "tool": "repair",
+        "verdict": "repaired",
+        "codes": [
+          [
+            "SL001",
+            0
+          ],
+          [
+            "SL101",
+            2
+          ]
+        ],
+        "report_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "genesis_of": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "sealed_at": "2026-01-01T00:00:00Z"
+      },
+      "expected": {
+        "mode": "ok",
+        "entry_sha256": "3c0fc3c635e410e9794ff57db272f9f67fcf683d1dc650de93cb756d4f8b3b04",
+        "object_utf8": "{\"codes\":{\"SL001\":0,\"SL101\":2},\"entry_sha256\":\"3c0fc3c635e410e9794ff57db272f9f67fcf683d1dc650de93cb756d4f8b3b04\",\"file_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"genesis_of\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"path\":\"sess.jsonl\",\"prev_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"report_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"repair\",\"verdict\":\"repaired\"}",
+        "line_utf8": "{\"codes\":{\"SL001\":0,\"SL101\":2},\"entry_sha256\":\"3c0fc3c635e410e9794ff57db272f9f67fcf683d1dc650de93cb756d4f8b3b04\",\"file_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"genesis_of\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"path\":\"sess.jsonl\",\"prev_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"report_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"repair\",\"verdict\":\"repaired\"}\n",
+        "keys": [
+          "schema",
+          "seq",
+          "prev_sha256",
+          "file_sha256",
+          "tool",
+          "verdict",
+          "codes",
+          "report_sha256",
+          "sealed_at",
+          "path",
+          "genesis_of",
+          "entry_sha256"
+        ],
+        "required_subset_of_entry": true,
+        "entry_subset_of_properties": true
+      }
+    },
+    {
+      "id": "validate_emit_path_omitted",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "ok",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "ok",
+        "reason": null
+      }
+    },
+    {
+      "id": "validate_emit_path_and_genesis",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "ok",
+        "document": "{\"codes\":{\"SL001\":0,\"SL101\":2},\"entry_sha256\":\"3c0fc3c635e410e9794ff57db272f9f67fcf683d1dc650de93cb756d4f8b3b04\",\"file_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"genesis_of\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"path\":\"sess.jsonl\",\"prev_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"report_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":2,\"tool\":\"repair\",\"verdict\":\"repaired\"}"
+      },
+      "expected": {
+        "mode": "ok",
+        "reason": null
+      }
+    },
+    {
+      "id": "validate_missing_seq",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "missing_required:seq"
+      }
+    },
+    {
+      "id": "validate_additional_property",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"extra\":1,\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "additional_property"
+      }
+    },
+    {
+      "id": "validate_bad_const",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"other\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "const_mismatch:schema"
+      }
+    },
+    {
+      "id": "validate_bad_enum",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"scan\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "enum_mismatch:tool"
+      }
+    },
+    {
+      "id": "validate_tool_integer",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":1,\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "type_mismatch:tool"
+      }
+    },
+    {
+      "id": "validate_bad_file_sha256",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "pattern:file_sha256"
+      }
+    },
+    {
+      "id": "validate_seq_zero",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":0,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "minimum:seq"
+      }
+    },
+    {
+      "id": "validate_empty_verdict",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "min_length:verdict"
+      }
+    },
+    {
+      "id": "validate_bad_code_name",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"nope\":1},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "pattern:codes"
+      }
+    },
+    {
+      "id": "validate_negative_code",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":-1},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "minimum:codes"
+      }
+    },
+    {
+      "id": "validate_empty_path",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"path\":\"\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "min_length:path"
+      }
+    },
+    {
+      "id": "validate_bool_seq",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"GENESIS\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":true,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "type_mismatch:seq"
+      }
+    },
+    {
+      "id": "validate_bad_prev",
+      "construct": {
+        "type": "validate",
+        "fn": "validate_json",
+        "mode": "reject",
+        "document": "{\"codes\":{\"SL101\":2},\"entry_sha256\":\"052b70f47e9ca50652427cfef20895d69695f5d94e26449b29cadc552fb4afe8\",\"file_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"prev_sha256\":\"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\",\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"sesslint.seal-ledger/v1\",\"sealed_at\":\"2026-01-01T00:00:00Z\",\"seq\":1,\"tool\":\"check\",\"verdict\":\"healthy\"}"
+      },
+      "expected": {
+        "mode": "reject",
+        "reason": "pattern:prev_sha256"
+      }
+    }
+  ]
+}

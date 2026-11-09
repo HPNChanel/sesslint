@@ -1,0 +1,18 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.seal",
+  "schema_file": "schemas/sesslint.seal-ledger.v1.json",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema_sha256": "30acd9dafb53e66867ae08bdcce92ecd867eff4ba6265c99af94e902503e805b",
+  "seal_py_sha256": "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28",
+  "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
+  "vector_count": 18,
+  "vectors_sha256": "0f339fa8f65ce3068c7052d3f1a92b740cc0e2777d4e64c4a7342f6725a7e1a9",
+  "generator": "rust/parity/schemas/sesslint.seal-ledger.v1/generate",
+  "known_parity_gaps": [
+    "GAP-seal-ledger-schema-load: load_seal_schema imports sesslint._resources and json.loads the schema file. This card reads the pin blob in the generator and does not call load_seal_schema. tests/test_seal.py::test_seal_schema_self_consistent calls load_seal_schema and _entry, so it is not covered.",
+    "GAP-seal-ledger-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-seal-ledger-json-number: a JSON number with a fraction, an exponent, or a value outside i64 is refused. Draft 2020-12 treats 1.0 as an integer and Python int is unbounded. Those values are not invented here.",
+    "GAP-seal-ledger-emit-refusal: build_entry raises SealError text. emit_entry returns schema reasons and does not copy those sentences."
+  ]
+}
