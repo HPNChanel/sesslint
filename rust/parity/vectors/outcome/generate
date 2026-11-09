@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Pinned verify_outcome module vectors from actual Python and synthetic fixtures."""
+
+import ast
+import hashlib
+import importlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import types
+import zipfile
+from datetime import datetime
+from pathlib import Path
+
+import cases
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+MODULE = "sesslint.outcome"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILES = [
+    "tests/outcome/test_outcome_contract.py",
+    "tests/outcome/test_outcome_engine.py",
+    "tests/outcome/test_outcome_snapshot.py",
+]
+FIXTURE_DIR = HERE / "fixtures"
+FIXTURE_PROVENANCE = FIXTURE_DIR / "PROVENANCE.json"
+assert sys.implementation.name == "cpython" and sys.version_info[:3] == (3, 11, 9), sys.version
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wire(value):
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def dump(name, value):
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+assert json.loads(FIXTURE_PROVENANCE.read_text(encoding="utf-8"))["contains_real_data"] is False
+(FIXTURE_DIR / "invalid.json").write_text("{", encoding="utf-8", newline="\n")
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+vectors = []
+with tempfile.TemporaryDirectory(prefix="sesslint-outcome-module-") as temporary:
+    root = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            if member.is_dir():
+                continue
+            p = Path(member.filename)
+            assert (
+                not p.is_absolute() and ".." not in p.parts and p.parts[:2] == ("src", "sesslint")
+            )
+            dest = root / p
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(z.read(member))
+    sys.path.insert(0, str(root / "src"))
+    api = importlib.import_module(MODULE)
+    assert Path(api.__file__).resolve() == (root / "src/sesslint/outcome/__init__.py").resolve()
+    for case in cases.build_cases():
+        previous = sys.modules.get("sesslint.api")
+
+        def check_file(path, *, max_file_bytes, session=case["session"]):
+            assert max_file_bytes == 100 * 1024 * 1024
+            if session == "os":
+                raise OSError("synthetic")
+            return types.SimpleNamespace(
+                assurance="A2",
+                counts=types.SimpleNamespace(total=2, by_code={"SL001": 2}),
+                source_fingerprint="a" * 64,
+            )
+
+        sys.modules["sesslint.api"] = types.SimpleNamespace(check_file=check_file)
+        contract_path = FIXTURE_DIR / case["contract"]
+        source_path = FIXTURE_DIR / case["source"]
+        target_path = FIXTURE_DIR / case["target"]
+        try:
+            cp = (
+                api.load_contract(contract_path)
+                if case["loaded"][0]
+                else contract_path
+            )
+            sp = (
+                api.load_snapshot(source_path, role="source")
+                if case["loaded"][1]
+                else source_path
+            )
+            tp = (
+                api.load_snapshot(target_path, role="target")
+                if case["loaded"][2]
+                else target_path
+            )
+            as_of = None
+            if case["as_of"] == "naive":
+                as_of = datetime(2026, 11, 9)
+            elif case["as_of"] is not None:
+                as_of = api.parse_instant(case["as_of"])
+            report = api.verify_outcome(
+                cp,
+                sp,
+                tp,
+                as_of=as_of,
+                session=None if case["session"] == "none" else FIXTURE_DIR / "synthetic-session",
+                hash_keys=case["hash_keys"],
+                all_conditions=case["all_conditions"],
+            )
+            result = dict(
+                ok=dict(
+                    exit=report.exit_code,
+                    human=report.render_human(),
+                    json=report.to_json(),
+                    outcome=report.outcome,
+                )
+            )
+        except OSError:
+            result = dict(error="OSError", message="io")
+        except (api.ContractError, api.SnapshotError, api.EvaluationError) as err:
+            result = dict(error=type(err).__name__, message=str(err))
+        finally:
+            if previous is None:
+                sys.modules.pop("sesslint.api", None)
+            else:
+                sys.modules["sesslint.api"] = previous
+        vectors.append(
+            dict(
+                id=len(vectors),
+                family="verify",
+                input=case,
+                expected_json=wire(result),
+            )
+        )
+    sys.path.pop(0)
+
+coverage = []
+for path in TEST_FILES:
+    raw = show(path)
+    test_hash = digest(raw)
+    for node in ast.parse(raw).body:
+        if not isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) or not node.name.startswith("test_"):
+            continue
+        coverage.append(
+            dict(
+                test_file=path,
+                test_name=node.name,
+                status="not_applicable",
+                vector_ids=[],
+                reason=(
+                    "Whole source test is not reproduced by these verify_outcome module vectors: "
+                    "evaluate/loader/schema/report-only assertions remain outside this coverage claim."
+                ),
+            )
+        )
+assert len(coverage) == 59
+header = wire(dict(schema=SCHEMA, module=MODULE, python_commit=PIN))
+(HERE / "vectors.json").write_text(
+    header[:-1] + ',"cases":[\n' + ",\n".join(map(wire, vectors)) + "\n]}\n",
+    encoding="utf-8",
+    newline="\n",
+)
+dump("coverage.json", dict(rows=coverage, covered_count=0, not_applicable_count=59))
+python_paths = [
+    "src/sesslint/outcome/__init__.py",
+    "src/sesslint/outcome/contract.py",
+    "src/sesslint/outcome/engine.py",
+    "src/sesslint/outcome/report.py",
+    "src/sesslint/outcome/snapshot.py",
+    "src/sesslint/_canonical_codec.py",
+    "src/sesslint/_version.py",
+]
+rust_paths = [
+    f"rust/crates/outcome/src/{n}"
+    for n in ["lib.rs", "contract.rs", "engine.rs", "report.rs", "snapshot.rs"]
+] + ["rust/crates/codec/src/canonical_codec.rs", "rust/crates/model/src/version.rs"]
+fixture_names = [
+    "contract.json",
+    "source.json",
+    "source-unicode.json",
+    "target.json",
+    "empty.json",
+    "unobserved.json",
+    "future.json",
+    "partial.json",
+    "invalid.json",
+    "PROVENANCE.json",
+]
+dump(
+    "manifest.json",
+    dict(
+        schema=SCHEMA,
+        module=MODULE,
+        python_commit=PIN,
+        python_version="CPython 3.11.9",
+        python_sha256={p: digest(show(p)) for p in python_paths},
+        rust_sha256={p: digest((ROOT / p).read_bytes()) for p in rust_paths},
+        test_source_sha256={p: digest(show(p)) for p in TEST_FILES},
+        fixture_sha256={n: digest((FIXTURE_DIR / n).read_bytes()) for n in fixture_names},
+        generator="rust/parity/vectors/outcome/generate",
+        generator_sha256={
+            p: digest((HERE / p).read_bytes()) for p in ["generate", "cases.py"]
+        },
+        vectors_sha256=digest((HERE / "vectors.json").read_bytes()),
+        coverage_sha256=digest((HERE / "coverage.json").read_bytes()),
+        vector_count=len(vectors),
+        family_counts=dict(verify=len(vectors)),
+    ),
+)
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        origin="synthetic",
+        python_commit=PIN,
+        generator="rust/parity/vectors/outcome/generate",
+        known_parity_gaps=[
+            "Linked session checks use injected synthetic check_file only; no live API/session proof.",
+            "Scalar Unicode, JSON depth128/intdigits4300 and typed model restrictions inherited from submodules.",
+            "CPython3.11.9 behavior only. No CLI/full workspace/multi-OS/release acceptance.",
+            "verify_outcome sweep does not credit whole source tests; all59 enumerated tests are not_applicable.",
+        ],
+    ),
+)
+print(
+    json.dumps(
+        dict(
+            vectors=len(vectors),
+            sha256=digest((HERE / "vectors.json").read_bytes()),
+            covered=0,
+            not_applicable=59,
+        )
+    )
+)

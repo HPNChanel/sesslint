@@ -1,0 +1,1 @@
+{"conditions":[{"id":"present","type":"exists"}],"key":{"source":"id","target":"id"},"name":"synthetic","schema_version":"sesslint.outcome-contract/v1","version":"1"}

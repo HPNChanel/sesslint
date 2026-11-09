@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/outcome/generate",
+  "known_parity_gaps": [
+    "Linked session checks use injected synthetic check_file only; no live API/session proof.",
+    "Scalar Unicode, JSON depth128/intdigits4300 and typed model restrictions inherited from submodules.",
+    "CPython3.11.9 behavior only. No CLI/full workspace/multi-OS/release acceptance.",
+    "verify_outcome sweep does not credit whole source tests; all59 enumerated tests are not_applicable."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}
