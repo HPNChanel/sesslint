@@ -1,5 +1,5 @@
-//! MCP dispatch (integrations T-01), Python `mcp_server.py` lines 1–320
-//! @ 02694d537104659df66cdd084354739f3cccc440. Stdio is a separate card.
+//! MCP stdio server (integrations T-01), Python `mcp_server.py`
+//! @ 02694d537104659df66cdd084354739f3cccc440 lines 1–374.
 //!
 //! Typed JSON domain: Unicode scalar strings, finite f64, i64/u64 numbers.
 //! Serialization is bounded to 128 containers; Python arbitrary integers,
@@ -7,6 +7,7 @@
 //! Unported API/precheck imports return typed Unsupported, never fake success.
 
 use std::fmt;
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use codec::canonical_codec::{CanonicalCodec, PurePythonCanonicalCodec, Value as CodecValue};
@@ -461,11 +462,475 @@ pub fn dispatch_with(
     Ok(Some(response))
 }
 
+// A nonrecursive syntax pass prevents serde's recursion limit or numeric conversion
+// from misclassifying a valid Python JSON value as a protocol parse error.
+fn checked_json(raw: &str) -> Result<Option<Value>, McpError> {
+    #[derive(Clone, Copy)]
+    enum State {
+        Root,
+        End,
+        ArrayFirst,
+        ArrayValue,
+        ArrayComma,
+        ObjectFirst,
+        ObjectKey,
+        Colon,
+        ObjectValue,
+        ObjectComma,
+    }
+    let b = raw.as_bytes();
+    let mut normalized = b.to_vec();
+    let mut states = vec![State::Root];
+    let mut i = 0;
+    let mut unsupported = false;
+    while let Some(state) = states.pop() {
+        while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\r' | b'\n') {
+            i += 1;
+        }
+        match state {
+            State::End => {
+                if i != b.len() {
+                    return Ok(None);
+                }
+            }
+            State::ArrayFirst if b.get(i) == Some(&b']') => {
+                i += 1;
+            }
+            State::ArrayFirst | State::ArrayValue => {
+                states.push(State::ArrayComma);
+                states.push(State::Root);
+            }
+            State::ArrayComma => match b.get(i) {
+                Some(b']') => i += 1,
+                Some(b',') => {
+                    i += 1;
+                    states.push(State::ArrayValue);
+                }
+                _ => return Ok(None),
+            },
+            State::ObjectFirst if b.get(i) == Some(&b'}') => {
+                i += 1;
+            }
+            State::ObjectFirst | State::ObjectKey => {
+                if b.get(i) != Some(&b'"') {
+                    return Ok(None);
+                }
+                states.push(State::Colon);
+                states.push(State::Root);
+            }
+            State::Colon => {
+                if b.get(i) != Some(&b':') {
+                    return Ok(None);
+                }
+                i += 1;
+                states.push(State::ObjectValue);
+            }
+            State::ObjectValue => {
+                states.push(State::ObjectComma);
+                states.push(State::Root);
+            }
+            State::ObjectComma => match b.get(i) {
+                Some(b'}') => i += 1,
+                Some(b',') => {
+                    i += 1;
+                    states.push(State::ObjectKey);
+                }
+                _ => return Ok(None),
+            },
+            State::Root => {
+                match b.get(i) {
+                    Some(b'[') => {
+                        i += 1;
+                        states.push(State::ArrayFirst);
+                        if states.len() > 128 {
+                            unsupported = true;
+                        }
+                    }
+                    Some(b'{') => {
+                        i += 1;
+                        states.push(State::ObjectFirst);
+                        if states.len() > 128 {
+                            unsupported = true;
+                        }
+                    }
+                    Some(b'"') => {
+                        let start = i;
+                        i += 1;
+                        loop {
+                            match b.get(i) {
+                                None => return Ok(None),
+                                Some(b'"') => {
+                                    i += 1;
+                                    break;
+                                }
+                                Some(0..=31) => return Ok(None),
+                                Some(b'\\') => {
+                                    i += 1;
+                                    match b.get(i) {
+                                        Some(
+                                            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't',
+                                        ) => i += 1,
+                                        Some(b'u') => {
+                                            i += 1;
+                                            if i + 4 > b.len()
+                                                || !b[i..i + 4].iter().all(u8::is_ascii_hexdigit)
+                                            {
+                                                return Ok(None);
+                                            }
+                                            i += 4;
+                                        }
+                                        _ => return Ok(None),
+                                    }
+                                }
+                                Some(_) => i += 1,
+                            }
+                        }
+                        if serde_json::from_slice::<String>(&b[start..i]).is_err() {
+                            unsupported = true;
+                        }
+                    }
+                    Some(_) => {
+                        let start = i;
+                        while i < b.len()
+                            && !matches!(
+                                b[i],
+                                b' ' | b'\t' | b'\r' | b'\n' | b',' | b']' | b'}' | b':'
+                            )
+                        {
+                            i += 1;
+                        }
+                        if i == start {
+                            return Ok(None);
+                        }
+                        let token = &raw[start..i];
+                        if matches!(token, "NaN" | "Infinity" | "-Infinity") {
+                            unsupported = true;
+                        } else if matches!(token, "true" | "false" | "null") {
+                        } else {
+                            // Validate the complete number grammar without converting it.
+                            let n = token.as_bytes();
+                            let mut j = usize::from(n.first() == Some(&b'-'));
+                            if n.get(j) == Some(&b'0') {
+                                j += 1;
+                            } else {
+                                let begin = j;
+                                while matches!(n.get(j), Some(b'0'..=b'9')) {
+                                    j += 1;
+                                }
+                                if j == begin {
+                                    return Ok(None);
+                                }
+                            }
+                            let mut float = false;
+                            if n.get(j) == Some(&b'.') {
+                                float = true;
+                                j += 1;
+                                let begin = j;
+                                while matches!(n.get(j), Some(b'0'..=b'9')) {
+                                    j += 1;
+                                }
+                                if j == begin {
+                                    return Ok(None);
+                                }
+                            }
+                            if matches!(n.get(j), Some(b'e' | b'E')) {
+                                float = true;
+                                j += 1;
+                                if matches!(n.get(j), Some(b'+' | b'-')) {
+                                    j += 1;
+                                }
+                                let begin = j;
+                                while matches!(n.get(j), Some(b'0'..=b'9')) {
+                                    j += 1;
+                                }
+                                if j == begin {
+                                    return Ok(None);
+                                }
+                            }
+                            if j != n.len() {
+                                return Ok(None);
+                            }
+                            if float {
+                                if token.parse::<f64>().map_or(true, |x| !x.is_finite()) {
+                                    unsupported = true;
+                                }
+                            } else if token.starts_with('-') {
+                                if token.parse::<i64>().is_err() {
+                                    unsupported = true;
+                                }
+                            } else if token.parse::<u64>().is_err() {
+                                unsupported = true;
+                            }
+                            if token == "-0" {
+                                normalized[start] = b' ';
+                            }
+                        }
+                    }
+                    None => return Ok(None),
+                }
+            }
+        }
+        if states.is_empty() && !matches!(state, State::End) {
+            states.push(State::End);
+        }
+    }
+    if unsupported {
+        return Err(McpError::Unsupported(
+            "MCP JSON value outside supported domain",
+        ));
+    }
+    match serde_json::from_slice(&normalized) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => Err(McpError::Unsupported("MCP JSON exceeds parser domain")),
+    }
+}
+
+fn parse_error_line() -> Result<Vec<u8>, McpError> {
+    Ok(format!(
+        "{}\n",
+        python_json(&error(Value::Null, E_PARSE, "parse error"))?
+    )
+    .into_bytes())
+}
+
+fn starts_with_json_object(text: &str) -> bool {
+    text.bytes()
+        .find(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+        == Some(b'{')
+}
+
+fn python_recursion_ceiling(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let start = bytes
+        .iter()
+        .position(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+        .unwrap_or(bytes.len());
+    let depth = bytes[start..]
+        .iter()
+        .take_while(|byte| **byte == b'[')
+        .count();
+    depth >= 1000
+}
+
+/// Python `bytes.strip()`: space, tab, LF, CR, VT (`0x0B`), and FF (`0x0C`).
+fn python_byte_strip(raw: &[u8]) -> &[u8] {
+    let is_space = |byte: u8| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C);
+    let start = raw
+        .iter()
+        .position(|byte| !is_space(*byte))
+        .unwrap_or(raw.len());
+    let end = raw
+        .iter()
+        .rposition(|byte| !is_space(*byte))
+        .map_or(start, |index| index.saturating_add(1));
+    &raw[start..end]
+}
+
+/// Process a physical line. Out-of-domain valid Python JSON returns Unsupported.
+pub fn handle_line(raw: &[u8]) -> Result<Option<Vec<u8>>, McpError> {
+    if raw.len() > MAX_MCP_LINE_BYTES {
+        return Ok(Some(parse_error_line()?));
+    }
+    let raw = python_byte_strip(raw);
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    let Ok(text) = std::str::from_utf8(raw) else {
+        return Ok(Some(parse_error_line()?));
+    };
+    let message = match checked_json(text) {
+        Ok(Some(value)) => value,
+        Ok(None) => return Ok(Some(parse_error_line()?)),
+        // `_dispatch` drops every non-object. A document Python accepts and then
+        // ignores must not abort `serve`. Nesting that raises RecursionError on
+        // CPython 3.11.9 (1000) is still the parse-error line.
+        Err(McpError::Unsupported(_)) if !starts_with_json_object(text) => {
+            if python_recursion_ceiling(text) {
+                return Ok(Some(parse_error_line()?));
+            }
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    match dispatch(&message)? {
+        Some(response) => Ok(Some(format!("{}\n", python_json(&response)?).into_bytes())),
+        None => Ok(None),
+    }
+}
+
+#[derive(Debug)]
+pub enum ServeError {
+    Io(io::Error),
+    Mcp(McpError),
+}
+impl From<io::Error> for ServeError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+impl From<McpError> for ServeError {
+    fn from(error: McpError) -> Self {
+        Self::Mcp(error)
+    }
+}
+
+// Read at most limit bytes, stopping at LF; consume only what was copied.
+fn read_bounded<R: BufRead>(reader: &mut R, limit: usize) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    while out.len() < limit {
+        let data = reader.fill_buf()?;
+        if data.is_empty() {
+            break;
+        }
+        let available = data.len().min(limit - out.len());
+        let count = data[..available]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(available, |p| p + 1);
+        let end = data[count - 1] == b'\n';
+        out.extend_from_slice(&data[..count]);
+        reader.consume(count);
+        if end {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Serve bounded newline-delimited requests until EOF. I/O failures propagate.
+pub fn serve<R: BufRead, W: Write>(stdin: &mut R, stdout: &mut W) -> Result<i32, ServeError> {
+    loop {
+        let mut line = read_bounded(stdin, MAX_MCP_LINE_BYTES + 1)?;
+        if line.is_empty() {
+            return Ok(0);
+        }
+        let out = if line.len() > MAX_MCP_LINE_BYTES {
+            while !line.is_empty() && !line.ends_with(b"\n") {
+                line = read_bounded(stdin, MAX_MCP_LINE_BYTES + 1)?;
+            }
+            Some(parse_error_line()?)
+        } else {
+            handle_line(&line)?
+        };
+        if let Some(bytes) = out {
+            stdout.write_all(&bytes)?;
+            stdout.flush()?;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    #[test]
+    fn stdio_json_boundaries_and_protocol() {
+        let parse = parse_error_line().unwrap();
+        for raw in [
+            b"\xff".as_slice(),
+            b"\xef\xbb\xbf{}",
+            b"[1,]",
+            b"01",
+            b"{\"x\":}",
+            b"[".repeat(2000).as_slice(),
+        ] {
+            assert_eq!(handle_line(raw).unwrap(), Some(parse.clone()));
+        }
+        for raw in [
+            b"18446744073709551616".as_slice(),
+            b"NaN",
+            b"Infinity",
+            b"-Infinity",
+            b"1e9999",
+            br#""\ud800""#,
+        ] {
+            assert_eq!(handle_line(raw).unwrap(), None);
+        }
+        assert_eq!(
+            handle_line(format!("{}0{}", "[".repeat(200), "]".repeat(200)).as_bytes()).unwrap(),
+            None
+        );
+        assert_eq!(handle_line(b" \t\n\r\x0b\x0c").unwrap(), None);
+        assert_eq!(handle_line(&vec![b' '; MAX_MCP_LINE_BYTES]).unwrap(), None);
+        assert_eq!(
+            handle_line(&vec![b' '; MAX_MCP_LINE_BYTES + 1]).unwrap(),
+            Some(parse)
+        );
+        assert_eq!(
+            handle_line(br#"{"jsonrpc":"2.0","id":-0,"method":"ping"}"#)
+                .unwrap()
+                .unwrap(),
+            b"{\"id\": 0, \"jsonrpc\": \"2.0\", \"result\": {}}\n"
+        );
+        assert_eq!(
+            handle_line(br#"{"jsonrpc":"2.0","id":1.5,"method":"ping","method":"ping"}"#)
+                .unwrap()
+                .unwrap(),
+            b"{\"id\": 1.5, \"jsonrpc\": \"2.0\", \"result\": {}}\n"
+        );
+    }
+
+    #[test]
+    fn stdio_drains_physical_line_and_skips_notifications() {
+        let mut input = vec![b' '; MAX_MCP_LINE_BYTES + 1];
+        input.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n");
+        input.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"method\":\"ping\"}\n{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"ping\"}\n");
+        let mut out = Vec::new();
+        assert_eq!(serve(&mut io::Cursor::new(input), &mut out).unwrap(), 0);
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.contains("-32700"));
+        assert!(text.contains("\"id\": 8"));
+        assert!(!text.contains("\"id\": 7"));
+    }
+
+    struct FailWriter {
+        flush: bool,
+    }
+    impl Write for FailWriter {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.flush {
+                Ok(b.len())
+            } else {
+                Err(io::Error::other("write"))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("flush"))
+        }
+    }
+    struct FailReader;
+    impl io::Read for FailReader {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("read"))
+        }
+    }
+    impl BufRead for FailReader {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Err(io::Error::other("read"))
+        }
+        fn consume(&mut self, _: usize) {}
+    }
+    #[test]
+    fn stdio_propagates_io_failures() {
+        assert!(matches!(
+            serve(&mut FailReader, &mut Vec::new()),
+            Err(ServeError::Io(_))
+        ));
+        for flush in [false, true] {
+            let mut input = io::Cursor::new(b"?\n");
+            assert!(matches!(
+                serve(&mut input, &mut FailWriter { flush }),
+                Err(ServeError::Io(_))
+            ));
+        }
+        let mut input = io::Cursor::new(b"{\"jsonrpc\":\"2.0\",\"method\":\"ping\"}\n");
+        assert_eq!(
+            serve(&mut input, &mut FailWriter { flush: false }).unwrap(),
+            0
+        );
+    }
     fn file() -> String {
         format!("{}/Cargo.toml", env!("CARGO_MANIFEST_DIR"))
     }
@@ -879,6 +1344,421 @@ mod tests {
             assert_eq!(actual.profile, profile);
             assert_eq!(actual.format.as_deref(), format);
             assert!(actual.skip_undetected);
+        }
+    }
+
+    fn parse_line() -> &'static [u8] {
+        b"{\"error\": {\"code\": -32700, \"message\": \"parse error\"}, \"id\": null, \"jsonrpc\": \"2.0\"}\n"
+    }
+
+    fn with_lf(body: &[u8]) -> Vec<u8> {
+        let mut out = body.to_vec();
+        out.push(b'\n');
+        out
+    }
+
+    fn request_line(value: Value) -> Vec<u8> {
+        with_lf(python_json(&value).unwrap().as_bytes())
+    }
+
+    fn nested_array(depth: usize) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(depth * 2 + 1);
+        raw.extend(std::iter::repeat_n(b'[', depth));
+        raw.push(b'0');
+        raw.extend(std::iter::repeat_n(b']', depth));
+        raw
+    }
+
+    fn serve_out(input: &[u8]) -> (Result<i32, ServeError>, Vec<u8>) {
+        let mut output = Vec::new();
+        let result = serve(&mut io::Cursor::new(input), &mut output);
+        (result, output)
+    }
+
+    #[test]
+    fn handle_line_matches_pinned_serializer_and_strip() {
+        assert_eq!(parse_error_line().unwrap(), parse_line());
+        let pairs: &[(&[u8], &[u8])] = &[
+            (
+                br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+                br#"{"id": 1, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":-0,"method":"ping"}"#,
+                br#"{"id": 0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1.0,"method":"ping"}"#,
+                br#"{"id": 1.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":-0.0,"method":"ping"}"#,
+                br#"{"id": -0.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":-0e0,"method":"ping"}"#,
+                br#"{"id": -0.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":0e999,"method":"ping"}"#,
+                br#"{"id": 0.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":-0e999,"method":"ping"}"#,
+                br#"{"id": -0.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1e2,"method":"ping"}"#,
+                br#"{"id": 100.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1e-7,"method":"ping"}"#,
+                br#"{"id": 1e-07, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1e-400,"method":"ping"}"#,
+                br#"{"id": 0.0, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":5e-324,"method":"ping"}"#,
+                br#"{"id": 5e-324, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1e308,"method":"ping"}"#,
+                br#"{"id": 1e+308, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":9007199254740993,"method":"ping"}"#,
+                br#"{"id": 9007199254740993, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":-9223372036854775808,"method":"ping"}"#,
+                br#"{"id": -9223372036854775808, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":18446744073709551615,"method":"ping"}"#,
+                br#"{"id": 18446744073709551615, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":false,"method":"ping"}"#,
+                br#"{"id": false, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#,
+                br#"{"id": null, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":[1,"x"],"method":"ping"}"#,
+                br#"{"id": [1, "x"], "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":{"a":2},"method":"ping"}"#,
+                br#"{"id": {"a": 2}, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":"\ud83d\ude00","method":"ping"}"#,
+                br#"{"id": "\ud83d\ude00", "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                "{\"jsonrpc\":\"2.0\",\"id\":\"Việt\",\"method\":\"ping\"}".as_bytes(),
+                br#"{"id": "Vi\u1ec7t", "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                b"\x0b{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}\x0c\n",
+                br#"{"id": 3, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                b"\r\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\r\n",
+                br#"{"id": 2, "jsonrpc": "2.0", "result": {}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}"#,
+                br#"{"id": 1, "jsonrpc": "2.0", "result": {"capabilities": {"tools": {"listChanged": false}}, "protocolVersion": "2025-06-18", "serverInfo": {"name": "sesslint", "version": "0.5.0"}}}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":7,"method":"bogus/method"}"#,
+                br#"{"error": {"code": -32601, "message": "method not found"}, "id": 7, "jsonrpc": "2.0"}"#,
+            ),
+            (
+                br#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"sesslint_check","arguments":{}}}"#,
+                br#"{"error": {"code": -32602, "message": "path is required and must be a string"}, "id": 9, "jsonrpc": "2.0"}"#,
+            ),
+        ];
+        for (raw, body) in pairs {
+            assert_eq!(handle_line(raw).unwrap().unwrap(), with_lf(body));
+        }
+
+        let listed = handle_line(br#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
+            .unwrap()
+            .unwrap();
+        let expected_list = with_lf(br#"{"id": 2, "jsonrpc": "2.0", "result": {"tools": [{"description": "Run the full SessLint check on one session file and return the sesslint.report/v1 report as structured content. Read-only; findings are results, not errors.", "inputSchema": {"additionalProperties": false, "properties": {"format": {"description": "Force input adapter (default: auto-detect).", "enum": ["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"], "type": "string"}, "path": {"description": "Session file path.", "type": "string"}, "profile": {"description": "Validation profile (default: neutral).", "enum": ["claude-strict", "neutral", "openai-strict"], "type": "string"}}, "required": ["path"], "type": "object"}, "name": "sesslint_check", "title": "Check session integrity"}, {"description": "Run the one-call precheck gate on one session file: returns {ok, reason, exit_code} plus the report when available. Read-only; never raises.", "inputSchema": {"additionalProperties": false, "properties": {"format": {"description": "Force input adapter (default: auto-detect).", "enum": ["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"], "type": "string"}, "path": {"description": "Session file path.", "type": "string"}, "profile": {"description": "Validation profile (default: neutral).", "enum": ["claude-strict", "neutral", "openai-strict"], "type": "string"}}, "required": ["path"], "type": "object"}, "name": "sesslint_precheck", "title": "Zero-exception integrity gate"}, {"description": "Aggregate scan of a session file or directory tree: 5-bucket totals (healthy/invalid/undetected/unreadable/skipped) and per-file verdict counts. Read-only.", "inputSchema": {"additionalProperties": false, "properties": {"format": {"description": "Force input adapter (default: auto-detect).", "enum": ["auto", "claude-code-jsonl", "openai-agents", "codex-rollout", "canonical"], "type": "string"}, "path": {"description": "Session file or directory path.", "type": "string"}, "profile": {"description": "Validation profile (default: neutral).", "enum": ["claude-strict", "neutral", "openai-strict"], "type": "string"}, "recursive": {"description": "Recurse into directories (default: true).", "type": "boolean"}}, "required": ["path"], "type": "object"}, "name": "sesslint_scan", "title": "Scan a session tree"}]}}"#);
+        assert_eq!(listed, expected_list);
+    }
+
+    #[test]
+    fn in_domain_non_requests_emit_nothing_and_invalid_json_is_parse_error() {
+        for raw in [
+            b"null".as_slice(),
+            b"true",
+            b"false",
+            b"0",
+            b"-0",
+            b"[]",
+            b"{}",
+            b"[1,2]",
+            b"\"ok\"",
+            b"1.0",
+            b"0e0",
+            b"1e308",
+            b"1e-400",
+            b"0e999",
+            b"-0e999",
+            b"-0.0",
+            b"18446744073709551615",
+            b"-9223372036854775808",
+            br#""\ud83d\ude00""#,
+            br#""\ud800\ude00""#,
+            b" \t\n\r\x0b\x0c",
+            b"\x0b{}\x0c",
+            b"",
+        ] {
+            assert_eq!(handle_line(raw).unwrap(), None);
+        }
+        for raw in [
+            b"nope".as_slice(),
+            b"+1",
+            b"01",
+            b"00",
+            b"1.",
+            b".5",
+            b"nan",
+            b"+Infinity",
+            b"-NaN",
+            b"[1,]",
+            b"{,}",
+            b"{\"a\":1}{\"b\":2}",
+            b"[",
+            b"\xff",
+            b"\xef\xbb\xbf{}",
+            "\u{00a0}{}".as_bytes(),
+            "\u{2028}".as_bytes(),
+            br#""\ud800"["#,
+            b"[NaN,]",
+            b"NaN x",
+        ] {
+            assert_eq!(handle_line(raw).unwrap().unwrap(), parse_line());
+        }
+        assert_eq!(handle_line(&vec![0x0B; MAX_MCP_LINE_BYTES]).unwrap(), None);
+        assert_eq!(
+            handle_line(&vec![0x0B; MAX_MCP_LINE_BYTES + 1])
+                .unwrap()
+                .unwrap(),
+            parse_line()
+        );
+    }
+
+    #[test]
+    fn out_of_domain_json_follows_dispatch_or_stays_unsupported() {
+        for raw in [
+            b"NaN".as_slice(),
+            b"Infinity",
+            b"-Infinity",
+            b"1e309",
+            b"1e9999",
+            b"18446744073709551616",
+            b"-9223372036854775809",
+            br#""\ud800""#,
+            br#""\ud800\ud800""#,
+            br#""a\ud800b""#,
+            b"[NaN]",
+        ] {
+            assert_eq!(
+                handle_line(raw).unwrap(),
+                None,
+                "non-object {raw:?} is dropped by _dispatch"
+            );
+        }
+        for raw in [
+            br#"{"id":NaN}"#.as_slice(),
+            br#"{"jsonrpc":"2.0","id":1,"method":"ping","extra":"\ud800"}"#,
+            br#"{"jsonrpc":"2.0","id":18446744073709551616,"method":"ping"}"#,
+            br#"{"jsonrpc":"2.0","id":1e309,"method":"ping"}"#,
+        ] {
+            assert!(
+                matches!(handle_line(raw), Err(McpError::Unsupported(_))),
+                "expected Unsupported for object {raw:?}"
+            );
+        }
+        assert_eq!(handle_line(&nested_array(127)).unwrap(), None);
+        assert_eq!(handle_line(&nested_array(128)).unwrap(), None);
+        assert_eq!(handle_line(&nested_array(995)).unwrap(), None);
+        assert_eq!(
+            handle_line(&nested_array(1000)).unwrap().unwrap(),
+            parse_line()
+        );
+        assert_eq!(
+            handle_line(&vec![b'['; 2_000]).unwrap().unwrap(),
+            parse_line()
+        );
+    }
+
+    #[test]
+    fn tool_calls_keep_import_failures_unsupported_and_path_errors_content_free() {
+        let missing = request_line(json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "sesslint_check",
+                "arguments": {"path": format!("{}/not-present-mcp-synthetic", file())}
+            }
+        }));
+        assert_eq!(
+            handle_line(&missing).unwrap().unwrap(),
+            with_lf(br#"{"id": 6, "jsonrpc": "2.0", "result": {"content": [{"text": "io-error: path does not exist", "type": "text"}], "isError": true}}"#)
+        );
+        let directory_call = request_line(json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "sesslint_check", "arguments": {"path": directory()}}
+        }));
+        assert_eq!(
+            handle_line(&directory_call).unwrap().unwrap(),
+            with_lf(br#"{"id": 4, "jsonrpc": "2.0", "result": {"content": [{"text": "usage-error: path is not a file", "type": "text"}], "isError": true}}"#)
+        );
+        for (tool, message) in [
+            ("sesslint_check", "sesslint.api.check_file is not available"),
+            (
+                "sesslint_precheck",
+                "sesslint.precheck.precheck is not available",
+            ),
+            ("sesslint_scan", "sesslint.api.check_dir is not available"),
+        ] {
+            let call = request_line(json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": tool, "arguments": {"path": file()}}
+            }));
+            assert_eq!(handle_line(&call), Err(McpError::Unsupported(message)));
+            let (served, output) = serve_out(&call);
+            match served {
+                Err(ServeError::Mcp(McpError::Unsupported(actual))) => {
+                    assert_eq!(actual, message);
+                }
+                other => panic!("expected unsupported import, got {other:?}"),
+            }
+            assert!(output.is_empty());
+        }
+    }
+
+    #[test]
+    fn serve_bounds_lines_flushes_responses_and_stops_on_unsupported() {
+        let ping7 = with_lf(br#"{"id": 7, "jsonrpc": "2.0", "result": {}}"#);
+
+        let (empty, empty_out) = serve_out(b"");
+        assert_eq!(empty.unwrap(), 0);
+        assert!(empty_out.is_empty());
+
+        let (eof, eof_out) = serve_out(br#"{"jsonrpc":"2.0","id":5,"method":"ping"}"#);
+        assert_eq!(eof.unwrap(), 0);
+        assert_eq!(
+            eof_out,
+            with_lf(br#"{"id": 5, "jsonrpc": "2.0", "result": {}}"#)
+        );
+
+        let mut mixed = b"not json\n\n".to_vec();
+        mixed
+            .extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n");
+        mixed.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"ping\"}\n");
+        let (mixed_result, mixed_out) = serve_out(&mixed);
+        assert_eq!(mixed_result.unwrap(), 0);
+        let mut expected = parse_line().to_vec();
+        expected.extend_from_slice(&with_lf(br#"{"id": 8, "jsonrpc": "2.0", "result": {}}"#));
+        assert_eq!(mixed_out, expected);
+
+        let marker = b"SYNTHETIC-OVERSIZE-MARKER";
+        let mut oversized = vec![b'{'];
+        oversized.extend(std::iter::repeat_n(b'x', MAX_MCP_LINE_BYTES + 32));
+        oversized.extend_from_slice(marker);
+        oversized.push(b'\n');
+        oversized.extend_from_slice(br#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#);
+        oversized.push(b'\n');
+        let (over_result, over_out) = serve_out(&oversized);
+        assert_eq!(over_result.unwrap(), 0);
+        let mut over_expected = parse_line().to_vec();
+        over_expected.extend_from_slice(&ping7);
+        assert_eq!(over_out, over_expected);
+        assert!(!over_out
+            .windows(marker.len())
+            .any(|window| window == marker));
+
+        let mut at_limit = vec![b' '; MAX_MCP_LINE_BYTES - 1];
+        at_limit.push(b'\n');
+        at_limit.extend_from_slice(br#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#);
+        at_limit.push(b'\n');
+        let (limit_result, limit_out) = serve_out(&at_limit);
+        assert_eq!(limit_result.unwrap(), 0);
+        assert_eq!(limit_out, ping7);
+
+        let mut over_one = vec![b' '; MAX_MCP_LINE_BYTES];
+        over_one.push(b'\n');
+        over_one.extend_from_slice(br#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#);
+        over_one.push(b'\n');
+        let (over_one_result, over_one_out) = serve_out(&over_one);
+        assert_eq!(over_one_result.unwrap(), 0);
+        assert_eq!(over_one_out, over_expected);
+
+        let mut drained = vec![b'y'; MAX_MCP_LINE_BYTES + 1];
+        drained.extend(std::iter::repeat_n(b'z', 10));
+        drained.push(b'\n');
+        drained.extend_from_slice(br#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#);
+        drained.push(b'\n');
+        let (drained_result, drained_out) = serve_out(&drained);
+        assert_eq!(drained_result.unwrap(), 0);
+        assert_eq!(drained_out, over_expected);
+
+        let (bare, bare_out) = serve_out(&vec![b'x'; MAX_MCP_LINE_BYTES + 5]);
+        assert_eq!(bare.unwrap(), 0);
+        assert_eq!(bare_out, parse_line());
+
+        let (nan_first, nan_first_out) =
+            serve_out(b"NaN\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n");
+        assert_eq!(nan_first.unwrap(), 0);
+        assert_eq!(
+            nan_first_out,
+            with_lf(br#"{"id": 1, "jsonrpc": "2.0", "result": {}}"#)
+        );
+
+        let (nan_after, nan_after_out) = serve_out(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\nNaN\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n",
+        );
+        assert_eq!(nan_after.unwrap(), 0);
+        let ping1 = with_lf(br#"{"id": 1, "jsonrpc": "2.0", "result": {}}"#);
+        let ping2 = with_lf(br#"{"id": 2, "jsonrpc": "2.0", "result": {}}"#);
+        assert_eq!(nan_after_out, [ping1, ping2].concat());
+    }
+
+    #[test]
+    fn hostile_stdio_bytes_do_not_panic() {
+        let mut state = 0xA5A5_1234_u64;
+        let mut buf = [0_u8; 96];
+        for _ in 0..256 {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            let len = (state as usize) % (buf.len() + 1);
+            for byte in &mut buf[..len] {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                *byte = (state >> 33) as u8;
+            }
+            let line = handle_line(&buf[..len]);
+            assert!(line.is_ok() || matches!(line, Err(McpError::Unsupported(_))));
+            let (served, _) = serve_out(&buf[..len]);
+            assert!(served.is_ok() || matches!(served, Err(ServeError::Mcp(_))));
         }
     }
 }
