@@ -1,0 +1,13 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._registry",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "registry_py_sha256": "2910fc1fe92693f6fdab90743013798b03c8e0c78e218d5ca765446c4a6f0099",
+  "registry_rs_sha256": "5fa161ff1d3778e28fffadf3e713c5a908fa8be57ee03891f712d6daac987024",
+  "vector_count": 7,
+  "vectors_sha256": "e1b28d2172dea9ce1c9e19801dae8af030f25fd60d4f47032825d7d60fd828a5",
+  "generator": "rust/parity/vectors/cli._registry/generate",
+  "known_parity_gaps": [
+    "GAP-registry-configure-run: Python Command stores argparse configure and run callables on each registration triple. Rust Command::configure and Command::run return RegistryError::Unsupported and do not call the command modules."
+  ]
+}

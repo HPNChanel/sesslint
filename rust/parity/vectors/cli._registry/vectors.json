@@ -1,0 +1,308 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli._registry",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "registry_py_sha256": "2910fc1fe92693f6fdab90743013798b03c8e0c78e218d5ca765446c4a6f0099",
+  "registry_rs_sha256": "5fa161ff1d3778e28fffadf3e713c5a908fa8be57ee03891f712d6daac987024",
+  "known_parity_gaps": [
+    "GAP-registry-configure-run: Python Command stores argparse configure and run callables on each registration triple. Rust Command::configure and Command::run return RegistryError::Unsupported and do not call the command modules."
+  ],
+  "vectors": [
+    {
+      "id": "commands_registration_order",
+      "construct": {
+        "type": "commands"
+      },
+      "expected": {
+        "rows": [
+          {
+            "name": "check",
+            "aliases": [
+              "scan"
+            ]
+          },
+          {
+            "name": "version",
+            "aliases": []
+          },
+          {
+            "name": "repair",
+            "aliases": []
+          },
+          {
+            "name": "verify",
+            "aliases": []
+          },
+          {
+            "name": "seal",
+            "aliases": []
+          },
+          {
+            "name": "bundle",
+            "aliases": []
+          },
+          {
+            "name": "export",
+            "aliases": []
+          },
+          {
+            "name": "completion",
+            "aliases": []
+          },
+          {
+            "name": "diff",
+            "aliases": []
+          },
+          {
+            "name": "stats",
+            "aliases": []
+          },
+          {
+            "name": "triage",
+            "aliases": []
+          },
+          {
+            "name": "outcome",
+            "aliases": []
+          },
+          {
+            "name": "doctor",
+            "aliases": []
+          },
+          {
+            "name": "watch",
+            "aliases": []
+          },
+          {
+            "name": "hook",
+            "aliases": []
+          },
+          {
+            "name": "mcp",
+            "aliases": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "removed_commands_migration_text",
+      "construct": {
+        "type": "removed_commands"
+      },
+      "expected": {
+        "entries": [
+          {
+            "key": "validate-session",
+            "text": "sesslint check --adapter canonical PATH"
+          },
+          {
+            "key": "baseline",
+            "text": "v1 baselines still load via 'sesslint check --baseline OLD.json'; regenerate v2 with 'sesslint check PATH --write-baseline NEW.json'"
+          },
+          {
+            "key": "formats",
+            "text": "sesslint doctor  (or: sesslint version --json)"
+          },
+          {
+            "key": "init-hooks",
+            "text": "sesslint hook --init [--agent claude|codex|all]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "removed_flags_migration_text",
+      "construct": {
+        "type": "removed_flags"
+      },
+      "expected": {
+        "entries": [
+          {
+            "key": "--output-format",
+            "text": "--format"
+          },
+          {
+            "key": "--recursive",
+            "text": "(directories are always recursive now; drop the flag)"
+          },
+          {
+            "key": "-r",
+            "text": "(directories are always recursive now; drop the flag)"
+          },
+          {
+            "key": "--batch",
+            "text": "pass the directory as a positional path and add --output-dir DIR"
+          },
+          {
+            "key": "--files",
+            "text": "pass the files as positional paths and add --output-dir DIR"
+          },
+          {
+            "key": "--salvage-unsupported",
+            "text": "--policy salvage"
+          },
+          {
+            "key": "--show-limits",
+            "text": "sesslint doctor"
+          },
+          {
+            "key": "--format-a",
+            "text": "--adapter-a"
+          },
+          {
+            "key": "--format-b",
+            "text": "--adapter-b"
+          },
+          {
+            "key": "--out",
+            "text": "-o/--output"
+          }
+        ]
+      }
+    },
+    {
+      "id": "build_dispatch_insertion_order",
+      "construct": {
+        "type": "build_dispatch"
+      },
+      "expected": {
+        "keys": [
+          "check",
+          "scan",
+          "version",
+          "repair",
+          "verify",
+          "seal",
+          "bundle",
+          "export",
+          "completion",
+          "diff",
+          "stats",
+          "triage",
+          "outcome",
+          "doctor",
+          "watch",
+          "hook",
+          "mcp"
+        ],
+        "pairs": [
+          {
+            "key": "check",
+            "canonical": "check"
+          },
+          {
+            "key": "scan",
+            "canonical": "check"
+          },
+          {
+            "key": "version",
+            "canonical": "version"
+          },
+          {
+            "key": "repair",
+            "canonical": "repair"
+          },
+          {
+            "key": "verify",
+            "canonical": "verify"
+          },
+          {
+            "key": "seal",
+            "canonical": "seal"
+          },
+          {
+            "key": "bundle",
+            "canonical": "bundle"
+          },
+          {
+            "key": "export",
+            "canonical": "export"
+          },
+          {
+            "key": "completion",
+            "canonical": "completion"
+          },
+          {
+            "key": "diff",
+            "canonical": "diff"
+          },
+          {
+            "key": "stats",
+            "canonical": "stats"
+          },
+          {
+            "key": "triage",
+            "canonical": "triage"
+          },
+          {
+            "key": "outcome",
+            "canonical": "outcome"
+          },
+          {
+            "key": "doctor",
+            "canonical": "doctor"
+          },
+          {
+            "key": "watch",
+            "canonical": "watch"
+          },
+          {
+            "key": "hook",
+            "canonical": "hook"
+          },
+          {
+            "key": "mcp",
+            "canonical": "mcp"
+          }
+        ],
+        "len": 17
+      }
+    },
+    {
+      "id": "dispatch_scan_alias_and_missing",
+      "construct": {
+        "type": "dispatch_lookup",
+        "missing_key": "synthetic-missing"
+      },
+      "expected": {
+        "check_name": "check",
+        "scan_name": "check",
+        "missing_present": false
+      }
+    },
+    {
+      "id": "dispatch_duplicate_key_keeps_first_position",
+      "construct": {
+        "type": "dispatch_duplicate"
+      },
+      "expected": {
+        "pairs": [
+          {
+            "key": "synthetic-keep",
+            "canonical": "synthetic-next"
+          },
+          {
+            "key": "synthetic-next",
+            "canonical": "synthetic-next"
+          },
+          {
+            "key": "synthetic-tail",
+            "canonical": "synthetic-next"
+          }
+        ],
+        "len": 3,
+        "missing_present": false
+      }
+    },
+    {
+      "id": "import_cli_context_unsupported",
+      "construct": {
+        "type": "import_cli_context"
+      },
+      "expected": {
+        "mode": "unsupported",
+        "message": "sesslint.cli._context is not available"
+      }
+    }
+  ]
+}

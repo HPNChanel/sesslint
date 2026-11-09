@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic command registry tables and dispatch order from pinned sesslint.cli._registry (stub cli submodules only).",
+  "generator": "rust/parity/vectors/cli._registry/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-registry-configure-run: Python Command stores argparse configure and run callables on each registration triple. Rust Command::configure and Command::run return RegistryError::Unsupported and do not call the command modules."
+  ]
+}

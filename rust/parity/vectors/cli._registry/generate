@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli._registry parity vectors from the pinned module blob (stdlib only)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+REGISTRY_PY_SHA256 = (
+    "2910fc1fe92693f6fdab90743013798b03c8e0c78e218d5ca765446c4a6f0099"
+)
+REGISTRY_RS_SHA256 = (
+    "5fa161ff1d3778e28fffadf3e713c5a908fa8be57ee03891f712d6daac987024"
+)
+MODULE = "sesslint.cli._registry"
+
+GAP_CONFIGURE_RUN: Final[str] = "GAP-registry-configure-run"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    f"{GAP_CONFIGURE_RUN}: Python Command stores argparse configure and run "
+    "callables on each registration triple. Rust Command::configure and "
+    "Command::run return RegistryError::Unsupported and do not call the "
+    "command modules.",
+)
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|FOR_WORK|[A-Za-z]:\\)"
+)
+
+COMMAND_NAMES: Final[tuple[str, ...]] = (
+    "check",
+    "version",
+    "repair",
+    "verify",
+    "seal",
+    "bundle",
+    "export",
+    "completion",
+    "diff",
+    "stats",
+    "triage",
+    "outcome",
+    "doctor",
+    "watch",
+    "hook",
+    "mcp",
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", rev_path],
+        cwd=repo_root(),
+    )
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def verify_registry_rs() -> None:
+    rs_path = repo_root() / "rust" / "crates" / "cli" / "src" / "registry.rs"
+    digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if digest != REGISTRY_RS_SHA256:
+        raise SystemExit(
+            f"registry.rs sha256 mismatch: expected {REGISTRY_RS_SHA256}, got {digest}"
+        )
+
+
+def install_cli_stubs() -> None:
+    pkg = types.ModuleType("sesslint")
+    pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint"] = pkg
+
+    cli_pkg = types.ModuleType("sesslint.cli")
+    cli_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["sesslint.cli"] = cli_pkg
+    pkg.cli = cli_pkg
+
+    for name in COMMAND_NAMES:
+        mod = types.ModuleType(f"sesslint.cli.{name}")
+
+        def _configure(*_args: object, _label: str = name) -> object:
+            return object()
+
+        def _run(*_args: object, _label: str = name) -> int:
+            return 0
+
+        mod.configure = _configure
+        mod.run = _run
+        sys.modules[f"sesslint.cli.{name}"] = mod
+        setattr(cli_pkg, name, mod)
+
+
+def load_registry_module() -> types.ModuleType:
+    verify_registry_rs()
+    install_cli_stubs()
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/cli/_registry.py")
+    verify_digest(blob, REGISTRY_PY_SHA256, "_registry.py")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".py", delete=False) as handle:
+        handle.write(blob)
+        tmp_path = handle.name
+    try:
+        spec = importlib.util.spec_from_file_location(MODULE, tmp_path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"failed to create import spec for {MODULE}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[MODULE] = mod
+        spec.loader.exec_module(mod)
+        sys.modules["sesslint.cli"]._registry = mod
+        return mod
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def command_row(command: Any) -> dict[str, Any]:
+    return {
+        "name": command.name,
+        "aliases": list(command.aliases),
+    }
+
+
+def pair_snapshot(dispatch: dict[str, Any]) -> list[dict[str, str]]:
+    return [{"key": key, "canonical": command.name} for key, command in dispatch.items()]
+
+
+def simulate_dispatch(commands: tuple[Any, ...]) -> list[dict[str, str]]:
+    out: dict[str, Any] = {}
+    for command in commands:
+        out[command.name] = command
+        for alias in command.aliases:
+            out[alias] = command
+    return pair_snapshot(out)
+
+
+def build_expected(reg: types.ModuleType, construct: dict[str, Any]) -> dict[str, Any]:
+    kind = construct["type"]
+    if kind == "commands":
+        return {"rows": [command_row(c) for c in reg.COMMANDS]}
+    if kind == "removed_commands":
+        return {
+            "entries": [
+                {"key": key, "text": value}
+                for key, value in reg.REMOVED_COMMANDS.items()
+            ]
+        }
+    if kind == "removed_flags":
+        return {
+            "entries": [
+                {"key": key, "text": value} for key, value in reg.REMOVED_FLAGS.items()
+            ]
+        }
+    if kind == "build_dispatch":
+        dispatch = reg.build_dispatch()
+        return {
+            "keys": list(dispatch.keys()),
+            "pairs": pair_snapshot(dispatch),
+            "len": len(dispatch),
+        }
+    if kind == "dispatch_lookup":
+        dispatch = reg.build_dispatch()
+        missing = construct["missing_key"]
+        return {
+            "check_name": dispatch["check"].name,
+            "scan_name": dispatch["scan"].name,
+            "missing_present": missing in dispatch,
+        }
+    if kind == "dispatch_duplicate":
+        configure = lambda *_a, **_k: None  # noqa: E731
+        run = lambda *_a, **_k: 0  # noqa: E731
+        first = reg.Command("synthetic-keep", configure, run)
+        second = reg.Command(
+            "synthetic-next",
+            configure,
+            run,
+            aliases=("synthetic-keep", "synthetic-tail"),
+        )
+        return {
+            "pairs": simulate_dispatch((first, second)),
+            "len": 3,
+            "missing_present": "missing-key" in {},
+        }
+    if kind == "import_cli_context":
+        return {
+            "mode": "unsupported",
+            "message": "sesslint.cli._context is not available",
+        }
+    raise ValueError(f"unknown construct type: {kind}")
+
+
+def vector_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "commands_registration_order",
+            "construct": {"type": "commands"},
+        },
+        {
+            "id": "removed_commands_migration_text",
+            "construct": {"type": "removed_commands"},
+        },
+        {
+            "id": "removed_flags_migration_text",
+            "construct": {"type": "removed_flags"},
+        },
+        {
+            "id": "build_dispatch_insertion_order",
+            "construct": {"type": "build_dispatch"},
+        },
+        {
+            "id": "dispatch_scan_alias_and_missing",
+            "construct": {
+                "type": "dispatch_lookup",
+                "missing_key": "synthetic-missing",
+            },
+        },
+        {
+            "id": "dispatch_duplicate_key_keeps_first_position",
+            "construct": {"type": "dispatch_duplicate"},
+        },
+        {
+            "id": "import_cli_context_unsupported",
+            "construct": {"type": "import_cli_context"},
+        },
+    ]
+
+
+def assert_payload_clean(payload: bytes) -> None:
+    if _BANNED_PAT.search(payload):
+        raise SystemExit("committed output contains banned marker")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must be LF-only")
+
+
+def main() -> int:
+    reg = load_registry_module()
+    out_dir = Path(__file__).resolve().parent
+    vectors: list[dict[str, Any]] = []
+    for row in vector_specs():
+        construct = dict(row["construct"])
+        expected = build_expected(reg, construct)
+        vectors.append(
+            {
+                "id": row["id"],
+                "construct": construct,
+                "expected": expected,
+            }
+        )
+
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "registry_py_sha256": REGISTRY_PY_SHA256,
+        "registry_rs_sha256": REGISTRY_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_clean(payload_bytes)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "registry_py_sha256": REGISTRY_PY_SHA256,
+        "registry_rs_sha256": REGISTRY_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli._registry/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic command registry tables and dispatch order from pinned "
+            "sesslint.cli._registry (stub cli submodules only)."
+        ),
+        "generator": "rust/parity/vectors/cli._registry/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": 0,
+        "not_applicable_count": 0,
+        "rows": [],
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(coverage, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={digest}")
+    print(f"covered=0 not_applicable=0")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
