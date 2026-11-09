@@ -1,0 +1,51 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.bundle",
+  "not_applicable_count": 6,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "column": "column_0",
+      "note": "calls get_bundle_schema_path and load_bundle_schema and checks the schema file is present. validate_json does not open that file.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "calls build_bundle on a fixture path and _validate_bundle_dict. _validate_bundle_dict calls assert_schema. One validate_json document is not that pair.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_dict_validates",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "writes a file, then calls build_bundle, _validate_bundle_dict, and to_dict. One validate_json document is not that test.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_detection_failed_bundle_dict_validates",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "calls build_bundle, to_json, and _validate_bundle_dict. One validate_json document is not that round trip.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_json_round_trip_validates",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "calls build_bundle and to_dict, deletes a section, then _validate_bundle_dict. One rejection is not that sequence.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_missing_section_fails_validation",
+      "vector_id": null
+    },
+    {
+      "column": "column_0",
+      "note": "calls build_bundle and to_dict, replaces bundle_version, then _validate_bundle_dict. One const rejection is not that sequence.",
+      "status": "not_applicable",
+      "test": "tests/test_plan_bundle_schemas.py::test_bundle_wrong_version_fails_validation",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.bundle.v1.json"
+}

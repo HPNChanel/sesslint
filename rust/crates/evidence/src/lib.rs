@@ -17,3 +17,5 @@ pub mod exporter;
 pub mod preview;
 #[path = "schema/sesslint.seal-ledger.v1.rs"]
 pub mod seal_ledger_schema;
+#[path = "schema/sesslint.bundle.v1.rs"]
+pub mod bundle_schema;

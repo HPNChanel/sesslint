@@ -1,0 +1,1358 @@
+{
+  "bundle_py_sha256": "3c5f7df93eaa410d6ccfc83c17b49ac1f85e45e2007fc9076635bec40965b133",
+  "known_parity_gaps": [
+    "GAP-bundle-schema-load: load_bundle_schema and get_bundle_schema_path read schemas/sesslint.bundle.v1.json. This card embeds the pin bytes and does not call those functions. tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent calls both, so it is not covered.",
+    "GAP-bundle-validate-helper: _validate_bundle_dict calls assert_schema and then extra structural checks. The other bundle tests also call build_bundle, to_dict, or to_json. One validate_json result is not that whole test.",
+    "GAP-bundle-emitter-bytes: Bundle.to_json uses json.dumps. sesslint._canonical_codec.canonical_json_bytes is not available. This card does not invent those bytes.",
+    "GAP-bundle-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-bundle-json-number: a JSON number that is not a proven integer is not an integer. Equality of two non-integers is refused. minimum is not applied to a non-integer."
+  ],
+  "module": "sesslint.bundle",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "schema_file": "schemas/sesslint.bundle.v1.json",
+  "schema_sha256": "7fdf8e61f8b787844c7c142029b290b924481baecbda3204ff79425a99738df9",
+  "vectors": [
+    {
+      "construct": {
+        "fn": "schema_document",
+        "mode": "pin",
+        "type": "schema_facts"
+      },
+      "expected": {
+        "adapter_value_type": "string",
+        "additional_properties": false,
+        "bundle_version_const": "sesslint.bundle/v1",
+        "by_code_minimum": 0,
+        "confidence_type": "number",
+        "counts_required": [
+          "by_code",
+          "by_severity",
+          "total"
+        ],
+        "created_by_required": [
+          "adapters",
+          "cli",
+          "profiles",
+          "schema_manifest",
+          "schema_report",
+          "schema_session",
+          "tool",
+          "version",
+          "versions"
+        ],
+        "detection_required": [
+          "confidences",
+          "reason",
+          "requested",
+          "resolved"
+        ],
+        "draft": "https://json-schema.org/draft/2020-12/schema",
+        "emitter_bundle_version": "sesslint.bundle/v1",
+        "emitter_keys": [
+          "bundle_version",
+          "created_by",
+          "detection",
+          "fixture_skeleton",
+          "report",
+          "source",
+          "share_advisory"
+        ],
+        "families_unique_items": true,
+        "finding_count_minimum": 1,
+        "finding_required": [
+          "code",
+          "fingerprint",
+          "repairability",
+          "severity",
+          "span"
+        ],
+        "id": "https://sesslint.dev/schemas/sesslint.bundle/v1",
+        "kind_count_minimum": 0,
+        "properties": [
+          "bundle_version",
+          "created_by",
+          "source",
+          "detection",
+          "report",
+          "fixture_skeleton",
+          "share_advisory"
+        ],
+        "record_count_minimum": 0,
+        "report_required": [
+          "assurance",
+          "counts",
+          "coverage",
+          "findings",
+          "limitation",
+          "schema_version",
+          "session_id",
+          "source_fingerprint",
+          "tool_version"
+        ],
+        "required": [
+          "bundle_version",
+          "created_by",
+          "detection",
+          "fixture_skeleton",
+          "report",
+          "source"
+        ],
+        "resolved_type": [
+          "string",
+          "null"
+        ],
+        "root_type": "object",
+        "sha256_pattern": "^[0-9a-f]{64}$",
+        "share_kind_const": "secret-material-present",
+        "share_required": [
+          "families",
+          "finding_count",
+          "kind",
+          "note"
+        ],
+        "size_minimum": 0,
+        "skeleton_required": [
+          "codes",
+          "kinds",
+          "record_count",
+          "template"
+        ],
+        "source_required": [
+          "path",
+          "sha256",
+          "size"
+        ],
+        "span_byte_type": [
+          "integer",
+          "null"
+        ],
+        "span_line_type": [
+          "integer",
+          "null"
+        ],
+        "span_required": [
+          "path"
+        ],
+        "tool_const": "sesslint",
+        "total_minimum": 0
+      },
+      "id": "schema_facts"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_minimal"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"b\"],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_share_advisory"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":\"auto\"},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_resolved_string"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"half\":0.5,\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_confidence_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":2,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_span_line_integer"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":1.0,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_span_line_one_point_zero"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":null,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_span_byte_null"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"fingerprint\":\"f\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_optional_finding_fields_absent"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"n\":[1,{\"z\":false}]}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_versions_nested"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"b\",\"a\"],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_families_unsorted"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_families_empty"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":0}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_size_zero"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":10e-1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_size_exponent_integer"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":0,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_record_count_zero"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{},\"cli\":\"0\",\"profiles\":{},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "ok",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "",
+        "mode": "ok",
+        "path": ""
+      },
+      "id": "validate_empty_collections"
+    },
+    {
+      "construct": {
+        "document": "{}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "bundle_version",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_empty_object"
+    },
+    {
+      "construct": {
+        "document": "[]",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_array"
+    },
+    {
+      "construct": {
+        "document": "\"x\"",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_string"
+    },
+    {
+      "construct": {
+        "document": "true",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_bool"
+    },
+    {
+      "construct": {
+        "document": "null",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_null"
+    },
+    {
+      "construct": {
+        "document": "{\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "bundle_version",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_bundle_version"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "created_by",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_created_by"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "detection",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_detection"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "fixture_skeleton",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_fixture_skeleton"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "report",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_report"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "source",
+        "keyword": "required",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_missing_source"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"extra\":1,\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"a_extra\":1,\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"m_extra\":2,\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "a_extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": ""
+      },
+      "id": "validate_root_additional_sorted"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"other\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "mode": "reject",
+        "path": "/bundle_version"
+      },
+      "id": "validate_bad_const"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":1,\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "mode": "reject",
+        "path": "/bundle_version"
+      },
+      "id": "validate_const_integer"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"other\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "mode": "reject",
+        "path": "/created_by/tool"
+      },
+      "id": "validate_tool_const"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":1,\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "mode": "reject",
+        "path": "/created_by/tool"
+      },
+      "id": "validate_tool_integer"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "profiles",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/created_by"
+      },
+      "id": "validate_created_by_missing_profiles"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"extra\":1,\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/created_by"
+      },
+      "id": "validate_created_by_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":1},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/created_by/adapters/one"
+      },
+      "id": "validate_adapters_value_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":1},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/created_by/profiles/neutral"
+      },
+      "id": "validate_profiles_value_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":[]},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/created_by/versions"
+      },
+      "id": "validate_versions_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "size",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/source"
+      },
+      "id": "validate_source_missing_size"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"extra\":1,\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/source"
+      },
+      "id": "validate_source_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "mode": "reject",
+        "path": "/source/sha256"
+      },
+      "id": "validate_sha256_pattern"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"ab\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "mode": "reject",
+        "path": "/source/sha256"
+      },
+      "id": "validate_sha256_short"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":1,\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/source/sha256"
+      },
+      "id": "validate_sha256_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":-1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/source/size"
+      },
+      "id": "validate_size_negative"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":true}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/source/size"
+      },
+      "id": "validate_size_bool"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1.5}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/source/size"
+      },
+      "id": "validate_size_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1e-1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/source/size"
+      },
+      "id": "validate_size_exponent_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "reason",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/detection"
+      },
+      "id": "validate_detection_missing_reason"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"extra\":1,\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/detection"
+      },
+      "id": "validate_detection_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":1},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/detection/resolved"
+      },
+      "id": "validate_resolved_number"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":true},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/detection/resolved"
+      },
+      "id": "validate_resolved_bool"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"half\":\"x\",\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/detection/confidences/half"
+      },
+      "id": "validate_confidence_string"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":true},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/detection/confidences/one"
+      },
+      "id": "validate_confidence_bool"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "limitation",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/report"
+      },
+      "id": "validate_report_missing_limitation"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"extra\":1,\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/report"
+      },
+      "id": "validate_report_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "by_severity",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/report/counts"
+      },
+      "id": "validate_counts_missing_by_severity"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"extra\":1,\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/report/counts"
+      },
+      "id": "validate_counts_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":-1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/report/counts/total"
+      },
+      "id": "validate_total_negative"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":true},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/counts/total"
+      },
+      "id": "validate_total_bool"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":-1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/report/counts/by_code/SL001"
+      },
+      "id": "validate_by_code_negative"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":0.5},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/counts/by_code/SL001"
+      },
+      "id": "validate_by_code_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":[],\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/coverage"
+      },
+      "id": "validate_coverage_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "fingerprint",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/report/findings/0"
+      },
+      "id": "validate_finding_missing_fingerprint"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"extra\":1,\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/report/findings/0"
+      },
+      "id": "validate_finding_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/report/findings/0/span"
+      },
+      "id": "validate_span_missing_path"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"extra\":1,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/report/findings/0/span"
+      },
+      "id": "validate_span_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":\"1\",\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/findings/0/span/line"
+      },
+      "id": "validate_span_line_string"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":1.5,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/findings/0/span/byte"
+      },
+      "id": "validate_span_byte_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":[],\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/report/findings/0/evidence"
+      },
+      "id": "validate_evidence_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "kinds",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/fixture_skeleton"
+      },
+      "id": "validate_fixture_missing_kinds"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"extra\":1,\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/fixture_skeleton"
+      },
+      "id": "validate_fixture_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[1],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/fixture_skeleton/codes/0"
+      },
+      "id": "validate_codes_item_type"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":-1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/fixture_skeleton/kinds/message"
+      },
+      "id": "validate_kinds_negative"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":0.5},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/fixture_skeleton/kinds/message"
+      },
+      "id": "validate_kinds_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":-1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/fixture_skeleton/record_count"
+      },
+      "id": "validate_record_count_negative"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"b\"],\"finding_count\":1,\"kind\":\"other\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "mode": "reject",
+        "path": "/share_advisory/kind"
+      },
+      "id": "validate_share_kind_const"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"b\"],\"finding_count\":1,\"kind\":\"secret-material-present\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "note",
+        "keyword": "required",
+        "mode": "reject",
+        "path": "/share_advisory"
+      },
+      "id": "validate_share_missing_note"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"extra\":1,\"families\":[\"a\",\"b\"],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "mode": "reject",
+        "path": "/share_advisory"
+      },
+      "id": "validate_share_additional"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"b\"],\"finding_count\":0,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "mode": "reject",
+        "path": "/share_advisory/finding_count"
+      },
+      "id": "validate_finding_count_zero"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"b\"],\"finding_count\":1.5,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/share_advisory/finding_count"
+      },
+      "id": "validate_finding_count_fraction"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[\"a\",\"a\"],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "mode": "reject",
+        "path": "/share_advisory/families"
+      },
+      "id": "validate_families_duplicate"
+    },
+    {
+      "construct": {
+        "document": "{\"bundle_version\":\"sesslint.bundle/v1\",\"created_by\":{\"adapters\":{\"one\":\"1\"},\"cli\":\"0\",\"profiles\":{\"neutral\":\"1\"},\"schema_manifest\":\"m\",\"schema_report\":\"r\",\"schema_session\":\"s\",\"tool\":\"sesslint\",\"version\":\"0\",\"versions\":{\"k\":1}},\"detection\":{\"confidences\":{\"one\":1},\"reason\":\"synthetic\",\"requested\":\"auto\",\"resolved\":null},\"fixture_skeleton\":{\"codes\":[\"SL001\"],\"kinds\":{\"message\":1},\"record_count\":1,\"template\":\"t\"},\"report\":{\"assurance\":\"none\",\"counts\":{\"by_code\":{\"SL001\":1},\"by_severity\":{\"info\":1},\"total\":1},\"coverage\":{\"area\":1},\"findings\":[{\"code\":\"SL001\",\"evidence\":{\"field\":\"name\"},\"fingerprint\":\"f\",\"message\":\"m\",\"remediation\":\"see\",\"repairability\":\"manual\",\"severity\":\"info\",\"span\":{\"byte\":0,\"line\":null,\"path\":\"a.jsonl\"}}],\"limitation\":\"none\",\"schema_version\":\"sesslint.report/v1\",\"session_id\":\"s\",\"source_fingerprint\":\"b\",\"tool_version\":\"0\"},\"share_advisory\":{\"families\":[1],\"finding_count\":1,\"kind\":\"secret-material-present\",\"note\":\"n\"},\"source\":{\"path\":\"a.jsonl\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1}}",
+        "fn": "validate_json",
+        "mode": "reject",
+        "type": "validate"
+      },
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "mode": "reject",
+        "path": "/share_advisory/families/0"
+      },
+      "id": "validate_families_item_type"
+    }
+  ]
+}

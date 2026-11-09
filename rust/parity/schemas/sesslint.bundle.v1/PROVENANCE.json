@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.bundle.v1 schema parity. Constraints and expected rejections come from the pinned schema. Bundle.to_json bytes are not stored. The pinned schema tests are not covered.",
+  "generator": "rust/parity/schemas/sesslint.bundle.v1/generate",
+  "known_parity_gaps": [
+    "GAP-bundle-schema-load: load_bundle_schema and get_bundle_schema_path read schemas/sesslint.bundle.v1.json. This card embeds the pin bytes and does not call those functions. tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent calls both, so it is not covered.",
+    "GAP-bundle-validate-helper: _validate_bundle_dict calls assert_schema and then extra structural checks. The other bundle tests also call build_bundle, to_dict, or to_json. One validate_json result is not that whole test.",
+    "GAP-bundle-emitter-bytes: Bundle.to_json uses json.dumps. sesslint._canonical_codec.canonical_json_bytes is not available. This card does not invent those bytes.",
+    "GAP-bundle-duplicate-key: duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "GAP-bundle-json-number: a JSON number that is not a proven integer is not an integer. Equality of two non-integers is refused. minimum is not applied to a non-integer."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}
