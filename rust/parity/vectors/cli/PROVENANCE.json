@@ -1,0 +1,16 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli entrypoint parity from pinned __init__.py: constants, removal hints, verbose settings, and removed-command main paths only; no session payload text.",
+  "generator": "rust/parity/vectors/cli/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-cli-init-create-parser: Python create_parser() returns an argparse.ArgumentParser with subcommands; Rust create_parser() stops with sesslint.cli.check.configure is not available and does not register subparsers.",
+    "GAP-cli-init-parse-args: Python main() calls parser.parse_args; Rust stops with argparse.ArgumentParser.parse_args is not available.",
+    "GAP-cli-init-print-help: Python _dispatch with no command calls parser.print_help; Rust returns argparse.ArgumentParser.print_help is not available.",
+    "GAP-cli-init-dispatch-runtime: Python _dispatch runs build_context, preflight, and command.run; Rust stops at sesslint.config.load_config and registry Command::run seams.",
+    "GAP-cli-init-textio-reconfigure: Python main() reconfigure(encoding=utf-8) on TextIOWrapper streams; Rust has no reconfigure seam.",
+    "GAP-cli-init-load-session-file: Python load_session_file aliases api.validate_session; Rust does not export that alias.",
+    "GAP-cli-init-format-membership: Python _removed_flag_hint imports sesslint.adapters.VALID_FORMAT_OPTIONS for --format <adapter>; Rust returns sesslint.adapters.VALID_FORMAT_OPTIONS is not available without copying the token."
+  ]
+}

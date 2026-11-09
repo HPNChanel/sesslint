@@ -1,0 +1,19 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "cli_init_py_sha256": "aa32db5fee47d314773622038ef164bd83175c83584361d0aa34e9f2ae17c4c9",
+  "cli_lib_rs_sha256": "9595b34b7546aebaf9425795ef44e3b886c03011fbe7783fe818fb03a3e82c64",
+  "vector_count": 33,
+  "vectors_sha256": "903287de8d1d4116dc5581ce585ae5ab861be958b28fd433b7b70a258ee91617",
+  "generator": "rust/parity/vectors/cli/generate",
+  "known_parity_gaps": [
+    "GAP-cli-init-create-parser: Python create_parser() returns an argparse.ArgumentParser with subcommands; Rust create_parser() stops with sesslint.cli.check.configure is not available and does not register subparsers.",
+    "GAP-cli-init-parse-args: Python main() calls parser.parse_args; Rust stops with argparse.ArgumentParser.parse_args is not available.",
+    "GAP-cli-init-print-help: Python _dispatch with no command calls parser.print_help; Rust returns argparse.ArgumentParser.print_help is not available.",
+    "GAP-cli-init-dispatch-runtime: Python _dispatch runs build_context, preflight, and command.run; Rust stops at sesslint.config.load_config and registry Command::run seams.",
+    "GAP-cli-init-textio-reconfigure: Python main() reconfigure(encoding=utf-8) on TextIOWrapper streams; Rust has no reconfigure seam.",
+    "GAP-cli-init-load-session-file: Python load_session_file aliases api.validate_session; Rust does not export that alias.",
+    "GAP-cli-init-format-membership: Python _removed_flag_hint imports sesslint.adapters.VALID_FORMAT_OPTIONS for --format <adapter>; Rust returns sesslint.adapters.VALID_FORMAT_OPTIONS is not available without copying the token."
+  ]
+}

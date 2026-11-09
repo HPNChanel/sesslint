@@ -1,0 +1,664 @@
+#!/usr/bin/env python3
+"""Generate sesslint.cli (__init__.py) parity vectors from the pinned tree (stdlib only)."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import importlib
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+CLI_INIT_PATH = "src/sesslint/cli/__init__.py"
+CLI_INIT_PY_SHA256 = (
+    "aa32db5fee47d314773622038ef164bd83175c83584361d0aa34e9f2ae17c4c9"
+)
+CLI_LIB_RS_SHA256 = (
+    "9595b34b7546aebaf9425795ef44e3b886c03011fbe7783fe818fb03a3e82c64"
+)
+MODULE = "sesslint.cli"
+
+SYNTHETIC_PAYLOAD = "synthetic-payload"
+SYNTHETIC_ADAPTER = "synthetic-adapter-name"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-cli-init-create-parser: Python create_parser() returns an argparse.ArgumentParser "
+    "with subcommands; Rust create_parser() stops with sesslint.cli.check.configure is not "
+    "available and does not register subparsers.",
+    "GAP-cli-init-parse-args: Python main() calls parser.parse_args; Rust stops with "
+    "argparse.ArgumentParser.parse_args is not available.",
+    "GAP-cli-init-print-help: Python _dispatch with no command calls parser.print_help; Rust "
+    "returns argparse.ArgumentParser.print_help is not available.",
+    "GAP-cli-init-dispatch-runtime: Python _dispatch runs build_context, preflight, and "
+    "command.run; Rust stops at sesslint.config.load_config and registry Command::run seams.",
+    "GAP-cli-init-textio-reconfigure: Python main() reconfigure(encoding=utf-8) on "
+    "TextIOWrapper streams; Rust has no reconfigure seam.",
+    "GAP-cli-init-load-session-file: Python load_session_file aliases api.validate_session; "
+    "Rust does not export that alias.",
+    "GAP-cli-init-format-membership: Python _removed_flag_hint imports "
+    "sesslint.adapters.VALID_FORMAT_OPTIONS for --format <adapter>; Rust returns "
+    "sesslint.adapters.VALID_FORMAT_OPTIONS is not available without copying the token.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/accept/test_healthy.py",
+    "tests/accept/test_offline.py",
+    "tests/adapters/test_detect.py",
+    "tests/checks/test_hygiene.py",
+    "tests/checks/test_runstate_checkpoints.py",
+    "tests/cli/test_ac02_exit_codes.py",
+    "tests/cli/test_ac03_lone_surrogate.py",
+    "tests/cli/test_batch_repair.py",
+    "tests/cli/test_check.py",
+    "tests/cli/test_cli_flags.py",
+    "tests/cli/test_cli_presentation.py",
+    "tests/cli/test_color.py",
+    "tests/cli/test_completion.py",
+    "tests/cli/test_diff.py",
+    "tests/cli/test_doctor.py",
+    "tests/cli/test_env_precedence.py",
+    "tests/cli/test_exit_codes.py",
+    "tests/cli/test_format_override.py",
+    "tests/cli/test_formats_version.py",
+    "tests/cli/test_help.py",
+    "tests/cli/test_internal_error.py",
+    "tests/cli/test_output_file.py",
+    "tests/cli/test_output_protection.py",
+    "tests/cli/test_plan_apply.py",
+    "tests/cli/test_profile_override.py",
+    "tests/cli/test_progress_json.py",
+    "tests/cli/test_quiet_verbose.py",
+    "tests/cli/test_removed_surface.py",
+    "tests/cli/test_repair_cli.py",
+    "tests/cli/test_repair_preview.py",
+    "tests/cli/test_stats.py",
+    "tests/cli/test_stdin_input.py",
+    "tests/cli/test_streams.py",
+    "tests/cli/test_tty_progress.py",
+    "tests/cli/test_verify_cli.py",
+    "tests/cli/test_watch.py",
+    "tests/conformance/test_adapter_suite.py",
+    "tests/conformance/test_matrix.py",
+    "tests/engine/test_no_clean_on_error.py",
+    "tests/export/test_export.py",
+    "tests/io/test_hostile.py",
+    "tests/outcome/test_outcome_cli.py",
+    "tests/privacy/test_bundle_privacy.py",
+    "tests/privacy/test_run_state_evidence.py",
+    "tests/privacy/test_safe_discriminator.py",
+    "tests/repair/test_executor.py",
+    "tests/repair/test_plan_vetting.py",
+    "tests/repair/test_recipes_salvage.py",
+    "tests/report/test_content_free.py",
+    "tests/report/test_delivery_guidance.py",
+    "tests/report/test_secret_warn.py",
+    "tests/report/test_summary.py",
+    "tests/scan/test_aggregate.py",
+    "tests/scan/test_discovery.py",
+    "tests/scan/test_incremental.py",
+    "tests/scan/test_parallel.py",
+    "tests/scan/test_scan_summary.py",
+    "tests/test_adversarial_verify.py",
+    "tests/test_baseline.py",
+    "tests/test_bundle.py",
+    "tests/test_cancel.py",
+    "tests/test_codex_dispatch.py",
+    "tests/test_config.py",
+    "tests/test_corpus_families.py",
+    "tests/test_e2e_cycle.py",
+    "tests/test_field_regressions.py",
+    "tests/test_multi_path_check.py",
+    "tests/test_no_egress.py",
+    "tests/test_parity.py",
+    "tests/test_profiles.py",
+    "tests/test_rule_selection.py",
+    "tests/test_sarif.py",
+    "tests/test_scan_filters.py",
+    "tests/test_seal.py",
+    "tests/test_session_schema.py",
+    "tests/test_smoke.py",
+    "tests/test_smoke_release.py",
+    "tests/test_triage.py",
+    "tests/test_verify.py",
+    "tests/test_verify_challenger.py",
+    "tests/test_wave1_scan.py",
+    "tests/test_wave1_seal_watch.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/cli/test_ac02_exit_codes.py::test_contract_constant_is_the_per_code_lines": (
+        "check_exit_constants",
+    ),
+}
+
+NOT_THE_TEST: Final[dict[str, str]] = {
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[-r-always recursive]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--batch---output-dir]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--files---output-dir]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--format-a---adapter-a]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--format-b---adapter-b]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--out---output]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--output-format---format]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--recursive-always recursive]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--salvage-unsupported---policy salvage]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_removed_flag_exits_2_with_hint[--show-limits-sesslint doctor]": (
+        "pytest runs main through argparse after hint; Rust stops at check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_adapter_misuse_via_format_flag_hints_adapter": (
+        "Python main runs check then format membership hint; Rust stops at "
+        "VALID_FORMAT_OPTIONS_UNAVAILABLE before check.configure"
+    ),
+    "tests/cli/test_removed_surface.py::test_scan_alias_stdout_byte_identical_to_check": (
+        "requires parsed check and scan command.run success"
+    ),
+    "tests/cli/test_removed_surface.py::test_check_directory_recursive_without_flag": (
+        "requires parsed check command.run success"
+    ),
+    "tests/cli/test_removed_surface.py::test_check_agent_all_latest_rejected": (
+        "requires parsed check command.run via argparse"
+    ),
+    "tests/cli/test_removed_surface.py::test_repair_multi_path_requires_output_dir": (
+        "requires parsed repair command.run via argparse"
+    ),
+    "tests/report/test_summary.py::test_epilog_disclaimers_in_create_parser": (
+        "create_parser epilog bytes are checked via check_exit_epilog vector, not argparse"
+    ),
+}
+
+_BANNED_PAT = re.compile(
+    rb"(?:sk_live_|sk_test_|rk_live_|rk_test_|sbp_[0-9a-f]{40}|FOR_WORK|[A-Za-z]:\\)"
+)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_digest(blob: bytes, expected: str, label: str) -> None:
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"{label} pin sha256 mismatch: expected {expected}, got {digest}")
+
+
+def verify_lib_rs() -> None:
+    lib_rs = repo_root() / "rust" / "crates" / "cli" / "src" / "lib.rs"
+    digest = hashlib.sha256(lib_rs.read_bytes()).hexdigest()
+    if digest != CLI_LIB_RS_SHA256:
+        raise SystemExit(
+            f"lib.rs sha256 mismatch: expected {CLI_LIB_RS_SHA256}, got {digest}"
+        )
+
+
+def load_pinned_cli() -> Any:
+    verify_lib_rs()
+    init_blob = git_show_bytes(f"{PYTHON_COMMIT}:{CLI_INIT_PATH}")
+    verify_digest(init_blob, CLI_INIT_PY_SHA256, "cli/__init__.py")
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=repo_root(),
+    )
+    temp_dir = tempfile.mkdtemp(prefix="sesslint-cli-init-par-")
+    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        zf.extractall(temp_dir)
+    root = Path(temp_dir) / "src"
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    return importlib.import_module("sesslint.cli")
+
+
+def capture_main(cli: Any, argv: list[str]) -> dict[str, Any]:
+    import sys as pysys
+
+    out = io.StringIO()
+    err = io.StringIO()
+    prev_out, prev_err = pysys.stdout, pysys.stderr
+    pysys.stdout, pysys.stderr = out, err
+    code: int | str
+    try:
+        code = cli.main(argv)
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            code = exc.code
+        elif exc.code is None:
+            code = 0
+        else:
+            code = 1
+    finally:
+        pysys.stdout, pysys.stderr = prev_out, prev_err
+    return {
+        "exit_code": code,
+        "stdout": out.getvalue(),
+        "stderr": err.getvalue(),
+    }
+
+
+def verbose_settings_stderr(cli: Any) -> str:
+    from sesslint.cli._context import CliContext, Setting
+
+    buf = io.StringIO()
+
+    class Share:
+        def write(self, text: str) -> int:
+            buf.write(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+    ctx = CliContext(
+        quiet=False,
+        verbose=True,
+        config_path=None,
+        settings={
+            "zeta": Setting(value="json", source="cli"),
+            "alpha": Setting(value="neutral", source="default"),
+            "policy": Setting(value=None, source="config:synthetic"),
+            "flag": Setting(value=True, source="cli"),
+            "max_files": Setting(value=3, source="env:SESSLINT_X"),
+            "config": Setting(value="synthetic-config.toml", source="cli"),
+        },
+        stderr=Share(),
+    )
+    cli._verbose_settings(ctx)
+    return buf.getvalue()
+
+
+def vector_specs(cli: Any) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    parser = cli.create_parser()
+    epilog = parser.epilog or ""
+    version_action = next(
+        action
+        for action in parser._actions
+        if any(opt == "--version" for opt in getattr(action, "option_strings", []))
+    )
+
+    specs.append(
+        {
+            "id": "check_exit_constants",
+            "construct": {"type": "check_exit_constants"},
+            "expected": {
+                "lines": list(cli.CHECK_EXIT_LINES),
+                "notes": list(cli.CHECK_EXIT_NOTES),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "check_exit_epilog",
+            "construct": {"type": "check_exit_epilog"},
+            "expected": {
+                "lines": epilog.splitlines(),
+                "len": len(epilog),
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "version_label",
+            "construct": {"type": "version_label"},
+            "expected": {"text": version_action.version},
+        }
+    )
+    specs.append(
+        {
+            "id": "parser_shell_metadata",
+            "construct": {"type": "parser_shell_metadata"},
+            "expected": {
+                "prog": parser.prog,
+                "description": parser.description,
+                "allow_abbrev": parser.allow_abbrev,
+            },
+        }
+    )
+    specs.append(
+        {
+            "id": "create_parser_subcommand_names",
+            "construct": {"type": "create_parser_pin"},
+            "expected": {
+                "subcommand_names": sorted(parser._subparsers._group_actions[0].choices),
+                "gap_id": "GAP-cli-init-create-parser",
+            },
+        }
+    )
+
+    removed_command_cases = [
+        ("removed_command_hint_formats", ["--json", "formats"]),
+        ("removed_command_hint_validate_session", ["validate-session"]),
+        ("removed_command_hint_baseline", ["-q", "baseline"]),
+        ("removed_command_hint_init_hooks", ["init-hooks"]),
+        ("removed_command_hint_absent", [SYNTHETIC_PAYLOAD, "baseline"]),
+        ("removed_command_hint_dash_only", ["--help", "-v"]),
+        ("removed_command_hint_empty", []),
+    ]
+    for vector_id, argv in removed_command_cases:
+        hint = cli._removed_command_hint(argv)
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "removed_command_hint", "argv": argv},
+                "expected": {
+                    "hint": hint,
+                    "present": hint is not None,
+                },
+            }
+        )
+
+    removed_flag_cases = [
+        ("removed_flag_hint_out", ["--out", SYNTHETIC_PAYLOAD]),
+        (
+            "removed_flag_hint_output_format",
+            [f"--output-format={SYNTHETIC_PAYLOAD}"],
+        ),
+        ("removed_flag_hint_recursive_short", ["-r"]),
+        ("removed_flag_hint_recursive_long", ["--recursive"]),
+        ("removed_flag_hint_show_limits", ["--show-limits"]),
+        (
+            "removed_flag_hint_batch",
+            ["check", SYNTHETIC_PAYLOAD, "--batch"],
+        ),
+        (
+            "removed_flag_hint_files",
+            ["check", SYNTHETIC_PAYLOAD, "--files"],
+        ),
+        (
+            "removed_flag_hint_format_a",
+            ["check", SYNTHETIC_PAYLOAD, "--format-a"],
+        ),
+        (
+            "removed_flag_hint_format_b",
+            ["check", SYNTHETIC_PAYLOAD, "--format-b"],
+        ),
+        (
+            "removed_flag_hint_salvage",
+            ["check", SYNTHETIC_PAYLOAD, "--salvage-unsupported"],
+        ),
+        ("removed_flag_hint_format_bare", ["--format"]),
+        ("removed_flag_hint_format_eq", ["--format=canonical"]),
+        ("removed_flag_hint_plain_command", ["check"]),
+        (
+            "removed_flag_hint_first_flag",
+            ["--recursive", "--out"],
+        ),
+    ]
+    for vector_id, argv in removed_flag_cases:
+        hint = cli._removed_flag_hint(argv)
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "removed_flag_hint", "argv": argv},
+                "expected": {
+                    "hint": hint,
+                    "present": hint is not None,
+                },
+            }
+        )
+
+    membership_argv = ["--format", "claude-code-jsonl"]
+    membership_hint = cli._removed_flag_hint(membership_argv)
+    specs.append(
+        {
+            "id": "removed_flag_hint_format_membership",
+            "construct": {
+                "type": "removed_flag_hint",
+                "argv": membership_argv,
+            },
+            "expected": {
+                "hint": membership_hint,
+                "present": membership_hint is not None,
+                "gap_id": "GAP-cli-init-format-membership",
+                "rust_mode": "unsupported",
+                "rust_message": "sesslint.adapters.VALID_FORMAT_OPTIONS is not available",
+            },
+        }
+    )
+
+    verbose_text = verbose_settings_stderr(cli)
+    specs.append(
+        {
+            "id": "verbose_settings_provenance",
+            "construct": {"type": "verbose_settings"},
+            "expected": {
+                "stderr_hex": verbose_text.encode("utf-8").hex(),
+                "len": len(verbose_text),
+            },
+        }
+    )
+
+    for token, vector_id in (
+        ("formats", "main_removed_formats"),
+        ("baseline", "main_removed_baseline"),
+        ("validate-session", "main_removed_validate_session"),
+        ("init-hooks", "main_removed_init_hooks"),
+    ):
+        captured = capture_main(cli, [token])
+        specs.append(
+            {
+                "id": vector_id,
+                "construct": {"type": "main", "argv": [token]},
+                "expected": {
+                    "exit_code": captured["exit_code"],
+                    "stdout_hex": captured["stdout"].encode("utf-8").hex(),
+                    "stderr_hex": captured["stderr"].encode("utf-8").hex(),
+                },
+            }
+        )
+
+    main_json = capture_main(cli, ["--json", "formats"])
+    specs.append(
+        {
+            "id": "main_removed_formats_json",
+            "construct": {"type": "main", "argv": ["--json", "formats"]},
+            "expected": {
+                "exit_code": main_json["exit_code"],
+                "stdout_hex": main_json["stdout"].encode("utf-8").hex(),
+                "stderr_hex": main_json["stderr"].encode("utf-8").hex(),
+            },
+        }
+    )
+
+    return specs
+
+
+def load_python_all(cli: Any) -> list[str]:
+    return list(cli.__all__)
+
+
+def imports_cli_module(rel: str) -> bool:
+    path = repo_root() / rel
+    if not path.is_file():
+        return False
+    source = path.read_text(encoding="utf-8")
+    return bool(
+        re.search(
+            r"(?:from\s+sesslint\.cli\s+import|import\s+sesslint\.cli\b)",
+            source,
+        )
+    )
+
+
+def collect_pytest_nodes(rel: str) -> list[str]:
+    env = dict(os.environ)
+    env["COLUMNS"] = "240"
+    proc = subprocess.run(
+        ["uv", "run", "pytest", rel, "--collect-only", "--no-header"],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"pytest --collect-only failed for {rel}: {proc.stderr or proc.stdout}"
+        )
+    text = re.sub(r"\n[ \t]+", "", proc.stdout)
+    pattern = re.compile(
+        rf"{re.escape(rel)}::test_[a-z0-9_]+(?:\[[^\]]*\])?"
+    )
+    return pattern.findall(text)
+
+
+def write_coverage(
+    out_dir: Path, vector_ids: frozenset[str], py_all: list[str]
+) -> tuple[int, int]:
+    rows: list[dict[str, object]] = []
+    covered = 0
+    not_applicable = 0
+    rows.append(
+        {
+            "test": "src/sesslint/cli/__init__.py::__all__",
+            "status": "not_applicable",
+            "python_all_len": len(py_all),
+        }
+    )
+    not_applicable += 1
+    rows.append(
+        {
+            "test": "src/sesslint/cli/__init__.py::load_session_file",
+            "status": "not_applicable",
+            "reason": "Rust does not alias api.validate_session",
+        }
+    )
+    not_applicable += 1
+    for rel in COVERAGE_TEST_FILES:
+        if not (repo_root() / rel).is_file():
+            continue
+        if not imports_cli_module(rel):
+            continue
+        for qual in collect_pytest_nodes(rel):
+            needed = COVERED_BY_VECTORS.get(qual)
+            row: dict[str, object] = {"test": qual}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+                covered += 1
+            else:
+                row["status"] = "not_applicable"
+                reason = NOT_THE_TEST.get(qual)
+                if reason is not None:
+                    row["reason"] = reason
+                not_applicable += 1
+            rows.append(row)
+    payload = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    (out_dir / "coverage.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return covered, not_applicable
+
+
+def assert_payload_clean(payload: bytes) -> None:
+    if _BANNED_PAT.search(payload):
+        raise SystemExit("committed output contains banned marker")
+    if b"\r" in payload:
+        raise SystemExit("vectors.json must be LF-only")
+
+
+def main() -> int:
+    cli = load_pinned_cli()
+    py_all = load_python_all(cli)
+    out_dir = Path(__file__).resolve().parent
+    vectors = vector_specs(cli)
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "cli_init_py_sha256": CLI_INIT_PY_SHA256,
+        "cli_lib_rs_sha256": CLI_LIB_RS_SHA256,
+        "python_all": py_all,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    payload_bytes = payload.encode("utf-8")
+    assert_payload_clean(payload_bytes)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_bytes(payload_bytes)
+    digest = hashlib.sha256(payload_bytes).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "cli_init_py_sha256": CLI_INIT_PY_SHA256,
+        "cli_lib_rs_sha256": CLI_LIB_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/cli/generate",
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.cli entrypoint parity from pinned __init__.py: "
+            "constants, removal hints, verbose settings, and removed-command main "
+            "paths only; no session payload text."
+        ),
+        "generator": "rust/parity/vectors/cli/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    covered, not_applicable = write_coverage(
+        out_dir, frozenset(v["id"] for v in vectors), py_all
+    )
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={digest}")
+    print(f"covered={covered} not_applicable={not_applicable}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
