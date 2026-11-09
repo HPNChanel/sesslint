@@ -126,6 +126,19 @@ pub struct IntValue {
 }
 
 impl IntValue {
+    /// Construct a lossless integer from canonical decimal digits, without a machine-size cap.
+    pub fn from_decimal(value: &str) -> Result<Self, CanonicalError> {
+        let result = Self {
+            negative: value.starts_with('-'),
+            digits: value.strip_prefix('-').unwrap_or(value).to_owned(),
+        };
+        if result.is_canonical() {
+            Ok(result)
+        } else {
+            Err(CanonicalError::schema("Invalid canonical integer spelling"))
+        }
+    }
+
     pub fn from_i64(value: i64) -> Self {
         Self::from_i128(i128::from(value))
     }

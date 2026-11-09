@@ -1,7 +1,7 @@
 //! OutcomeGuard contract model, strict JSON and validation helpers (CON-01/02/05/07).
 //!
 //! Port of outcome/contract.py at 02694d537104659df66cdd084354739f3cccc440,
-//! lines 1..317. No contract is executed. Errors retain source declaration order.
+//! lines 1..535. No contract is executed. Errors retain source declaration order.
 //! Strings use Unicode scalar values; unpaired JSON surrogate escapes fail closed.
 //! Parsing is bounded to depth 128 (not Python's configurable recursion limit).
 //! Diagnostic repr follows Python 3.11's Unicode 14.0.0 printability table.
@@ -10,6 +10,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io::Read;
+use std::path::Path;
+
+use codec::canonical_codec::{self, CanonicalError, IntValue, ObjectKey, Value};
+use sha2::{Digest, Sha256};
 
 pub const CONTRACT_SCHEMA_VERSION: &str = "sesslint.outcome-contract/v1";
 pub const MAX_CONTRACT_BYTES: usize = 1024 * 1024;
@@ -758,6 +763,505 @@ pub fn bound(raw: &Mapping, key: &str, location: &str, problems: &mut Problems) 
     }
 }
 
+/// Validation is distinct from source I/O, numeric overflow and codec failures.
+#[derive(Debug)]
+pub enum LoadError {
+    Contract(ContractError),
+    Io(std::io::Error),
+    Canonical(CanonicalError),
+    Overflow,
+    Unhashable,
+    DepthLimit,
+}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Contract(e) => e.fmt(f),
+            Self::Io(_) => f.write_str("contract file could not be read"),
+            Self::Canonical(e) => e.fmt(f),
+            Self::Overflow => f.write_str("int too large to convert to float"),
+            Self::Unhashable => f.write_str("unhashable condition selector"),
+            Self::DepthLimit => f.write_str("contract exceeds supported nesting depth"),
+        }
+    }
+}
+impl std::error::Error for LoadError {}
+
+fn invalid(message: impl Into<String>) -> LoadError {
+    LoadError::Contract(ContractError {
+        problems: vec![message.into()],
+    })
+}
+
+fn selector(raw: &Json) -> Result<Option<&str>, LoadError> {
+    if matches!(raw, Json::Array(_) | Json::Object(_)) {
+        Err(LoadError::Unhashable)
+    } else {
+        Ok(raw.as_str())
+    }
+}
+
+fn boolean(raw: &Mapping, key: &str, location: &str, p: &mut Problems) -> bool {
+    match raw.get(key) {
+        None => false,
+        Some(Json::Scalar(Scalar::Bool(v))) => *v,
+        _ => {
+            p.add(location, format!("'{key}' must be true or false"));
+            false
+        }
+    }
+}
+
+fn integer(raw: &Json) -> Option<&Integer> {
+    if let Json::Scalar(Scalar::Int(i)) = raw {
+        Some(i)
+    } else {
+        None
+    }
+}
+
+fn integer_cmp(a: &Integer, b: &Integer) -> std::cmp::Ordering {
+    let (a, b) = (a.decimal(), b.decimal());
+    match (a.starts_with('-'), b.starts_with('-')) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        (false, false) => a.len().cmp(&b.len()).then(a.cmp(b)),
+        (true, true) => b.len().cmp(&a.len()).then(b.cmp(a)),
+    }
+}
+
+fn count_float(value: &Json) -> Result<Option<f64>, LoadError> {
+    integer(value)
+        .map(|v| {
+            v.decimal()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .ok_or(LoadError::Overflow)
+        })
+        .transpose()
+}
+
+/// Python `_condition`; invalid selectors and count overflow propagate before accumulated errors.
+pub fn condition(
+    raw: &Json,
+    location: &str,
+    p: &mut Problems,
+    nested: bool,
+    has_due: bool,
+) -> Result<Option<Condition>, LoadError> {
+    condition_at(raw, location, p, nested, has_due, 0)
+}
+
+fn condition_at(
+    raw: &Json,
+    location: &str,
+    p: &mut Problems,
+    nested: bool,
+    has_due: bool,
+    depth: usize,
+) -> Result<Option<Condition>, LoadError> {
+    if depth > 128 {
+        return Err(LoadError::DepthLimit);
+    }
+    let Json::Object(raw) = raw else {
+        p.add(location, "condition must be an object");
+        return Ok(None);
+    };
+    let kind = selector(raw.get("type").unwrap_or(&NULL))?;
+    let Some(kind) = kind.filter(|v| CONDITION_TYPES.contains(v)) else {
+        p.add(
+            location,
+            format!(
+                "'type' must be one of {}",
+                repr_list(CONDITION_TYPES.iter().copied())
+            ),
+        );
+        return Ok(None);
+    };
+    let id = match raw.get("id").and_then(Json::as_str).filter(|v| valid_id(v)) {
+        Some(id) => id,
+        None => {
+            p.add(location, "'id' must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}");
+            "?"
+        }
+    };
+    let location = format!("condition {}", py_repr(id));
+    let w = location.as_str();
+    let mut allowed = COMMON_KEYS.to_vec();
+    allowed.extend_from_slice(type_keys(kind).unwrap_or(&[]));
+    unknown_keys(raw, &allowed, w, p);
+    let mut c = Condition {
+        id: id.into(),
+        kind: kind.into(),
+        advisory: boolean(raw, "advisory", w, p),
+        disabled: text(raw, "disabled", w, p),
+        description: text(raw, "description", w, p),
+        ..Condition::default()
+    };
+    if matches!(
+        kind,
+        "required" | "type" | "one_of" | "equals" | "range" | "route"
+    ) {
+        c.field = field(raw, "field", w, p);
+    }
+    match kind {
+        "count" => {
+            let one = Json::Scalar(Scalar::Int(1.into()));
+            let low = raw.get("min").unwrap_or(&one);
+            let high = raw.get("max").unwrap_or(&NULL);
+            for (name, v) in [("min", low), ("max", high)] {
+                if !v.is_null() && integer(v).is_none_or(|i| i.decimal().starts_with('-')) {
+                    p.add(w, format!("'{name}' must be a non-negative integer"));
+                }
+            }
+            if let (Some(a), Some(b)) = (integer(low), integer(high)) {
+                if integer_cmp(a, b).is_gt() {
+                    p.add(w, "'min' must not exceed 'max'");
+                }
+            }
+            let zero = Json::Scalar(Scalar::Int(0.into()));
+            if *low == zero && high.is_null() {
+                p.add(w, "count with min 0 and no max can never be violated");
+            }
+            if *high == zero {
+                p.add(
+                    w,
+                    "'max' 0 asks for absence, which v1 cannot prove; omit it",
+                );
+            }
+            c.minimum = count_float(low)?;
+            c.maximum = count_float(high)?;
+        }
+        "required" => {
+            c.allow_null = boolean(raw, "allow_null", w, p);
+            c.allow_empty = boolean(raw, "allow_empty", w, p);
+        }
+        "type" => {
+            let value = selector(raw.get("kind").unwrap_or(&NULL))?;
+            if value.is_none_or(|v| !VALUE_KINDS.contains(&v)) {
+                p.add(
+                    w,
+                    format!(
+                        "'kind' must be one of {}",
+                        repr_list(VALUE_KINDS.iter().copied())
+                    ),
+                );
+            }
+            c.value_kind = value.map(str::to_owned);
+        }
+        "one_of" | "route" => {
+            c.values = values(raw, w, p, "values");
+            c.normalize = normalize(raw, w, p);
+            if kind == "route" {
+                c.when = predicates(raw.get("when").unwrap_or(&NULL), &format!("{w} when"), p);
+                if c.when.is_empty() {
+                    p.add(w, "route needs at least one 'when' predicate");
+                }
+            }
+        }
+        "equals" => {
+            c.source_field = field(raw, "source_field", w, p);
+            c.normalize = normalize(raw, w, p);
+        }
+        "range" => {
+            c.minimum = bound(raw, "min", w, p);
+            c.maximum = bound(raw, "max", w, p);
+            match (c.minimum, c.maximum) {
+                (None, None) => p.add(w, "range needs 'min', 'max' or both"),
+                (Some(a), Some(b)) if a > b => p.add(w, "'min' must not exceed 'max'"),
+                _ => {}
+            }
+        }
+        "on_time" => {
+            let basis = selector(raw.get("basis").unwrap_or(&NULL))?;
+            if basis.is_none_or(|v| !DEADLINE_BASES.contains(&v)) {
+                p.add(w, "'basis' must be 'target_time' or 'observation'");
+            }
+            c.basis = basis.map(str::to_owned);
+            if basis == Some("target_time") {
+                c.field = field(raw, "field", w, p);
+            } else if raw.contains_key("field") {
+                p.add(w, "the observation basis takes no 'field'");
+            }
+            if !has_due {
+                p.add(w, "on_time needs a contract-level 'due' window");
+            }
+        }
+        "any_of" => {
+            if nested {
+                p.add(w, "any_of branches cannot nest another any_of");
+            }
+            if let Some(Json::Array(branches)) = raw
+                .get("conditions")
+                .filter(|v| matches!(v, Json::Array(a) if a.len() >= 2))
+            {
+                for (i, branch) in branches.iter().enumerate() {
+                    if let Some(child) = condition_at(
+                        branch,
+                        &format!("{w} branch {i}"),
+                        p,
+                        true,
+                        has_due,
+                        depth + 1,
+                    )? {
+                        c.conditions.push(child);
+                    }
+                }
+            } else {
+                p.add(w, "any_of needs at least two branch conditions");
+            }
+            if c.conditions
+                .iter()
+                .any(|c| c.advisory || c.disabled.as_ref().is_some_and(|s| !s.is_empty()))
+            {
+                p.add(
+                    w,
+                    "any_of branches cannot be advisory or disabled themselves",
+                );
+            }
+        }
+        _ => {}
+    }
+    Ok(Some(c))
+}
+
+pub fn key_fields(raw: &Json, location: &str, p: &mut Problems) -> Vec<String> {
+    let single;
+    let items = match raw {
+        Json::Scalar(Scalar::String(_)) => {
+            single = [raw.clone()];
+            single.as_slice()
+        }
+        Json::Array(items) => items,
+        _ => &[],
+    };
+    if items.is_empty()
+        || items.len() > MAX_KEY_FIELDS
+        || !items.iter().all(|v| {
+            v.as_str()
+                .is_some_and(|s| !s.is_empty() && s.chars().count() <= MAX_FIELD_CHARS)
+        })
+    {
+        p.add(
+            location,
+            format!("must be a field name or a list of 1-{MAX_KEY_FIELDS} field names"),
+        );
+        return vec![];
+    }
+    let items: Vec<_> = items
+        .iter()
+        .filter_map(Json::as_str)
+        .map(str::to_owned)
+        .collect();
+    if items.iter().collect::<BTreeSet<_>>().len() != items.len() {
+        p.add(location, "lists a field twice");
+    }
+    items
+}
+
+fn codec_value(raw: &Json, depth: usize) -> Result<Value, LoadError> {
+    if depth > 128 {
+        return Err(LoadError::DepthLimit);
+    }
+    Ok(match raw {
+        Json::Scalar(Scalar::Null) => Value::Null,
+        Json::Scalar(Scalar::Bool(v)) => Value::Bool(*v),
+        Json::Scalar(Scalar::String(v)) => Value::String(v.clone()),
+        Json::Scalar(Scalar::Float(v)) => Value::Float(*v),
+        Json::Scalar(Scalar::Int(v)) => {
+            Value::Int(IntValue::from_decimal(v.decimal()).map_err(LoadError::Canonical)?)
+        }
+        Json::Array(v) => Value::array(
+            v.iter()
+                .map(|v| codec_value(v, depth + 1))
+                .collect::<Result<_, _>>()?,
+        ),
+        Json::Object(v) => Value::object(
+            v.iter()
+                .map(|(k, v)| Ok((ObjectKey::string(k), codec_value(v, depth + 1)?)))
+                .collect::<Result<_, LoadError>>()?,
+        ),
+    })
+}
+
+/// Validate in declaration order, then hash the original decoded document (including defaults omitted).
+pub fn contract_from_dict(raw: &Json) -> Result<Contract, LoadError> {
+    let Json::Object(map) = raw else {
+        return Err(invalid("contract: top level must be a JSON object"));
+    };
+    let get = |key: &str| map.get(key).unwrap_or(&NULL);
+    let mut p = Problems::default();
+    if get("schema_version").as_str() != Some(CONTRACT_SCHEMA_VERSION) {
+        p.add(
+            "contract",
+            format!(
+                "'schema_version' must be {}",
+                py_repr(CONTRACT_SCHEMA_VERSION)
+            ),
+        );
+    }
+    unknown_keys(map, TOP_KEYS, "contract", &mut p);
+    let name = text(map, "name", "contract", &mut p);
+    let description = text(map, "description", "contract", &mut p);
+    if name.is_none() && !map.contains_key("name") {
+        p.add("contract", "'name' is required");
+    }
+    let version = get("version").as_str();
+    if version.is_none_or(|v| v.chars().all(python_space) || v.chars().count() > 64) {
+        p.add(
+            "contract",
+            "'version' must be a non-empty string (at most 64 characters)",
+        );
+    }
+    let (mut source_key, mut target_key) = (vec![], vec![]);
+    if let Json::Object(key) = get("key") {
+        unknown_keys(key, &["source", "target"], "key", &mut p);
+        source_key = key_fields(key.get("source").unwrap_or(&NULL), "key.source", &mut p);
+        target_key = key_fields(key.get("target").unwrap_or(&NULL), "key.target", &mut p);
+        if !source_key.is_empty() && !target_key.is_empty() && source_key.len() != target_key.len()
+        {
+            p.add(
+                "key",
+                "source and target must list the same number of fields",
+            );
+        }
+    } else {
+        p.add(
+            "contract",
+            "'key' must be an object with 'source' and 'target'",
+        );
+    }
+    let eligibility = predicates(get("eligibility"), "eligibility", &mut p);
+    let mut due = None;
+    let has_due = !get("due").is_null();
+    if has_due {
+        if let Json::Object(due_raw) = get("due") {
+            unknown_keys(
+                due_raw,
+                &["source_time_field", "within_seconds"],
+                "due",
+                &mut p,
+            );
+            let field = field(due_raw, "source_time_field", "due", &mut p);
+            let within = due_raw
+                .get("within_seconds")
+                .and_then(integer)
+                .and_then(|i| i.decimal().parse::<u64>().ok())
+                .filter(|i| *i <= MAX_WITHIN_SECONDS);
+            if let Some(within_seconds) = within {
+                if let Some(source_time_field) = field {
+                    due = Some(Due {
+                        source_time_field,
+                        within_seconds,
+                    });
+                }
+            } else {
+                p.add(
+                    "due",
+                    "'within_seconds' must be a non-negative integer (<= 10 years)",
+                );
+            }
+        } else {
+            p.add("due", "must be an object");
+        }
+    }
+    let mut conditions = vec![];
+    match get("conditions") {
+        Json::Array(items) if items.len() > MAX_CONDITIONS => p.add(
+            "contract",
+            format!("at most {MAX_CONDITIONS} conditions are supported"),
+        ),
+        Json::Array(items) if !items.is_empty() => {
+            for (i, item) in items.iter().enumerate() {
+                if let Some(c) =
+                    condition(item, &format!("conditions[{i}]"), &mut p, false, has_due)?
+                {
+                    conditions.push(c);
+                }
+            }
+            if !conditions.is_empty() && conditions.iter().all(|c| c.disabled.is_some()) {
+                p.add(
+                    "contract",
+                    "every condition is disabled; nothing would be evaluated",
+                );
+            }
+            if !conditions.is_empty()
+                && conditions
+                    .iter()
+                    .all(|c| c.advisory || c.disabled.is_some())
+            {
+                p.add(
+                    "contract",
+                    "no decisive condition: at least one must be non-advisory",
+                );
+            }
+        }
+        _ => p.add(
+            "contract",
+            "'conditions' must be a non-empty list (an empty contract proves nothing)",
+        ),
+    }
+    let mut seen = BTreeSet::new();
+    for c in &conditions {
+        for item in std::iter::once(c).chain(c.conditions.iter()) {
+            if !seen.insert(&item.id) && item.id != "?" {
+                p.add(
+                    &format!("condition {}", py_repr(&item.id)),
+                    "duplicate condition id",
+                );
+            }
+        }
+    }
+    if !p.items.is_empty() {
+        return Err(LoadError::Contract(ContractError { problems: p.items }));
+    }
+    let (Some(name), Some(version)) = (name, version) else {
+        return Err(invalid("contract: incomplete"));
+    };
+    let bytes = canonical_codec::canonical_json_bytes(&codec_value(raw, 0)?, false)
+        .map_err(LoadError::Canonical)?;
+    Ok(Contract {
+        name,
+        version: version.into(),
+        description,
+        source_key,
+        target_key,
+        eligibility,
+        due,
+        conditions,
+        sha256: format!("{:x}", Sha256::digest(bytes)),
+    })
+}
+
+/// Read at most 1 MiB + 1 bytes; file errors remain distinct from contract parse errors.
+pub fn load_contract(path: impl AsRef<Path>) -> Result<Contract, LoadError> {
+    let file = std::fs::File::open(path).map_err(LoadError::Io)?;
+    let mut data = Vec::new();
+    file.take((MAX_CONTRACT_BYTES + 1) as u64)
+        .read_to_end(&mut data)
+        .map_err(LoadError::Io)?;
+    load_contract_bytes(&data)
+}
+
+fn load_contract_bytes(data: &[u8]) -> Result<Contract, LoadError> {
+    if data.len() > MAX_CONTRACT_BYTES {
+        return Err(invalid("contract: file exceeds 1 MiB"));
+    }
+    let text = std::str::from_utf8(data.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(data))
+        .map_err(|_| invalid("contract: not valid strict UTF-8 JSON (UnicodeDecodeError)"))?;
+    let raw = parse_strict_json(text).map_err(|error| {
+        let kind = match error {
+            ParseError::Syntax => "JSONDecodeError",
+            ParseError::DepthLimit => "RecursionError",
+            _ => "ValueError",
+        };
+        invalid(format!("contract: not valid strict UTF-8 JSON ({kind})"))
+    })?;
+    contract_from_dict(&raw)
+}
+
 // Python 3.11 Unicode 14.0.0 str.isprintable(), generated over all codepoints.
 const NONPRINTABLE: &[(u32, u32)] = &[
     (0x0, 0x1f),
@@ -1471,6 +1975,191 @@ fn python_printable(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn valid_document(condition: &str) -> Json {
+        parse_strict_json(&format!(r#"{{"schema_version":"sesslint.outcome-contract/v1","name":"synthetic","version":"1","key":{{"source":"id","target":"id"}},"conditions":[{condition}]}}"#)).unwrap()
+    }
+
+    fn errors(raw: &Json) -> Vec<String> {
+        match contract_from_dict(raw).unwrap_err() {
+            LoadError::Contract(e) => e.problems,
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn complete_contract_and_original_document_hash() {
+        let raw = valid_document(r#"{"id":"ok","type":"exists"}"#);
+        let c = contract_from_dict(&raw).unwrap();
+        assert_eq!(c.conditions[0].kind, "exists");
+        assert_eq!(c.source_key, ["id"]);
+        assert_eq!(c.sha256.len(), 64);
+        let mut expanded = raw.clone();
+        if let Json::Object(m) = &mut expanded {
+            m.insert("description".into(), NULL);
+        }
+        let d = contract_from_dict(&expanded).unwrap();
+        assert_eq!(c.description, d.description);
+        assert_ne!(
+            c.sha256, d.sha256,
+            "hash binds raw omitted versus explicit null"
+        );
+    }
+
+    #[test]
+    fn ordered_top_level_errors_and_explicit_null_name() {
+        let problems = errors(&parse_strict_json(r#"{"z":1,"a":1}"#).unwrap());
+        assert_eq!(problems, [
+            "contract: 'schema_version' must be 'sesslint.outcome-contract/v1'",
+            "contract: unknown key 'a'", "contract: unknown key 'z'", "contract: 'name' is required",
+            "contract: 'version' must be a non-empty string (at most 64 characters)",
+            "contract: 'key' must be an object with 'source' and 'target'",
+            "contract: 'conditions' must be a non-empty list (an empty contract proves nothing)"
+        ]);
+        let mut raw = valid_document(r#"{"id":"ok","type":"exists"}"#);
+        if let Json::Object(m) = &mut raw {
+            m.insert("name".into(), NULL);
+        }
+        assert_eq!(errors(&raw), ["contract: incomplete"]);
+        assert_eq!(errors(&NULL), ["contract: top level must be a JSON object"]);
+    }
+
+    #[test]
+    fn condition_error_order_keeps_original_id_location() {
+        let raw = valid_document(
+            r#"{"type":"required","id":false,"z":1,"a":1,"advisory":1,"disabled":"","description":1,"allow_null":1,"allow_empty":null}"#,
+        );
+        assert_eq!(
+            errors(&raw),
+            [
+                "conditions[0]: 'id' must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+                "condition '?': unknown key 'a'",
+                "condition '?': unknown key 'z'",
+                "condition '?': 'advisory' must be true or false",
+                "condition '?': 'disabled' must be a non-empty string (at most 2000 characters)",
+                "condition '?': 'description' must be a non-empty string (at most 2000 characters)",
+                "condition '?': 'field' must be a non-empty field name (at most 256 characters)",
+                "condition '?': 'allow_null' must be true or false",
+                "condition '?': 'allow_empty' must be true or false"
+            ]
+        );
+    }
+
+    #[test]
+    fn count_integer_checks_precede_float_conversion_and_keep_bool_equality() {
+        assert_eq!(
+            errors(&valid_document(r#"{"id":"c","type":"count","min":false}"#)),
+            [
+                "condition 'c': 'min' must be a non-negative integer",
+                "condition 'c': count with min 0 and no max can never be violated"
+            ]
+        );
+        assert_eq!(
+            errors(&valid_document(
+                r#"{"id":"c","type":"count","min":2,"max":0}"#
+            )),
+            [
+                "condition 'c': 'min' must not exceed 'max'",
+                "condition 'c': 'max' 0 asks for absence, which v1 cannot prove; omit it"
+            ]
+        );
+        let raw = valid_document(&format!(
+            r#"{{"id":"c","type":"count","min":{}}}"#,
+            "9".repeat(400)
+        ));
+        assert!(matches!(contract_from_dict(&raw), Err(LoadError::Overflow)));
+        assert_eq!(
+            errors(&valid_document(
+                r#"{"id":"c","type":"range","field":"x","min":2,"max":1}"#
+            )),
+            ["condition 'c': 'min' must not exceed 'max'"]
+        );
+    }
+
+    #[test]
+    fn any_of_parses_branches_then_checks_all_global_ids() {
+        let raw = valid_document(
+            r#"{"id":"same","type":"any_of","conditions":[{"id":"same","type":"exists","advisory":true},{"id":"b","type":"exists","disabled":"reason"}]}"#,
+        );
+        assert_eq!(
+            errors(&raw),
+            [
+                "condition 'same': any_of branches cannot be advisory or disabled themselves",
+                "condition 'same': duplicate condition id"
+            ]
+        );
+        assert_eq!(
+            errors(&valid_document(
+                r#"{"id":"c","type":"exists","disabled":"why"}"#
+            )),
+            [
+                "contract: every condition is disabled; nothing would be evaluated",
+                "contract: no decisive condition: at least one must be non-advisory"
+            ]
+        );
+    }
+
+    #[test]
+    fn due_presence_not_validity_controls_on_time_error() {
+        let mut raw = valid_document(r#"{"id":"c","type":"on_time","basis":"observation"}"#);
+        assert_eq!(
+            errors(&raw),
+            ["condition 'c': on_time needs a contract-level 'due' window"]
+        );
+        if let Json::Object(m) = &mut raw {
+            m.insert("due".into(), Json::Scalar(Scalar::Bool(false)));
+        }
+        assert_eq!(errors(&raw), ["due: must be an object"]);
+    }
+
+    #[test]
+    fn strict_file_bytes_and_limits_fail_before_validation() {
+        for (bytes, expected) in [
+            (b"\xff".as_slice(), "UnicodeDecodeError"),
+            (b"{", "JSONDecodeError"),
+            (b"NaN", "ValueError"),
+            (b"{\"a\":1,\"a\":2}", "ValueError"),
+        ] {
+            assert_eq!(
+                load_contract_bytes(bytes).unwrap_err().to_string(),
+                format!("contract: not valid strict UTF-8 JSON ({expected})")
+            );
+        }
+        assert_eq!(
+            load_contract_bytes(&vec![b' '; MAX_CONTRACT_BYTES + 1])
+                .unwrap_err()
+                .to_string(),
+            "contract: file exceeds 1 MiB"
+        );
+        assert_eq!(
+            load_contract_bytes(&vec![b' '; MAX_CONTRACT_BYTES])
+                .unwrap_err()
+                .to_string(),
+            "contract: not valid strict UTF-8 JSON (JSONDecodeError)"
+        );
+        let raw = valid_document(r#"{"id":"ok","type":"exists"}"#);
+        let bytes =
+            canonical_codec::canonical_json_bytes(&codec_value(&raw, 0).unwrap(), false).unwrap();
+        let bom = [b"\xef\xbb\xbf".as_slice(), bytes.as_slice()].concat();
+        assert_eq!(
+            load_contract_bytes(&bom).unwrap(),
+            contract_from_dict(&raw).unwrap()
+        );
+    }
+
+    #[test]
+    fn decimal_codec_constructor_preserves_large_values_and_rejects_bad_spellings() {
+        for input in ["", "-0", "+1", "01", "-01", "1.0", "1e2", "1\n", "--1"] {
+            assert!(IntValue::from_decimal(input).is_err(), "{input}");
+        }
+        for input in ["0".into(), "-1".into(), "9".repeat(400)] {
+            let value = Value::Int(IntValue::from_decimal(&input).unwrap());
+            assert_eq!(
+                canonical_codec::canonical_json_bytes(&value, false).unwrap(),
+                input.as_bytes()
+            );
+        }
+    }
 
     fn object(text: &str) -> Mapping {
         match parse_strict_json(text).unwrap() {
