@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rust parity tooling validates a reviewed divergence registry and classifies
+  exact approved capture pairs. Pending or malformed entries fail closed;
+  strict byte-parity checks still fail for approved differences. Harness
+  diagnostics use UTF-8 and LF consistently across platforms.
+
 - Project website in `web/` (Astro, static, English + Vietnamese): landing
   page, portable-binary downloads with Sigstore/SLSA verify steps, a rule
   catalog, one-time pricing (Free / Plus / Max), and a changelog generated

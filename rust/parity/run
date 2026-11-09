@@ -21,6 +21,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from divergences import RegistryError, classify, fingerprint, hash_fixture, load_registry
+
 EXPECTED_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 # Scratch worktree. Do not commit this directory.
 SCRATCH_IGNORE = "rust/parity/run-work/"
@@ -234,7 +236,12 @@ def metadata_declares_deps(venv: Path, work: Path) -> bool:
                 if "extra" in marker:
                     continue
                 return True
-            if path.name == "requires.txt" and stripped and not stripped.startswith("#") and not in_extra:
+            if (
+                path.name == "requires.txt"
+                and stripped
+                and not stripped.startswith("#")
+                and not in_extra
+            ):
                 return True
     return False
 
@@ -523,11 +530,15 @@ def scratch_path_ok(repo: Path) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    if sys.version_info < (3, 11):
+    if sys.version_info < (3, 11):  # noqa: UP036 - standalone script's runtime guard
         return refuse("python_too_old")
     pin = load_pin()
     if pin is None:
         return refuse("pin_mismatch", pin="refused")
+    try:
+        divergences = load_registry(HERE / "KNOWN_DIVERGENCES.md")
+    except RegistryError as exc:
+        return refuse(str(exc), pin=pin)
     repo = repo_root()
     if repo is None or not scratch_path_ok(repo):
         return refuse("repo_mismatch", pin=pin)
@@ -544,6 +555,10 @@ def main(argv: list[str]) -> int:
     if resolved is None:
         return refuse("fixture_refused", pin=pin)
     fixture, command = resolved
+    try:
+        fixture_before = hash_fixture(WORK / fixture) if divergences else None
+    except OSError:
+        return refuse("fixture_unreadable", pin=pin, fixture=fixture)
     exe = sesslint_bin(WORK / ".venv")
     if exe is None:
         return refuse("sesslint_missing", pin=pin, fixture=fixture)
@@ -583,11 +598,31 @@ def main(argv: list[str]) -> int:
     cmp_mod = compare_module()
     compare_label = "abstain"
     diff = None
+    divergence_id = None
     if rust_code is not None:
         left = cmp_mod.Capture(python_out, python_err, python_code)
         right = cmp_mod.Capture(rust_out, rust_err, rust_code)
         diff = cmp_mod.compare(left, right)
         compare_label = "match" if diff.equal else "mismatch"
+        if divergences:
+            try:
+                fixture_after = hash_fixture(WORK / fixture)
+            except OSError:
+                return refuse("fixture_unreadable", pin=pin, fixture=fixture)
+            if fixture_before != fixture_after:
+                return refuse("fixture_changed", pin=pin, fixture=fixture)
+            if not diff.equal:
+                observed = fingerprint(
+                    pin,
+                    fixture,
+                    fixture_after,
+                    command,
+                    captured,
+                    (rust_code, rust_out, rust_err),
+                )
+                divergence_id = classify(divergences, observed)
+                if divergence_id is not None:
+                    compare_label = "approved_divergence"
     fields = {
         "pin": pin,
         "fixture": fixture,
@@ -598,6 +633,8 @@ def main(argv: list[str]) -> int:
         "python_stderr_sha256": sha256(python_err),
     }
     emit(fields)
+    if divergence_id is not None:
+        sys.stdout.write(f"divergence_id={divergence_id}\n")
     if rust_out_hash:
         sys.stdout.write(f"rust_stdout_sha256={rust_out_hash}\n")
         sys.stdout.write(f"rust_stderr_sha256={rust_err_hash}\n")
@@ -614,4 +651,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+    sys.stderr.reconfigure(encoding="utf-8", newline="\n")
     raise SystemExit(main(sys.argv[1:]))
