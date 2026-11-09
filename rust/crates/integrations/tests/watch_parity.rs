@@ -157,18 +157,12 @@ fn assert_module_constants(case: &VectorCase) {
         WATCH_EVENT_SCHEMA,
         string_field(&case.expected, "watch_event_schema").expect("watch_event_schema")
     );
-    assert_float_field(
-        &case.expected,
-        "default_interval",
-        DEFAULT_INTERVAL,
-    );
+    assert_float_field(&case.expected, "default_interval", DEFAULT_INTERVAL);
     assert_float_field(&case.expected, "min_interval", MIN_INTERVAL);
     assert_eq!(
         MAX_TRACKED_FILES,
-        usize::try_from(
-            i64_field(&case.expected, "max_tracked_files").expect("max_tracked_files")
-        )
-        .expect("max_tracked_files fits usize")
+        usize::try_from(i64_field(&case.expected, "max_tracked_files").expect("max_tracked_files"))
+            .expect("max_tracked_files fits usize")
     );
     let want_dirs = string_list(&case.expected, "excluded_dirs").expect("excluded_dirs");
     assert_sorted_set("excluded_dirs", _EXCLUDED_DIRS, &want_dirs);
@@ -177,7 +171,11 @@ fn assert_module_constants(case: &VectorCase) {
     let want_exports = string_list(&case.expected, "all_exports").expect("all_exports");
     assert_eq!(
         ALL,
-        want_exports.iter().map(String::as_str).collect::<Vec<_>>().as_slice()
+        want_exports
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
     );
     let _ = case.id;
 }
@@ -285,9 +283,7 @@ fn assert_watch_poll(case: &VectorCase) {
         max_polls: Some(max_polls),
         format: None,
     };
-    let mut scripted = ScriptedCheck {
-        mode: check_mode,
-    };
+    let mut scripted = ScriptedCheck { mode: check_mode };
     let mut transitions = Vec::new();
     let mut on_transition = |transition: &WatchTransition| {
         transitions.push(WatchTransition {
@@ -401,10 +397,7 @@ fn ensure_synthetic_fixtures() {
         &walk.join("alpha.jsonl"),
         b"{\"kind\":\"synthetic-alpha\"}\n",
     );
-    write_fixture(
-        &walk.join("beta.jsonl"),
-        b"{\"kind\":\"synthetic-beta\"}\n",
-    );
+    write_fixture(&walk.join("beta.jsonl"), b"{\"kind\":\"synthetic-beta\"}\n");
     write_fixture(&walk.join(".sesslint.toml"), b"# excluded\n");
     write_fixture(&walk.join(".git/config"), b"[core]\n");
     write_fixture(
@@ -460,7 +453,10 @@ fn assert_sorted_set(label: &str, got: &[&str], want: &[String]) {
 
 fn assert_float_field(obj: &[(String, JsonValue)], key: &str, want: f64) {
     let got = float_field(obj, key).unwrap_or_else(|err| panic!("{key}: {err}"));
-    assert!((got - want).abs() < f64::EPSILON, "{key}: got {got} want {want}");
+    assert!(
+        (got - want).abs() < f64::EPSILON,
+        "{key}: got {got} want {want}"
+    );
 }
 
 fn string_list(obj: &[(String, JsonValue)], key: &str) -> Result<Vec<String>, ParseError> {
@@ -528,7 +524,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -544,7 +546,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

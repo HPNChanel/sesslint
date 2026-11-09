@@ -1110,7 +1110,7 @@ mod tests {
             as_bool(get(expected, "additional_properties")),
             "{id}"
         );
-        assert!(!ADDITIONAL_PROPERTIES, "{id}");
+        assert!(!as_bool(get(expected, "additional_properties")), "{id}");
         assert_eq!(string_list(get(expected, "required")), REQUIRED, "{id}");
         assert_eq!(string_list(get(expected, "verdict_enum")), VERDICTS, "{id}");
         assert_eq!(
@@ -1145,7 +1145,7 @@ mod tests {
             CoveredStdin::Spaces => {
                 assert!(matches!(get(construct, "stdin_hex"), Json::Null), "{id}");
                 let count = as_u64(get(construct, "stdin_spaces"));
-                assert_eq!(count, u64::from(MAX_HOOK_PAYLOAD_BYTES) + 1, "{id}");
+                assert_eq!(count, MAX_HOOK_PAYLOAD_BYTES + 1, "{id}");
                 vec![b' '; usize::try_from(count).expect("space count")]
             }
         };

@@ -193,11 +193,7 @@ fn assert_planned_check(case: &VectorCase) {
     let event = string_field(&case.construct, "event").expect("event");
     let profile = optional_string_field(&case.construct, "profile");
     let format = optional_string_field(&case.construct, "format");
-    let got = planned_check(
-        &event,
-        profile.as_deref(),
-        format.as_deref(),
-    );
+    let got = planned_check(&event, profile.as_deref(), format.as_deref());
     assert_eq!(
         got.profile,
         string_field(&case.expected, "profile").expect("profile")
@@ -206,10 +202,8 @@ fn assert_planned_check(case: &VectorCase) {
     assert_select_field(&case.expected, got.select);
     assert_eq!(
         got.max_file_bytes,
-        u64::try_from(
-            i64_field(&case.expected, "max_file_bytes").expect("max_file_bytes")
-        )
-        .expect("max_file_bytes fits u64"),
+        u64::try_from(i64_field(&case.expected, "max_file_bytes").expect("max_file_bytes"))
+            .expect("max_file_bytes fits u64"),
         "max_file_bytes mismatch for {}",
         case.id
     );
@@ -226,9 +220,8 @@ fn assert_select_field(expected: &[(String, JsonValue)], got: Option<&[&str]>) {
                     _ => panic!("select items must be strings"),
                 })
                 .collect();
-            let got_codes: Option<Vec<String>> = got.map(|slice| {
-                slice.iter().map(|code| (*code).to_owned()).collect()
-            });
+            let got_codes: Option<Vec<String>> =
+                got.map(|slice| slice.iter().map(|code| (*code).to_owned()).collect());
             assert_eq!(got_codes, Some(want));
         }
     }
@@ -397,7 +390,11 @@ fn from_hex_digit(byte: u8) -> Result<u8, String> {
 fn assert_hook_result_payload(id: &str, result: &HookResult, expected: &[(String, JsonValue)]) {
     let kind = string_field(expected, "kind").expect("kind");
     assert_eq!(kind, "hook_result", "{id}: expected hook_result");
-    assert_eq!(result.event, string_field(expected, "event").expect("event"), "{id}: event");
+    assert_eq!(
+        result.event,
+        string_field(expected, "event").expect("event"),
+        "{id}: event"
+    );
     assert_eq!(
         result.verdict.as_str(),
         string_field(expected, "verdict").expect("verdict"),
@@ -458,11 +455,7 @@ fn assert_findings(id: &str, result: &HookResult, expected: &[(String, JsonValue
     }
 }
 
-fn assert_optional_string(
-    obj: &[(String, JsonValue)],
-    key: &str,
-    got: Option<&str>,
-) {
+fn assert_optional_string(obj: &[(String, JsonValue)], key: &str, got: Option<&str>) {
     match obj.iter().find(|(k, _)| k == key) {
         None | Some((_, JsonValue::Null)) => assert_eq!(got, None, "{key} must be absent"),
         Some((_, JsonValue::Str(want))) => assert_eq!(got, Some(want.as_str()), "{key} mismatch"),
@@ -472,14 +465,8 @@ fn assert_optional_string(
 
 fn assert_rust_short_hash_seam() {
     let data = br#"{"session_id":"sess-synthetic","transcript_path":"fixtures/tiny.jsonl"}"#;
-    let error = run_hook(
-        "SessionStart",
-        data,
-        None,
-        None,
-        None,
-    )
-    .expect_err("non-empty session_id must hit short_hash seam");
+    let error = run_hook("SessionStart", data, None, None, None)
+        .expect_err("non-empty session_id must hit short_hash seam");
     assert_eq!(error, HookError::ShortHashUnavailable);
     assert_eq!(error.to_string(), SHORT_HASH_UNAVAILABLE);
 }

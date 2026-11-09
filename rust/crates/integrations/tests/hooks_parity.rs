@@ -62,7 +62,10 @@ fn hooks_module_parity_vectors() {
         "PROVENANCE must declare contains_real_data false"
     );
     let prov_gaps = array_field(&provenance, "known_parity_gaps").expect("PROVENANCE gaps");
-    assert!(prov_gaps.is_empty(), "PROVENANCE known_parity_gaps must be empty");
+    assert!(
+        prov_gaps.is_empty(),
+        "PROVENANCE known_parity_gaps must be empty"
+    );
 
     let manifest_raw = std::fs::read_to_string(manifest_path())
         .unwrap_or_else(|err| panic!("read manifest: {err}"));
@@ -134,21 +137,28 @@ fn assert_module_constants(case: &VectorCase) {
     let want_agents = string_list(&case.expected, "valid_agents").expect("valid_agents");
     assert_eq!(
         VALID_AGENTS,
-        want_agents.iter().map(String::as_str).collect::<Vec<_>>().as_slice()
+        want_agents
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
     );
     let want_exports = string_list(&case.expected, "all_exports").expect("all_exports");
     assert_eq!(
         ALL,
-        want_exports.iter().map(String::as_str).collect::<Vec<_>>().as_slice()
+        want_exports
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
     );
     let _ = case.id;
 }
 
 fn assert_init_hooks_doc(case: &VectorCase) {
     let agent = string_field(&case.construct, "agent").expect("agent");
-    let doc = init_hooks_doc(&agent).unwrap_or_else(|err| {
-        panic!("{}: init_hooks_doc({agent:?}) failed: {err}", case.id)
-    });
+    let doc = init_hooks_doc(&agent)
+        .unwrap_or_else(|err| panic!("{}: init_hooks_doc({agent:?}) failed: {err}", case.id));
     assert_same_bytes(
         &doc.to_json(),
         &string_field(&case.expected, "to_json").expect("to_json"),
@@ -198,7 +208,12 @@ fn assert_init_hooks_doc_deterministic(case: &VectorCase) {
     let first = init_hooks_doc(&agent).expect("first");
     let second = init_hooks_doc(&agent).expect("second");
     assert!(bool_field(&case.expected, "to_json_equal").expect("to_json_equal"));
-    assert_same_bytes(&first.to_json(), &second.to_json(), &case.id, "deterministic json");
+    assert_same_bytes(
+        &first.to_json(),
+        &second.to_json(),
+        &case.id,
+        "deterministic json",
+    );
     assert!(bool_field(&case.expected, "render_human_equal").expect("render_human_equal"));
     assert_same_bytes(
         &first.render_human(),
@@ -286,7 +301,11 @@ fn assert_snippets_content_free(case: &VectorCase) {
         forbidden
     );
     for marker in ["/path/to", "$CLAUDE_PROJECT_DIR", "*.jsonl", "jq", "xargs"] {
-        assert!(!blob.contains(marker), "{}: blob contains {marker}", case.id);
+        assert!(
+            !blob.contains(marker),
+            "{}: blob contains {marker}",
+            case.id
+        );
     }
     assert!(bool_field(&case.expected, "command_prefix_ok").expect("command_prefix_ok"));
     for cmd in claude_commands() {
@@ -297,11 +316,14 @@ fn assert_snippets_content_free(case: &VectorCase) {
 
 fn assert_claude_shell_safe(case: &VectorCase) {
     let unsafe_cmds = array_field(&case.expected, "unsafe_commands").expect("unsafe_commands");
-    assert!(unsafe_cmds.is_empty(), "{}: unsafe commands {:?}", case.id, unsafe_cmds);
     assert!(
-        bool_field(&case.expected, "session_start_claude_json_flag")
-            .expect("session_start_claude_json_flag")
+        unsafe_cmds.is_empty(),
+        "{}: unsafe commands {:?}",
+        case.id,
+        unsafe_cmds
     );
+    assert!(bool_field(&case.expected, "session_start_claude_json_flag")
+        .expect("session_start_claude_json_flag"));
     for cmd in claude_commands() {
         assert!(!cmd.contains('>'));
         assert!(!cmd.contains("tee "));
@@ -417,7 +439,10 @@ fn hook_event_entry(block: &HooksJson, event: &str) -> HooksJson {
     let HooksJson::Array(items) = entries else {
         panic!("entries array");
     };
-    items.first().cloned().unwrap_or_else(|| panic!("empty entries"))
+    items
+        .first()
+        .cloned()
+        .unwrap_or_else(|| panic!("empty entries"))
 }
 
 fn hook_command(entry: &HooksJson) -> String {
@@ -704,11 +729,9 @@ fn parse_number_value(input: &str) -> Result<(JsonValue, &str), ParseError> {
     while idx < bytes.len() && bytes[idx].is_ascii_digit() {
         idx += 1;
     }
-    let magnitude: i64 = input[start_digits..idx]
-        .parse()
-        .map_err(|_| ParseError {
-            message: "number overflow".into(),
-        })?;
+    let magnitude: i64 = input[start_digits..idx].parse().map_err(|_| ParseError {
+        message: "number overflow".into(),
+    })?;
     let value = if negative { -magnitude } else { magnitude };
     Ok((JsonValue::Number(value), &input[idx..]))
 }

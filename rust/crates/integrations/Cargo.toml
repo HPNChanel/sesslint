@@ -3,3 +3,9 @@ name = "integrations"
 version = "0.0.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+serde_json = "=1.0.151"
+model = { path = "../model" }
+checks = { path = "../checks" }
+codec = { path = "../codec" }
