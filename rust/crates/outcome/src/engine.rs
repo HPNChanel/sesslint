@@ -1,8 +1,8 @@
 //! Outcome reconciliation values and comparisons (REC-01..08, RULE-01..08).
 //!
-//! Port of pinned engine.py lines 1..651. Evaluation time is always supplied.
-//! Condition decisions use supplied typed observations; full reconciliation is
-//! deferred to part03. Unicode behavior is frozen to CPython 3.11.9 / Unicode 14.0.0.
+//! Port of pinned engine.py lines 1..834. Evaluation time is always supplied.
+//! Reconciliation uses supplied typed observations. Unicode behavior is frozen
+//! to CPython 3.11.9 / Unicode 14.0.0.
 use crate::contract::{repr_list, Condition, Contract, Integer, Json, Mapping, Predicate, Scalar};
 use crate::snapshot::{format_instant, parse_instant_str, Instant, Record, Snapshot, Value};
 use codec::canonical_codec::{CanonicalCodec, PurePythonCanonicalCodec, Value as CodecValue};
@@ -132,6 +132,7 @@ pub enum HelperError {
     Formatting,
     InvalidCondition(&'static str),
     NumericBound,
+    InvalidGroup,
 }
 impl fmt::Display for HelperError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -144,6 +145,7 @@ impl fmt::Display for HelperError {
             }
             Self::InvalidCondition(field) => write!(f, "condition requires {field}"),
             Self::NumericBound => f.write_str("condition bound cannot be converted to an integer"),
+            Self::InvalidGroup => f.write_str("source group has no records"),
             Self::Formatting => f.write_str("numeric comparison text could not be formatted"),
         }
     }
@@ -1050,6 +1052,295 @@ pub struct Group<'a> {
     pub rows: Vec<&'a Record>,
 }
 
+/// Compare only relevant fields, retaining missing/null/nested distinctions.
+pub fn conflicting(rows: &[&Record], fields: &BTreeSet<String>) -> Result<bool, HelperError> {
+    let (first, rest) = rows.split_first().ok_or(HelperError::InvalidGroup)?;
+    let null = Value::Scalar(Scalar::Null);
+    for row in rest {
+        for name in fields {
+            let a = first.get(name);
+            let b = row.get(name);
+            if a.is_some() != b.is_some()
+                || text(a.unwrap_or(&null))? != text(b.unwrap_or(&null))?
+                || matches!(a, Some(Value::NonScalar(_))) != matches!(b, Some(Value::NonScalar(_)))
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn count_json(count: usize) -> Result<Json, HelperError> {
+    Ok(Json::Scalar(Scalar::Int(
+        Integer::parse(&count.to_string()).map_err(|_| HelperError::NumericBound)?,
+    )))
+}
+
+pub fn evaluate_item(
+    contract: &Contract,
+    ctx: &mut Context<'_>,
+    key: &[String],
+    group: &Group<'_>,
+    matched: &[Record],
+    relevant: &BTreeSet<String>,
+) -> Result<ItemResult, HelperError> {
+    let mut item = ItemResult {
+        key: Some(key.to_vec()),
+        source_row: group.first_row,
+        source_rows: group.rows.len(),
+        status: INCONCLUSIVE.into(),
+        reason: "source_conflict".into(),
+        deadline: None,
+        matched_records: matched.len(),
+        conditions: Vec::new(),
+        detail: Mapping::new(),
+    };
+    if group.rows.len() > 1 && conflicting(&group.rows, relevant)? {
+        return Ok(item);
+    }
+    let record = group.rows.first().ok_or(HelperError::InvalidGroup)?;
+    let (eligible, pred_index) = all_predicates(&contract.eligibility, record, ctx.source_typed)?;
+    if eligible != Some(true) {
+        let index = pred_index.ok_or(HelperError::InvalidCondition("eligibility predicate"))?;
+        let pred = contract
+            .eligibility
+            .get(index)
+            .ok_or(HelperError::InvalidCondition("eligibility predicate"))?;
+        item.detail = string_detail("field", &pred.field);
+        item.detail.insert("predicate".into(), count_json(index)?);
+        (item.status, item.reason) = if eligible == Some(false) {
+            (NOT_APPLICABLE.into(), "not_eligible".into())
+        } else {
+            (INCONCLUSIVE.into(), "eligibility_undecidable".into())
+        };
+        return Ok(item);
+    }
+    let mut due_known = true;
+    if let Some(due) = &contract.due {
+        let started = match record.get(&due.source_time_field) {
+            Some(Value::Scalar(Scalar::String(s))) => parse_instant_str(s),
+            _ => None,
+        };
+        item.deadline = started.and_then(|started| {
+            let delta = i64::try_from(due.within_seconds)
+                .ok()?
+                .checked_mul(1_000_000)?;
+            Instant::from_microseconds(started.microseconds().checked_add(delta)?)
+        });
+        due_known = item.deadline.is_some();
+    }
+    item.conditions = contract
+        .conditions
+        .iter()
+        .map(|cond| evaluate_condition(cond, record, matched, ctx, item.deadline, due_known))
+        .collect::<Result<_, _>>()?;
+    (item.status, item.reason) = item_verdict(&item.conditions)?;
+    Ok(item)
+}
+
+/// Reconcile one pair of observations. None represents a missing/naive instant;
+/// a valid Instant is already aware and normalized to UTC by the snapshot layer.
+pub fn evaluate<'a>(
+    contract: &'a Contract,
+    source: &'a Snapshot,
+    target: &'a Snapshot,
+    as_of: Option<Instant>,
+) -> Result<Evaluation<'a>, EvaluationError> {
+    let as_of =
+        as_of.ok_or_else(|| EvaluationError("the evaluation instant needs a UTC offset".into()))?;
+    for snap in [source, target] {
+        if snap.observed_at.is_some_and(|time| time > as_of) {
+            return Err(EvaluationError(format!(
+                "the evaluation instant precedes the {} observation time",
+                snap.role
+            )));
+        }
+    }
+    reconcile(contract, source, target, as_of).map_err(|e| EvaluationError(e.to_string()))
+}
+
+fn reconcile<'a>(
+    contract: &'a Contract,
+    source: &'a Snapshot,
+    target: &'a Snapshot,
+    as_of: Instant,
+) -> Result<Evaluation<'a>, HelperError> {
+    let mut issues = BTreeSet::new();
+    for (snap, fields, issue) in [
+        (source, &contract.source_key, "source_key_field_absent"),
+        (target, &contract.target_key, "target_key_field_absent"),
+    ] {
+        if !snap.records.is_empty() && fields.iter().any(|name| !snap.fields.contains(name)) {
+            issues.insert(issue.to_owned());
+        }
+    }
+    let mut index: BTreeMap<Vec<String>, Vec<&Record>> = BTreeMap::new();
+    let mut unkeyed_target = 0;
+    for record in &target.records {
+        if let (Some(key), _) = key(record, &contract.target_key) {
+            index.entry(key).or_default().push(record);
+        } else {
+            unkeyed_target += 1;
+        }
+    }
+    // Preserve Python dict insertion order for evaluation/cache side effects;
+    // only the final public item list is lexically sorted.
+    let mut groups: Vec<Group<'_>> = Vec::new();
+    let mut group_index: BTreeMap<Vec<String>, usize> = BTreeMap::new();
+    let mut items = Vec::new();
+    for (i, record) in source.records.iter().enumerate() {
+        let (key, problem) = key(record, &contract.source_key);
+        let Some(key) = key else {
+            items.push(ItemResult {
+                key: None,
+                source_row: i + 1,
+                source_rows: 1,
+                status: INCONCLUSIVE.into(),
+                reason: problem.unwrap_or("key_missing").into(),
+                deadline: None,
+                matched_records: 0,
+                conditions: Vec::new(),
+                detail: Mapping::new(),
+            });
+            continue;
+        };
+        if let Some(&position) = group_index.get(&key) {
+            groups[position].rows.push(record);
+        } else {
+            group_index.insert(key.clone(), groups.len());
+            groups.push(Group {
+                key,
+                first_row: i + 1,
+                rows: vec![record],
+            });
+        }
+    }
+    let mut ctx = Context::new(
+        contract,
+        target,
+        as_of,
+        unkeyed_target,
+        source.input_format != "csv",
+        target.input_format != "csv",
+    );
+    let relevant = contract.relevant_source_fields();
+    for group in &groups {
+        // Existing condition APIs consume &[Record]. Clone only this group's
+        // matching rows, not the entire target observation per source group.
+        let matched: Vec<_> = index
+            .get(&group.key)
+            .into_iter()
+            .flatten()
+            .map(|row| (*row).clone())
+            .collect();
+        items.push(evaluate_item(
+            contract, &mut ctx, &group.key, group, &matched, &relevant,
+        )?);
+    }
+    let unmatched: Vec<_> = index
+        .keys()
+        .filter(|key| !group_index.contains_key(*key))
+        .cloned()
+        .collect();
+    items.sort_by(|a, b| {
+        (a.key.is_none(), &a.key, a.source_row).cmp(&(b.key.is_none(), &b.key, b.source_row))
+    });
+    let statuses: Vec<_> = items.iter().map(|i| i.status.as_str()).collect();
+    let mut outcome_reasons: Vec<_> = issues.iter().cloned().collect();
+    let mut outcome;
+    if source.completeness == "unavailable" {
+        outcome = INCONCLUSIVE;
+        outcome_reasons.insert(0, "source_unavailable".into());
+    } else if items.is_empty() {
+        outcome = NOT_EVALUATED;
+        outcome_reasons.insert(0, "no_source_items".into());
+    } else {
+        outcome = worst(statuses.iter().copied())?.unwrap_or(NOT_EVALUATED);
+        let reason = match outcome {
+            VIOLATED => "some_items_violated",
+            INCONCLUSIVE => "some_items_inconclusive",
+            PENDING => "some_items_pending",
+            VERIFIED => "all_items_verified",
+            NOT_EVALUATED => "items_not_evaluated",
+            NOT_APPLICABLE => "all_items_not_applicable",
+            _ => return Err(HelperError::Key(outcome.into())),
+        };
+        outcome_reasons.insert(0, reason.into());
+        if outcome == VERIFIED && statuses.contains(&NOT_EVALUATED) {
+            outcome = INCONCLUSIVE;
+            outcome_reasons[0] = "some_items_not_evaluated".into();
+        }
+        if source.completeness != "complete" {
+            outcome_reasons.push("source_coverage_unproven".into());
+            if outcome == VERIFIED {
+                outcome = INCONCLUSIVE;
+            }
+        }
+        if !issues.is_empty() && outcome == VERIFIED {
+            outcome = INCONCLUSIVE;
+        }
+    }
+    let counts: Mapping = STATUSES
+        .iter()
+        .map(|status| {
+            Ok((
+                (*status).into(),
+                count_json(statuses.iter().filter(|s| *s == status).count())?,
+            ))
+        })
+        .collect::<Result<_, HelperError>>()?;
+    let mut coverage: Mapping = [
+        ("source_rows", source.records.len()),
+        ("work_items", items.len()),
+        (
+            "unkeyed_source_rows",
+            items.iter().filter(|i| i.key.is_none()).count(),
+        ),
+        (
+            "excluded_items",
+            items.iter().filter(|i| i.reason == "not_eligible").count(),
+        ),
+        (
+            "retried_items",
+            items.iter().filter(|i| i.source_rows > 1).count(),
+        ),
+        ("target_rows", target.records.len()),
+        (
+            "matched_target_records",
+            index
+                .iter()
+                .filter(|(k, _)| group_index.contains_key(*k))
+                .map(|(_, rows)| rows.len())
+                .sum(),
+        ),
+        (
+            "unmatched_target_records",
+            index
+                .iter()
+                .filter(|(k, _)| !group_index.contains_key(*k))
+                .map(|(_, rows)| rows.len())
+                .sum(),
+        ),
+        ("unkeyed_target_rows", unkeyed_target),
+    ]
+    .into_iter()
+    .map(|(name, count)| Ok((name.into(), count_json(count)?)))
+    .collect::<Result<_, HelperError>>()?;
+    coverage.insert("counts".into(), Json::Object(counts));
+    Ok(Evaluation {
+        contract,
+        source,
+        target,
+        as_of,
+        outcome: outcome.into(),
+        outcome_reasons,
+        items,
+        coverage,
+        unmatched_target_keys: unmatched,
+    })
+}
+
 fn casefold(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -1658,6 +1949,219 @@ mod decision_tests {
             field: Some("x".into()),
             ..Condition::default()
         }
+    }
+
+    fn observation(role: &str, rows: &[&str]) -> Snapshot {
+        let mut s = target();
+        s.role = role.into();
+        s.records = rows.iter().map(|r| record(r)).collect();
+        s.fields = s.records.iter().flat_map(|r| r.keys().cloned()).collect();
+        s
+    }
+
+    #[test]
+    fn conflict_preserves_presence_text_and_nested_identity() {
+        let fields = BTreeSet::from(["x".into()]);
+        for (a, b, expected) in [
+            (r#"{}"#, r#"{"x":null}"#, true),
+            (r#"{"x":null}"#, r#"{"x":[]}"#, true),
+            (r#"{"x":{}}"#, r#"{"x":[]}"#, false),
+            (r#"{"x":1}"#, r#"{"x":"1"}"#, false),
+            (r#"{"x":true}"#, r#"{"x":"true"}"#, false),
+            (r#"{"x":" a "}"#, r#"{"x":"a"}"#, true),
+            (r#"{"x":1,"other":2}"#, r#"{"x":1,"other":3}"#, false),
+        ] {
+            assert_eq!(
+                conflicting(&[&record(a), &record(b)], &fields).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(conflicting(&[], &fields), Err(HelperError::InvalidGroup));
+    }
+
+    #[test]
+    fn evaluation_validates_time_before_observations_in_source_order() {
+        let c = contract();
+        let s = observation("source", &[]);
+        let t = observation("target", &[]);
+        assert_eq!(
+            evaluate(&c, &s, &t, None).unwrap_err().0,
+            "the evaluation instant needs a UTC offset"
+        );
+        let earlier = Some(at("2026-11-09T00:00:00Z"));
+        assert_eq!(
+            evaluate(&c, &s, &t, earlier).unwrap_err().0,
+            "the evaluation instant precedes the source observation time"
+        );
+        let mut s = s;
+        s.observed_at = None;
+        assert_eq!(
+            evaluate(&c, &s, &t, earlier).unwrap_err().0,
+            "the evaluation instant precedes the target observation time"
+        );
+    }
+
+    #[test]
+    fn evaluation_groups_retries_sorts_keys_and_accounts_for_every_row() {
+        let c = contract();
+        let s = observation(
+            "source",
+            &[
+                r#"{"x":"z"}"#,
+                "{}",
+                r#"{"x":"a"}"#,
+                r#"{"x":"z"}"#,
+                r#"{"x":false}"#,
+            ],
+        );
+        let t = observation(
+            "target",
+            &[
+                r#"{"x":"z"}"#,
+                r#"{"x":"z"}"#,
+                r#"{"x":"a"}"#,
+                r#"{"x":"y"}"#,
+                r#"{"x":"b"}"#,
+                "{}",
+            ],
+        );
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.outcome, INCONCLUSIVE);
+        assert_eq!(
+            e.items.iter().map(|i| i.source_row).collect::<Vec<_>>(),
+            [3, 1, 2, 5]
+        );
+        assert_eq!(e.items[1].source_rows, 2);
+        assert_eq!(e.items[1].matched_records, 2);
+        assert_eq!(
+            e.unmatched_target_keys,
+            [vec!["b".to_owned()], vec!["y".to_owned()]]
+        );
+        for (name, count) in [
+            ("source_rows", 5),
+            ("work_items", 4),
+            ("unkeyed_source_rows", 2),
+            ("retried_items", 1),
+            ("matched_target_records", 3),
+            ("unmatched_target_records", 2),
+            ("unkeyed_target_rows", 1),
+        ] {
+            assert_eq!(e.coverage[name], count_json(count).unwrap());
+        }
+        assert!(std::ptr::eq(e.source, &s));
+    }
+
+    #[test]
+    fn conflict_precedes_eligibility_and_eligibility_precedes_conditions() {
+        let mut c = contract();
+        c.eligibility = vec![Predicate::new("eligible", "present")];
+        let s = observation(
+            "source",
+            &[
+                r#"{"x":"a","eligible":null}"#,
+                r#"{"x":"a","eligible":true}"#,
+                r#"{"x":"b"}"#,
+            ],
+        );
+        let t = observation("target", &[]);
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.items[0].reason, "source_conflict");
+        assert_eq!(e.items[1].reason, "not_eligible");
+        assert!(e.items.iter().all(|i| i.conditions.is_empty()));
+        assert_eq!(e.coverage["excluded_items"], count_json(1).unwrap());
+        c.eligibility = vec![Predicate::new("eligible", "eq")];
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.items[1].reason, "eligibility_undecidable");
+        assert_eq!(e.items[1].detail["predicate"], count_json(0).unwrap());
+    }
+
+    #[test]
+    fn due_overflow_and_missing_times_stay_unknown() {
+        let mut c = contract();
+        c.due = Some(crate::contract::Due {
+            source_time_field: "start".into(),
+            within_seconds: 1,
+        });
+        let s = observation(
+            "source",
+            &[
+                r#"{"x":"a","start":"9999-12-31T23:59:59.999999Z"}"#,
+                r#"{"x":"b"}"#,
+                r#"{"x":"c","start":"2026-11-09T00:00:00Z"}"#,
+            ],
+        );
+        let t = observation("target", &[]);
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.items[0].conditions[0].reason, "due_unknown");
+        assert_eq!(e.items[1].conditions[0].reason, "due_unknown");
+        assert_eq!(e.items[2].deadline, Some(due()));
+        assert_eq!(e.items[2].status, VIOLATED);
+        c.due.as_mut().unwrap().within_seconds = u64::MAX;
+        assert!(evaluate(&c, &s, &t, Some(due()))
+            .unwrap()
+            .items
+            .iter()
+            .all(|i| i.deadline.is_none()));
+    }
+
+    #[test]
+    fn source_coverage_and_missing_mapping_never_establish_verified() {
+        let c = contract();
+        let mut s = observation("source", &[r#"{"x":"a"}"#]);
+        let mut t = observation("target", &[r#"{"x":"a"}"#]);
+        assert_eq!(evaluate(&c, &s, &t, Some(due())).unwrap().outcome, VERIFIED);
+        s.completeness = "partial".into();
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.outcome, INCONCLUSIVE);
+        assert_eq!(
+            e.outcome_reasons,
+            ["all_items_verified", "source_coverage_unproven"]
+        );
+        s.completeness = "complete".into();
+        t.fields.clear();
+        let e = evaluate(&c, &s, &t, Some(due())).unwrap();
+        assert_eq!(e.outcome, INCONCLUSIVE);
+        assert_eq!(
+            e.outcome_reasons,
+            ["all_items_verified", "target_key_field_absent"]
+        );
+        s.records.clear();
+        assert_eq!(
+            evaluate(&c, &s, &t, Some(due())).unwrap().outcome,
+            NOT_EVALUATED
+        );
+        s.completeness = "unavailable".into();
+        assert_eq!(
+            evaluate(&c, &s, &t, Some(due())).unwrap().outcome_reasons,
+            ["source_unavailable", "target_key_field_absent"]
+        );
+    }
+
+    #[test]
+    fn excluded_and_unevaluated_items_remain_distinct() {
+        let mut c = contract();
+        let s = observation("source", &[r#"{"x":"a"}"#]);
+        let t = observation("target", &[]);
+        c.conditions[0].disabled = Some(String::new());
+        assert_eq!(
+            evaluate(&c, &s, &t, Some(due())).unwrap().outcome,
+            NOT_EVALUATED
+        );
+        c.eligibility = vec![Predicate::new("missing", "present")];
+        assert_eq!(
+            evaluate(&c, &s, &t, Some(due())).unwrap().outcome,
+            NOT_APPLICABLE
+        );
+        let mut context = Context::new(&c, &t, due(), 0, true, true);
+        let group = Group {
+            key: vec![],
+            first_row: 1,
+            rows: vec![],
+        };
+        assert_eq!(
+            evaluate_item(&c, &mut context, &[], &group, &[], &BTreeSet::new()),
+            Err(HelperError::InvalidGroup)
+        );
     }
 
     #[test]
