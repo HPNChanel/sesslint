@@ -1,12 +1,13 @@
 //! Outcome reconciliation values and comparisons (REC-01..08, RULE-01..08).
 //!
-//! Port of pinned engine.py lines 1..329. Evaluation time is always supplied.
-//! The complete evaluator/context belong to later parts; no verdict is inferred
-//! here. Unicode behavior is frozen to CPython 3.11.9 / Unicode 14.0.0.
-use crate::contract::{repr_list, Contract, Integer, Json, Mapping, Predicate, Scalar};
-use crate::snapshot::{parse_instant_str, Instant, Record, Snapshot, Value};
+//! Port of pinned engine.py lines 1..651. Evaluation time is always supplied.
+//! Condition decisions use supplied typed observations; full reconciliation is
+//! deferred to part03. Unicode behavior is frozen to CPython 3.11.9 / Unicode 14.0.0.
+use crate::contract::{repr_list, Condition, Contract, Integer, Json, Mapping, Predicate, Scalar};
+use crate::snapshot::{format_instant, parse_instant_str, Instant, Record, Snapshot, Value};
 use codec::canonical_codec::{CanonicalCodec, PurePythonCanonicalCodec, Value as CodecValue};
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub const VERIFIED: &str = "VERIFIED";
@@ -129,6 +130,8 @@ impl std::error::Error for EvaluationError {}
 pub enum HelperError {
     Key(String),
     Formatting,
+    InvalidCondition(&'static str),
+    NumericBound,
 }
 impl fmt::Display for HelperError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -139,6 +142,8 @@ impl fmt::Display for HelperError {
                 let repr = repr_list([key.as_str()]);
                 f.write_str(&repr[1..repr.len() - 1])
             }
+            Self::InvalidCondition(field) => write!(f, "condition requires {field}"),
+            Self::NumericBound => f.write_str("condition bound cannot be converted to an integer"),
             Self::Formatting => f.write_str("numeric comparison text could not be formatted"),
         }
     }
@@ -520,6 +525,529 @@ pub fn predicate(
         "lte" => number <= bound,
         _ => return Err(HelperError::Key(pred.op.clone())),
     }))
+}
+
+/// Conjunction keeps the first unknown unless a later false decides the result.
+pub fn all_predicates(
+    preds: &[Predicate],
+    record: &Record,
+    typed: bool,
+) -> Result<(Option<bool>, Option<usize>), HelperError> {
+    let mut unknown = None;
+    for (index, pred) in preds.iter().enumerate() {
+        match predicate(pred, record, typed)? {
+            Some(false) => return Ok((Some(false), Some(index))),
+            None if unknown.is_none() => unknown = Some(index),
+            _ => (),
+        }
+    }
+    Ok(if unknown.is_some() {
+        (None, unknown)
+    } else {
+        (Some(true), None)
+    })
+}
+
+/// Key text is exact: integers and strings only, with no trimming/coercion.
+pub fn key(record: &Record, fields: &[String]) -> (Option<Vec<String>>, Option<&'static str>) {
+    let mut parts = Vec::with_capacity(fields.len());
+    for field in fields {
+        let part = match record.get(field) {
+            None | Some(Value::Scalar(Scalar::Null)) => return (None, Some("key_missing")),
+            Some(Value::Scalar(Scalar::String(s))) if s.is_empty() => {
+                return (None, Some("key_missing"))
+            }
+            Some(Value::Scalar(Scalar::String(s))) => s.clone(),
+            Some(Value::Scalar(Scalar::Int(i))) => i.decimal().into(),
+            _ => return (None, Some("key_invalid")),
+        };
+        parts.push(part);
+    }
+    (Some(parts), None)
+}
+
+/// Per-evaluation cache; keys intentionally follow Python condition ids.
+pub struct Context<'a> {
+    pub contract: &'a Contract,
+    pub target: &'a Snapshot,
+    pub as_of: Instant,
+    pub unkeyed_target_rows: usize,
+    pub source_typed: bool,
+    pub target_typed: bool,
+    allowed_values: BTreeMap<String, BTreeSet<Option<String>>>,
+}
+impl<'a> Context<'a> {
+    pub fn new(
+        contract: &'a Contract,
+        target: &'a Snapshot,
+        as_of: Instant,
+        unkeyed_target_rows: usize,
+        source_typed: bool,
+        target_typed: bool,
+    ) -> Self {
+        Self {
+            contract,
+            target,
+            as_of,
+            unkeyed_target_rows,
+            source_typed,
+            target_typed,
+            allowed_values: BTreeMap::new(),
+        }
+    }
+    pub fn allowed(&mut self, cond: &Condition) -> Result<&BTreeSet<Option<String>>, HelperError> {
+        use std::collections::btree_map::Entry;
+        Ok(match self.allowed_values.entry(cond.id.clone()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let values = cond
+                    .values
+                    .iter()
+                    .map(|v| normalized(&Value::Scalar(v.clone()), &cond.normalize))
+                    .collect::<Result<_, _>>()?;
+                entry.insert(values)
+            }
+        })
+    }
+    fn comparison(&self) -> ComparisonContext {
+        ComparisonContext {
+            source_typed: self.source_typed,
+            target_typed: self.target_typed,
+        }
+    }
+}
+pub fn absence_blocker(ctx: &Context<'_>, deadline: Option<Instant>) -> Option<&'static str> {
+    if ctx.target.completeness != "complete" {
+        return Some("target_incomplete");
+    }
+    let Some(observed) = ctx.target.observed_at else {
+        return Some("target_observed_at_unknown");
+    };
+    if deadline.is_some_and(|d| observed < d) {
+        return Some("target_stale");
+    }
+    if ctx.unkeyed_target_rows != 0 {
+        return Some("target_unkeyed_rows");
+    }
+    None
+}
+pub fn waiting(
+    ctx: &Context<'_>,
+    deadline: Option<Instant>,
+    due_known: bool,
+) -> Option<(&'static str, &'static str)> {
+    if ctx.target.completeness == "unavailable" {
+        return Some((INCONCLUSIVE, "target_unavailable"));
+    }
+    if !due_known {
+        return Some((INCONCLUSIVE, "due_unknown"));
+    }
+    if deadline.is_some_and(|d| ctx.as_of < d) {
+        return Some((PENDING, "awaiting_due"));
+    }
+    None
+}
+pub type CheckResult = (String, String, Mapping);
+fn check(status: &str, reason: &str, detail: Mapping) -> CheckResult {
+    (status.into(), reason.into(), detail)
+}
+fn string_detail(key: &str, value: &str) -> Mapping {
+    Mapping::from([(key.into(), Json::Scalar(Scalar::String(value.into())))])
+}
+pub fn per_record(results: &[CheckResult]) -> Result<CheckResult, HelperError> {
+    let status = worst(results.iter().map(|r| r.0.as_str()))?.unwrap_or(NOT_EVALUATED);
+    Ok(results
+        .iter()
+        .find(|r| r.0 == status)
+        .cloned()
+        .unwrap_or_else(|| check(status, "no_target_record", Mapping::new())))
+}
+pub fn field_check(
+    cond: &Condition,
+    records: &[Record],
+    ctx: &mut Context<'_>,
+    source: &Record,
+) -> Result<CheckResult, HelperError> {
+    let name = cond
+        .field
+        .as_deref()
+        .ok_or(HelperError::InvalidCondition("field"))?;
+    let field_detail = || string_detail("field", name);
+    if !ctx.target.fields.contains(name) {
+        return Ok(check(INCONCLUSIVE, "field_not_in_snapshot", field_detail()));
+    }
+    let null = Value::Scalar(Scalar::Null);
+    let mut results = Vec::with_capacity(records.len());
+    for record in records {
+        let present = record.contains_key(name);
+        let value = record.get(name).unwrap_or(&null);
+        let is_null = matches!(value, Value::Scalar(Scalar::Null));
+        let (status, reason, detail) = if cond.kind == "required" {
+            let (status, reason) = if !present {
+                (VIOLATED, "field_absent")
+            } else if is_null && !cond.allow_null {
+                (VIOLATED, "field_null")
+            } else if matches!(value, Value::Scalar(Scalar::String(v)) if v.is_empty())
+                && !cond.allow_empty
+            {
+                (VIOLATED, "field_empty")
+            } else {
+                (VERIFIED, "field_present")
+            };
+            (status, reason, field_detail())
+        } else if cond.kind == "equals" {
+            let source_name = cond
+                .source_field
+                .as_deref()
+                .ok_or(HelperError::InvalidCondition("source_field"))?;
+            let source_value = source.get(source_name);
+            if source_value.is_none() || text(source_value.unwrap_or(&null))?.is_none() {
+                (
+                    INCONCLUSIVE,
+                    "source_value_absent",
+                    string_detail("field", source_name),
+                )
+            } else if !present || is_null {
+                (VIOLATED, "target_value_absent", field_detail())
+            } else if matches!(value, Value::NonScalar(_)) {
+                (INCONCLUSIVE, "value_nested", field_detail())
+            } else if equal(
+                source_value.unwrap_or(&null),
+                value,
+                &cond.normalize,
+                ctx.comparison(),
+            )? {
+                (VERIFIED, "values_match", field_detail())
+            } else {
+                (VIOLATED, "values_differ", field_detail())
+            }
+        } else if !present || is_null {
+            if cond.kind == "route" {
+                (VIOLATED, "wrong_route", field_detail())
+            } else {
+                (NOT_APPLICABLE, "value_absent", field_detail())
+            }
+        } else if matches!(value, Value::NonScalar(_)) {
+            (INCONCLUSIVE, "value_nested", field_detail())
+        } else {
+            match cond.kind.as_str() {
+                "type" => {
+                    let kind = cond
+                        .value_kind
+                        .as_deref()
+                        .ok_or(HelperError::InvalidCondition("kind"))?;
+                    let ok = kind_ok(value, kind, ctx.target_typed);
+                    (
+                        if ok { VERIFIED } else { VIOLATED },
+                        if ok { "type_ok" } else { "type_mismatch" },
+                        Mapping::new(),
+                    )
+                }
+                "one_of" | "route" => {
+                    let actual = normalized(value, &cond.normalize)?;
+                    let ok = ctx.allowed(cond)?.contains(&actual);
+                    let reason = match (cond.kind.as_str(), ok) {
+                        ("one_of", true) => "value_allowed",
+                        ("one_of", false) => "value_not_allowed",
+                        (_, true) => "route_ok",
+                        (_, false) => "wrong_route",
+                    };
+                    (if ok { VERIFIED } else { VIOLATED }, reason, field_detail())
+                }
+                "range" => {
+                    if let Some(n) = number(value, ctx.target_typed) {
+                        let ok = cond.minimum.is_none_or(|v| n >= Number::Float(v))
+                            && cond.maximum.is_none_or(|v| n <= Number::Float(v));
+                        (
+                            if ok { VERIFIED } else { VIOLATED },
+                            if ok { "in_range" } else { "out_of_range" },
+                            field_detail(),
+                        )
+                    } else {
+                        (VIOLATED, "not_a_number", field_detail())
+                    }
+                }
+                _ => continue,
+            }
+        };
+        results.push(check(status, reason, detail));
+    }
+    per_record(&results)
+}
+fn integral_bound(value: f64) -> Result<Integer, HelperError> {
+    if !value.is_finite() {
+        return Err(HelperError::NumericBound);
+    }
+    Integer::parse(&format!("{:.0}", value.trunc())).map_err(|_| HelperError::NumericBound)
+}
+pub fn count_check(
+    cond: &Condition,
+    matched: usize,
+    ctx: &Context<'_>,
+    deadline: Option<Instant>,
+    due_known: bool,
+) -> Result<CheckResult, HelperError> {
+    let low = if cond.kind == "exists" {
+        Integer::from(1)
+    } else {
+        integral_bound(cond.minimum.unwrap_or(0.0))?
+    };
+    let high = if cond.kind == "exists" {
+        None
+    } else {
+        cond.maximum.map(integral_bound).transpose()?
+    };
+    let actual = Integer::parse(&matched.to_string()).map_err(|_| HelperError::NumericBound)?;
+    let mut detail = Mapping::from([(
+        "matched_records".into(),
+        Json::Scalar(Scalar::Int(actual.clone())),
+    )]);
+    if let Some(high) = &high {
+        detail.insert("max".into(), Json::Scalar(Scalar::Int(high.clone())));
+    }
+    if cond.kind == "count" {
+        detail.insert("min".into(), Json::Scalar(Scalar::Int(low.clone())));
+    }
+    let complete = ctx.target.completeness == "complete";
+    if high
+        .as_ref()
+        .is_some_and(|h| decimal_cmp(actual.decimal(), h.decimal()) == Ordering::Greater)
+    {
+        return Ok(if complete {
+            check(VIOLATED, "too_many", detail)
+        } else {
+            check(INCONCLUSIVE, "duplicates_unconfirmed", detail)
+        });
+    }
+    let minimum = if decimal_cmp(low.decimal(), "1") == Ordering::Less {
+        "1"
+    } else {
+        low.decimal()
+    };
+    if decimal_cmp(actual.decimal(), minimum) != Ordering::Less
+        || (low.decimal() == "0" && matched == 0 && high.is_some())
+    {
+        return Ok(if high.is_none() {
+            check(VERIFIED, "present", detail)
+        } else if complete {
+            check(VERIFIED, "count_within", detail)
+        } else {
+            check(INCONCLUSIVE, "upper_bound_unproven", detail)
+        });
+    }
+    if let Some((s, r)) = waiting(ctx, deadline, due_known) {
+        return Ok(check(s, r, detail));
+    }
+    if let Some(r) = absence_blocker(ctx, deadline) {
+        return Ok(check(INCONCLUSIVE, r, detail));
+    }
+    Ok(check(
+        VIOLATED,
+        if matched == 0 { "missing" } else { "too_few" },
+        detail,
+    ))
+}
+/// int(timedelta.total_seconds()) for a positive difference of valid Instants.
+/// Python divides the exact integer microseconds, rounding only the quotient.
+/// Integer seconds fit exactly in binary64 throughout years 1..9999. Rounding
+/// can change their truncation only at the midpoint below the next integer.
+/// That integer has an even significand; ties round upward. Its predecessor
+/// gap times 500000 is an exact dyadic value, so the comparison loses no bits.
+fn positive_total_seconds_integer(microseconds: i64) -> i64 {
+    let whole = microseconds / 1_000_000;
+    let remainder = microseconds % 1_000_000;
+    if remainder == 0 {
+        return whole;
+    }
+    let next = (whole + 1) as f64;
+    let predecessor = f64::from_bits(next.to_bits() - 1);
+    let half_gap_microseconds = (next - predecessor) * 500_000.0;
+    if (1_000_000 - remainder) as f64 <= half_gap_microseconds {
+        whole + 1
+    } else {
+        whole
+    }
+}
+
+pub fn on_time_check(
+    cond: &Condition,
+    records: &[Record],
+    ctx: &Context<'_>,
+    deadline: Option<Instant>,
+    due_known: bool,
+) -> Result<CheckResult, HelperError> {
+    if ctx.target.completeness == "unavailable" {
+        return Ok(check(INCONCLUSIVE, "target_unavailable", Mapping::new()));
+    }
+    let deadline = match deadline {
+        Some(d) if due_known => d,
+        _ => return Ok(check(INCONCLUSIVE, "due_unknown", Mapping::new())),
+    };
+    let formatted = format_instant(Some(deadline)).ok_or(HelperError::Formatting)?;
+    let mut detail = string_detail("deadline", &formatted);
+    detail.insert(
+        "basis".into(),
+        cond.basis.as_ref().map_or(Json::Scalar(Scalar::Null), |b| {
+            Json::Scalar(Scalar::String(b.clone()))
+        }),
+    );
+    if !records.is_empty() {
+        if cond.basis.as_deref() == Some("observation") {
+            return Ok(match ctx.target.observed_at {
+                None => check(INCONCLUSIVE, "target_observed_at_unknown", detail),
+                Some(t) if t <= deadline => check(VERIFIED, "observed_on_time", detail),
+                _ => check(INCONCLUSIVE, "first_seen_after_deadline", detail),
+            });
+        }
+        let field = cond
+            .field
+            .as_deref()
+            .ok_or(HelperError::InvalidCondition("field"))?;
+        if !ctx.target.fields.contains(field) {
+            detail.extend(string_detail("field", field));
+            return Ok(check(INCONCLUSIVE, "field_not_in_snapshot", detail));
+        }
+        let valid: Vec<_> = records
+            .iter()
+            .filter_map(|r| match r.get(field) {
+                Some(Value::Scalar(Scalar::String(t))) => parse_instant_str(t),
+                _ => None,
+            })
+            .collect();
+        let earliest = valid.iter().min().copied();
+        if earliest.is_some_and(|t| t <= deadline) {
+            return Ok(check(VERIFIED, "completed_on_time", detail));
+        }
+        let earliest = match earliest {
+            Some(t) if valid.len() == records.len() => t,
+            _ => return Ok(check(INCONCLUSIVE, "completion_time_unusable", detail)),
+        };
+        let late =
+            positive_total_seconds_integer(earliest.microseconds() - deadline.microseconds());
+        detail.insert(
+            "late_by_seconds".into(),
+            Json::Scalar(Scalar::Int(Integer::from(late))),
+        );
+        return Ok(if ctx.target.completeness == "complete" {
+            check(VIOLATED, "late", detail)
+        } else {
+            check(INCONCLUSIVE, "late_unconfirmed", detail)
+        });
+    }
+    if let Some((s, r)) = waiting(ctx, Some(deadline), due_known) {
+        return Ok(check(s, r, detail));
+    }
+    if let Some(r) = absence_blocker(ctx, Some(deadline)) {
+        return Ok(check(INCONCLUSIVE, r, detail));
+    }
+    Ok(check(VIOLATED, "not_completed_by_deadline", detail))
+}
+pub fn evaluate_condition(
+    cond: &Condition,
+    source: &Record,
+    records: &[Record],
+    ctx: &mut Context<'_>,
+    deadline: Option<Instant>,
+    due_known: bool,
+) -> Result<ConditionResult, HelperError> {
+    let done = |(s, r, detail): CheckResult| {
+        let mut result = ConditionResult::new(&cond.id, &cond.kind, s, r);
+        result.advisory = cond.advisory;
+        result.detail = detail;
+        result
+    };
+    if cond.disabled.is_some() {
+        return Ok(done(check(NOT_EVALUATED, "disabled", Mapping::new())));
+    }
+    if cond.kind == "exists" || cond.kind == "count" {
+        return count_check(cond, records.len(), ctx, deadline, due_known).map(done);
+    }
+    if cond.kind == "on_time" {
+        return on_time_check(cond, records, ctx, deadline, due_known).map(done);
+    }
+    if cond.kind == "any_of" {
+        let branches = cond
+            .conditions
+            .iter()
+            .map(|c| evaluate_condition(c, source, records, ctx, deadline, due_known))
+            .collect::<Result<Vec<_>, _>>()?;
+        let (status, reason) = [
+            (VERIFIED, "any_branch_verified"),
+            (INCONCLUSIVE, "branches_undecided"),
+            (PENDING, "branches_pending"),
+            (VIOLATED, "all_branches_violated"),
+            (NOT_EVALUATED, "no_target_record"),
+        ]
+        .into_iter()
+        .find(|(s, _)| branches.iter().any(|b| b.status == *s))
+        .unwrap_or((NOT_APPLICABLE, "branches_not_applicable"));
+        let mut result = done(check(status, reason, Mapping::new()));
+        result.branches = branches;
+        return Ok(result);
+    }
+    if cond.kind == "route" {
+        match all_predicates(&cond.when, source, ctx.source_typed)? {
+            (Some(false), _) => {
+                return Ok(done(check(
+                    NOT_APPLICABLE,
+                    "route_not_applicable",
+                    Mapping::new(),
+                )))
+            }
+            (None, Some(i)) => {
+                let pred = cond
+                    .when
+                    .get(i)
+                    .ok_or(HelperError::InvalidCondition("when"))?;
+                return Ok(done(check(
+                    INCONCLUSIVE,
+                    "route_undecidable",
+                    string_detail("field", &pred.field),
+                )));
+            }
+            _ => (),
+        }
+    }
+    if records.is_empty() {
+        let (status, reason) =
+            waiting(ctx, deadline, due_known).unwrap_or((NOT_EVALUATED, "no_target_record"));
+        return Ok(done(check(status, reason, Mapping::new())));
+    }
+    if ctx.target.completeness == "unavailable" {
+        return Ok(done(check(
+            INCONCLUSIVE,
+            "target_unavailable",
+            Mapping::new(),
+        )));
+    }
+    field_check(cond, records, ctx, source).map(done)
+}
+pub fn item_verdict(results: &[ConditionResult]) -> Result<(String, String), HelperError> {
+    let decisive: Vec<_> = results
+        .iter()
+        .filter(|r| !r.advisory && r.reason != "disabled")
+        .map(|r| r.status.as_str())
+        .collect();
+    let status = worst(decisive.iter().copied())?.unwrap_or(NOT_EVALUATED);
+    if status == VERIFIED && decisive.contains(&NOT_EVALUATED) {
+        return Ok((INCONCLUSIVE.into(), "conditions_partly_evaluated".into()));
+    }
+    let reason = match status {
+        VIOLATED => "condition_violated",
+        INCONCLUSIVE => "condition_inconclusive",
+        PENDING => "condition_pending",
+        VERIFIED => "conditions_verified",
+        NOT_EVALUATED => "conditions_not_evaluated",
+        NOT_APPLICABLE => "conditions_not_applicable",
+        _ => return Err(HelperError::Key(status.into())),
+    };
+    Ok((status.into(), reason.into()))
+}
+/// Rows borrow the supplied source snapshot, retaining first occurrence order.
+pub struct Group<'a> {
+    pub key: Vec<String>,
+    pub first_row: usize,
+    pub rows: Vec<&'a Record>,
 }
 
 fn casefold(text: &str) -> String {
@@ -1086,5 +1614,394 @@ mod tests {
         assert!(REASONS
             .iter()
             .any(|(k, v)| *k == "missing" && v.contains("complete snapshot")));
+    }
+}
+
+#[cfg(test)]
+mod decision_tests {
+    use super::*;
+    use crate::contract::{contract_from_dict, parse_strict_json};
+    use crate::snapshot::{scalarize, NON_SCALAR};
+    fn at(s: &str) -> Instant {
+        parse_instant_str(s).unwrap()
+    }
+    fn due() -> Instant {
+        at("2026-11-09T00:00:01Z")
+    }
+    fn record(s: &str) -> Record {
+        let Json::Object(m) = parse_strict_json(s).unwrap() else {
+            panic!()
+        };
+        scalarize(&m)
+    }
+    fn contract() -> Contract {
+        contract_from_dict(&parse_strict_json(r#"{"schema_version":"sesslint.outcome-contract/v1","name":"synthetic","version":"1","key":{"source":["x"],"target":["x"]},"conditions":[{"id":"exists","type":"exists"}]}"#).unwrap()).unwrap()
+    }
+    fn target() -> Snapshot {
+        Snapshot {
+            role: "target".into(),
+            name: "synthetic.json".into(),
+            sha256: "0".repeat(64),
+            input_format: "json".into(),
+            records: vec![],
+            fields: ["x".into(), "done".into()].into_iter().collect(),
+            observed_at: Some(due()),
+            completeness: "complete".into(),
+            origin: "user_file".into(),
+            demo: false,
+        }
+    }
+    fn condition(kind: &str) -> Condition {
+        Condition {
+            id: "c".into(),
+            kind: kind.into(),
+            field: Some("x".into()),
+            ..Condition::default()
+        }
+    }
+
+    #[test]
+    fn timedelta_rounds_exact_quotient_without_double_rounding() {
+        for (micros, expected) in [
+            (999_999, 0),
+            (1_000_000, 1),
+            (9_999_999_999_999_999, 9_999_999_999),
+            (99_999_999_999_999_992, 99_999_999_999),
+            (99_999_999_999_999_993, 100_000_000_000),
+            (199_999_999_999_999_984, 199_999_999_999),
+            (299_999_999_999_999_969, 299_999_999_999),
+            (299_999_999_999_999_970, 300_000_000_000),
+        ] {
+            assert_eq!(positive_total_seconds_integer(micros), expected);
+        }
+        let c = contract();
+        let t = target();
+        let ctx = Context::new(&c, &t, due(), 0, true, true);
+        let mut cond = condition("on_time");
+        cond.field = Some("done".into());
+        cond.basis = Some("target_time".into());
+        let out = on_time_check(
+            &cond,
+            &[record(r#"{"done":"0317-11-21T17:46:39.999999Z"}"#)],
+            &ctx,
+            Some(at("0001-01-01T00:00:00Z")),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            out.2["late_by_seconds"],
+            Json::Scalar(Scalar::Int(Integer::from(9_999_999_999)))
+        );
+    }
+
+    #[test]
+    fn conjunction_false_overrides_unknown_and_keys_are_exact() {
+        let mut p = Predicate::new("x", "eq");
+        p.value = Scalar::String("yes".into());
+        let r = record(r#"{"x":"no","n":123,"b":true,"blank":" "}"#);
+        assert_eq!(
+            all_predicates(&[Predicate::new("missing", "eq"), p], &r, true).unwrap(),
+            (Some(false), Some(1))
+        );
+        assert_eq!(
+            all_predicates(&[Predicate::new("missing", "eq")], &r, true).unwrap(),
+            (None, Some(0))
+        );
+        assert_eq!(all_predicates(&[], &r, true).unwrap(), (Some(true), None));
+        assert_eq!(
+            key(&r, &["n".into(), "blank".into()]),
+            (Some(vec!["123".into(), " ".into()]), None)
+        );
+        assert_eq!(
+            key(&r, &["missing".into(), "b".into()]),
+            (None, Some("key_missing"))
+        );
+        assert_eq!(
+            key(&r, &["b".into(), "missing".into()]),
+            (None, Some("key_invalid"))
+        );
+    }
+    #[test]
+    fn absence_and_waiting_preserve_gate_precedence() {
+        let c = contract();
+        let mut t = target();
+        t.completeness = "partial".into();
+        t.observed_at = None;
+        assert_eq!(
+            absence_blocker(&Context::new(&c, &t, due(), 1, true, true), Some(due())),
+            Some("target_incomplete")
+        );
+        t.completeness = "complete".into();
+        assert_eq!(
+            absence_blocker(&Context::new(&c, &t, due(), 1, true, true), Some(due())),
+            Some("target_observed_at_unknown")
+        );
+        t.observed_at = Some(at("2026-11-09T00:00:00Z"));
+        assert_eq!(
+            absence_blocker(&Context::new(&c, &t, due(), 1, true, true), Some(due())),
+            Some("target_stale")
+        );
+        t.observed_at = Some(due());
+        assert_eq!(
+            absence_blocker(&Context::new(&c, &t, due(), 1, true, true), Some(due())),
+            Some("target_unkeyed_rows")
+        );
+        assert_eq!(
+            absence_blocker(&Context::new(&c, &t, due(), 0, true, true), Some(due())),
+            None
+        );
+        let early = at("2026-11-09T00:00:00Z");
+        assert_eq!(
+            waiting(
+                &Context::new(&c, &t, early, 0, true, true),
+                Some(due()),
+                false
+            ),
+            Some((INCONCLUSIVE, "due_unknown"))
+        );
+        assert_eq!(
+            waiting(
+                &Context::new(&c, &t, early, 0, true, true),
+                Some(due()),
+                true
+            ),
+            Some((PENDING, "awaiting_due"))
+        );
+        t.completeness = "unavailable".into();
+        assert_eq!(
+            waiting(
+                &Context::new(&c, &t, early, 0, true, true),
+                Some(due()),
+                false
+            ),
+            Some((INCONCLUSIVE, "target_unavailable"))
+        );
+    }
+    #[test]
+    fn count_positive_evidence_and_upper_bound_proofs_differ() {
+        let c = contract();
+        let mut t = target();
+        t.completeness = "unavailable".into();
+        let ctx = Context::new(&c, &t, due(), 0, true, true);
+        assert_eq!(
+            count_check(&condition("exists"), 1, &ctx, None, false)
+                .unwrap()
+                .0,
+            VERIFIED
+        );
+        let mut cond = condition("count");
+        cond.minimum = Some(0.0);
+        cond.maximum = Some(1.0);
+        assert_eq!(
+            count_check(&cond, 0, &ctx, None, false).unwrap().1,
+            "upper_bound_unproven"
+        );
+        assert_eq!(
+            count_check(&cond, 2, &ctx, None, false).unwrap().1,
+            "duplicates_unconfirmed"
+        );
+        t.completeness = "complete".into();
+        let ctx = Context::new(&c, &t, due(), 0, true, true);
+        assert_eq!(
+            count_check(&cond, 0, &ctx, None, false).unwrap().1,
+            "count_within"
+        );
+        assert_eq!(
+            count_check(&cond, 2, &ctx, None, false).unwrap().1,
+            "too_many"
+        );
+        cond.maximum = None;
+        cond.minimum = Some(1e100);
+        let out = count_check(&cond, 1, &ctx, None, true).unwrap();
+        assert_eq!(out.1, "too_few");
+        let Json::Scalar(Scalar::Int(i)) = &out.2["min"] else {
+            panic!()
+        };
+        assert!(i.decimal().len() > 90);
+    }
+    #[test]
+    fn nested_fields_and_source_absence_do_not_become_verified() {
+        let c = contract();
+        let t = target();
+        let mut ctx = Context::new(&c, &t, due(), 0, true, true);
+        let nested = Record::from([("x".into(), Value::NonScalar(NON_SCALAR))]);
+        assert_eq!(
+            field_check(
+                &condition("required"),
+                std::slice::from_ref(&nested),
+                &mut ctx,
+                &Record::new()
+            )
+            .unwrap()
+            .1,
+            "field_present"
+        );
+        let mut cond = condition("equals");
+        cond.source_field = Some("x".into());
+        assert_eq!(
+            field_check(
+                &cond,
+                std::slice::from_ref(&nested),
+                &mut ctx,
+                &Record::new()
+            )
+            .unwrap()
+            .1,
+            "source_value_absent"
+        );
+        assert_eq!(
+            field_check(&cond, &[nested], &mut ctx, &record(r#"{"x":1}"#))
+                .unwrap()
+                .1,
+            "value_nested"
+        );
+        cond.kind = "range".into();
+        cond.minimum = Some(9007199254740992.0);
+        cond.maximum = cond.minimum;
+        assert_eq!(
+            field_check(
+                &cond,
+                &[record(r#"{"x":9007199254740993}"#)],
+                &mut ctx,
+                &Record::new()
+            )
+            .unwrap()
+            .1,
+            "out_of_range"
+        );
+    }
+    #[test]
+    fn earliest_timely_record_wins_before_other_unusable_times() {
+        let c = contract();
+        let mut t = target();
+        t.completeness = "partial".into();
+        let mut cond = condition("on_time");
+        cond.field = Some("done".into());
+        cond.basis = Some("target_time".into());
+        let ctx = Context::new(&c, &t, due(), 0, true, true);
+        let timely = record(r#"{"done":"2026-11-09T00:00:01Z"}"#);
+        let late = record(r#"{"done":"2026-11-09T00:00:01.999999Z"}"#);
+        assert_eq!(
+            on_time_check(&cond, &[Record::new(), timely], &ctx, Some(due()), true)
+                .unwrap()
+                .1,
+            "completed_on_time"
+        );
+        assert_eq!(
+            on_time_check(
+                &cond,
+                &[Record::new(), late.clone()],
+                &ctx,
+                Some(due()),
+                true
+            )
+            .unwrap()
+            .1,
+            "completion_time_unusable"
+        );
+        let out = on_time_check(&cond, &[late], &ctx, Some(due()), true).unwrap();
+        assert_eq!(out.1, "late_unconfirmed");
+        assert_eq!(
+            out.2["late_by_seconds"],
+            Json::Scalar(Scalar::Int(Integer::from(0)))
+        );
+    }
+    #[test]
+    fn branch_status_priority_and_partial_item_evaluation_are_distinct() {
+        let c = contract();
+        let t = target();
+        let mut ctx = Context::new(&c, &t, due(), 0, true, true);
+        let rows = [record(r#"{"x":"yes"}"#)];
+        let source = Record::new();
+        let mut missing = condition("equals");
+        missing.source_field = Some("missing".into());
+        let mut any = condition("any_of");
+        any.conditions = vec![missing, condition("exists")];
+        let out = evaluate_condition(&any, &source, &rows, &mut ctx, Some(due()), true).unwrap();
+        assert_eq!(out.reason, "any_branch_verified");
+        assert_eq!(out.branches.len(), 2);
+        let pass = ConditionResult::new("a", "exists", VERIFIED, "present");
+        let mut skip = ConditionResult::new("b", "required", NOT_EVALUATED, "no_target_record");
+        assert_eq!(
+            item_verdict(&[pass.clone(), skip.clone()]).unwrap(),
+            (INCONCLUSIVE.into(), "conditions_partly_evaluated".into())
+        );
+        skip.reason = "disabled".into();
+        assert_eq!(item_verdict(&[pass, skip]).unwrap().0, VERIFIED);
+        let mut route = condition("route");
+        route.when = vec![Predicate::new("x", "eq")];
+        assert_eq!(
+            evaluate_condition(&route, &source, &[], &mut ctx, None, false)
+                .unwrap()
+                .reason,
+            "route_undecidable"
+        );
+        route.disabled = Some(String::new());
+        assert_eq!(
+            evaluate_condition(&route, &source, &[], &mut ctx, None, false)
+                .unwrap()
+                .reason,
+            "disabled"
+        );
+    }
+    #[test]
+    fn cache_uses_condition_id_and_first_worst_record_is_retained() {
+        let c = contract();
+        let t = target();
+        let mut ctx = Context::new(&c, &t, due(), 0, true, true);
+        let mut cond = condition("one_of");
+        cond.normalize = vec!["casefold".into()];
+        cond.values = vec![Scalar::String("Straße".into())];
+        assert!(ctx
+            .allowed(&cond)
+            .unwrap()
+            .contains(&Some("strasse".into())));
+        cond.values = vec![Scalar::String("other".into())];
+        assert!(ctx
+            .allowed(&cond)
+            .unwrap()
+            .contains(&Some("strasse".into())));
+        cond.id = "other".into();
+        assert!(ctx.allowed(&cond).unwrap().contains(&Some("other".into())));
+        let rows = [
+            check(VERIFIED, "pass", Mapping::new()),
+            check(VIOLATED, "first", Mapping::new()),
+            check(VIOLATED, "second", Mapping::new()),
+        ];
+        assert_eq!(per_record(&rows).unwrap().1, "first");
+        assert_eq!(per_record(&[]).unwrap().1, "no_target_record");
+    }
+    #[test]
+    fn invalid_typed_conditions_return_errors_without_panicking() {
+        let c = contract();
+        let t = target();
+        let mut ctx = Context::new(&c, &t, due(), 0, true, true);
+        let rows = [record(r#"{"x":1}"#)];
+        let source = Record::new();
+        let mut cond = condition("required");
+        cond.field = None;
+        assert_eq!(
+            field_check(&cond, &rows, &mut ctx, &source),
+            Err(HelperError::InvalidCondition("field"))
+        );
+        cond = condition("equals");
+        assert_eq!(
+            field_check(&cond, &rows, &mut ctx, &source),
+            Err(HelperError::InvalidCondition("source_field"))
+        );
+        cond = condition("type");
+        assert_eq!(
+            field_check(&cond, &rows, &mut ctx, &source),
+            Err(HelperError::InvalidCondition("kind"))
+        );
+        cond = condition("count");
+        cond.minimum = Some(f64::NAN);
+        assert_eq!(
+            count_check(&cond, 0, &ctx, None, true),
+            Err(HelperError::NumericBound)
+        );
+        assert!(
+            item_verdict(&[ConditionResult::new("x", "exists", "invalid", "present")]).is_err()
+        );
     }
 }
