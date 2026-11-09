@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/outcome.engine/generate",
+  "known_parity_gaps": [
+    "Unicode scalar values; JSON depth128 and integer digit limit4300. No custom mappings, Python subclasses or lone surrogates.",
+    "CPython3.11.9 Unicode14/ISO parsing behavior; no cross-version guarantee.",
+    "Typed invalid empty Group yields InvalidGroup, invalid conditions yield typed errors instead of Python asserts. Option<Instant> None represents missing/naive input.",
+    "Engine reconciliation only. No OutcomeReport/API/CLI, file-loading chain, schema, full workspace, multi-OS or release proof. All38 report/API-combined source tests are not_applicable, not partial-covered."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

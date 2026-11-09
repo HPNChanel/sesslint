@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Regenerate synthetic engine vectors against the exact CPython source pin."""
+
+import ast
+import hashlib
+import importlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+MODULE = "sesslint.outcome.engine"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_SOURCE = "tests/outcome/test_outcome_engine.py"
+assert sys.implementation.name == "cpython" and sys.version_info[:3] == (3, 11, 9), sys.version
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wire(value):
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def dump(name, value):
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+vectors = []
+family_counts = {}
+with tempfile.TemporaryDirectory(prefix="sesslint-engine-vectors-") as temporary:
+    root = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            if member.is_dir():
+                continue
+            path = Path(member.filename)
+            assert (
+                not path.is_absolute()
+                and ".." not in path.parts
+                and path.parts[:2] == ("src", "sesslint")
+            )
+            dest = root / path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(z.read(member))
+    sys.path.insert(0, str(root / "src"))
+    engine = importlib.import_module(MODULE)
+    assert Path(engine.__file__).resolve() == (root / "src/sesslint/outcome/engine.py").resolve()
+    for family in ["part01", "part02", "part03"]:
+        cases = importlib.import_module(family)
+        results = cases.expected(engine)
+        family_counts[family] = len(cases.cases)
+        for case, result in zip(cases.cases, results, strict=True):
+            vectors.append(
+                dict(
+                    id=len(vectors),
+                    family=family,
+                    input={k: v for k, v in case.items() if k != "id"},
+                    expected_json=wire(result),
+                )
+            )
+
+test_bytes = show(TEST_SOURCE)
+tree = ast.parse(test_bytes)
+rows = []
+for node in tree.body:
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith(
+        "test_"
+    ):
+        continue
+    # These source functions assert API/report/loader behavior. Engine projections
+    # cannot establish the same result type or cover their complete assertion set.
+    rows.append(
+        dict(
+            test_file=TEST_SOURCE,
+            test_name=node.name,
+            status="not_applicable",
+            vector_ids=[],
+            reason=(
+                "Whole test exercises OutcomeReport/API/snapshot loading or report serialization; "
+                "this engine-only corpus does not claim that result type or partial coverage."
+            ),
+        )
+    )
+assert len(rows) == 38
+# One case per line keeps this larger corpus reviewable without expanding every
+# tagged scalar into several lines. Expected output bytes are still untouched.
+header = wire(dict(schema=SCHEMA, module=MODULE, python_commit=PIN))
+(HERE / "vectors.json").write_text(
+    header[:-1] + ',"cases":[\n' + ",\n".join(map(wire, vectors)) + "\n]}\n",
+    encoding="utf-8",
+    newline="\n",
+)
+dump("coverage.json", dict(rows=rows))
+dump(
+    "manifest.json",
+    dict(
+        schema=SCHEMA,
+        module=MODULE,
+        python_commit=PIN,
+        python_version="CPython 3.11.9",
+        python_sha256={
+            name: digest(show(f"src/sesslint/outcome/{name}.py"))
+            for name in ["engine", "contract", "snapshot"]
+        },
+        rust_sha256={
+            name: digest((ROOT / f"rust/crates/outcome/src/{name}.rs").read_bytes())
+            for name in ["engine", "contract", "snapshot"]
+        },
+        test_source_sha256=digest(test_bytes),
+        generator="rust/parity/vectors/outcome.engine/generate",
+        generator_sha256={
+            name: digest((HERE / name).read_bytes())
+            for name in ["generate", "part01.py", "part02.py", "part03.py"]
+        },
+        vectors_sha256=digest((HERE / "vectors.json").read_bytes()),
+        coverage_sha256=digest((HERE / "coverage.json").read_bytes()),
+        vector_count=len(vectors),
+        family_counts=family_counts,
+    ),
+)
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        origin="synthetic",
+        python_commit=PIN,
+        generator="rust/parity/vectors/outcome.engine/generate",
+        known_parity_gaps=[
+            "Unicode scalar values; JSON depth128 and integer digit limit4300. "
+            "No custom mappings, Python subclasses or lone surrogates.",
+            "CPython3.11.9 Unicode14/ISO parsing behavior; no cross-version guarantee.",
+            "Typed invalid empty Group yields InvalidGroup, invalid conditions yield typed errors "
+            "instead of Python asserts. Option<Instant> None represents missing/naive input.",
+            "Engine reconciliation only. No OutcomeReport/API/CLI, file-loading chain, schema, "
+            "full workspace, multi-OS or release proof. All38 report/API-combined source tests "
+            "are not_applicable, not partial-covered.",
+        ],
+    ),
+)
+print(
+    json.dumps(
+        dict(
+            vectors=len(vectors),
+            family_counts=family_counts,
+            sha256=digest((HERE / "vectors.json").read_bytes()),
+            covered=0,
+            not_applicable=len(rows),
+        )
+    )
+)
