@@ -1,0 +1,47 @@
+{
+  "coverage_sha256": "e9f7fcc2ac0e8ef97cc239eaf415a06ad2d045eda8a93302fb347c70bb5cfa3b",
+  "emission_count": 81,
+  "fixture_sha256": {
+    "PROVENANCE.json": "c4bb25e65be56e8baa8b8af6f9b0a3ac2b5bb6fe2950c6de0e46a96d8b4e4c85",
+    "contract.json": "9a2d768ff98e016dd53a2ef62cb20fdd7d372fe374cb7e144637972f0b747524",
+    "expected_report.json": "90d4e8976f647dbc411b6ff539e2562ff35e47a556517b533b2340ff5aeb1111",
+    "source.csv": "cdda00817ffd2448070be1b8edefbc3aaee613377c2b4ba606c87e0167ee6a23",
+    "target.jsonl": "19df5235e923638937d9b6e0c7619c87d36be1d8ba79554cb809b0b85074301f",
+    "target_complete.json": "0db206ca7f9c93d054da4bb3681069bd9a4bfaa5150db83984033aff9412c44f"
+  },
+  "generator_sha256": "fa1737ac011f990657db664749091e29a1fdc74f298d25c1431ee38f7713b9a9",
+  "invalid_count": 1654,
+  "jsonschema_version": "4.26.0",
+  "negative_module_corpus_sha256": "20213a63428c9bb684d0b47e40e20b9895f9645169745041beb40b044bcc6bdc",
+  "oracle": "Draft202012Validator",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "rust_sha256": {
+    "rust/crates/codec/src/canonical_codec.rs": "459bebc65da604a295226527c2797443fc60eb5aabab5aaf5279b02d2721ea31",
+    "rust/crates/model/src/version.rs": "0a5bf0aeed913066e809563ca2119d4203ef36ae35a9a7d2c6d09deac65116a5",
+    "rust/crates/outcome/src/contract.rs": "d779d04a4406d1db157ffdf8428d1f492a30cd2f9df75920ac5f54294d7e4872",
+    "rust/crates/outcome/src/engine.rs": "77f20da3027b64412caa439a4c6d2ea78360d88fad256ae9651cc1810f1e2d6b",
+    "rust/crates/outcome/src/lib.rs": "6cc39ccb507f7fddf04cd5778ef8c05104d30fbc34081c679d7cd4c3cad6aa04",
+    "rust/crates/outcome/src/report.rs": "133fe340c7923733d548cc40dd0c7144d0a1bdb96035490f2d946820a0a1bf60",
+    "rust/crates/outcome/src/schema/sesslint.outcome-report.v1.rs": "270589638c14a6708da0ba2d0b1ba3b4030c555d42c168085c41e251b5e8c0d6",
+    "rust/crates/outcome/src/snapshot.rs": "e8895e3bdf946a3fa206b33b293573f6b6d8a65ba80640feda551dec41bd4988"
+  },
+  "source_sha256": {
+    "fixtures/outcome/orders/PROVENANCE.json": "c4bb25e65be56e8baa8b8af6f9b0a3ac2b5bb6fe2950c6de0e46a96d8b4e4c85",
+    "fixtures/outcome/orders/contract.json": "9a2d768ff98e016dd53a2ef62cb20fdd7d372fe374cb7e144637972f0b747524",
+    "fixtures/outcome/orders/expected_report.json": "90d4e8976f647dbc411b6ff539e2562ff35e47a556517b533b2340ff5aeb1111",
+    "fixtures/outcome/orders/source.csv": "cdda00817ffd2448070be1b8edefbc3aaee613377c2b4ba606c87e0167ee6a23",
+    "fixtures/outcome/orders/target.jsonl": "19df5235e923638937d9b6e0c7619c87d36be1d8ba79554cb809b0b85074301f",
+    "fixtures/outcome/orders/target_complete.json": "0db206ca7f9c93d054da4bb3681069bd9a4bfaa5150db83984033aff9412c44f",
+    "schemas/sesslint.outcome-report.v1.json": "4555d3511fdcac9cc25170d0d656e7403d35174067acd0dab7fd57656f4ed26f",
+    "src/sesslint/outcome/__init__.py": "ee9a6d8db58adbadc772cc1dccfbc6f825d96cc327fcb6e10225e1f5ab1de3df",
+    "src/sesslint/outcome/contract.py": "37ec06a8baa66307c4652a1dc6ce2a64d6b5131af3a44d9ac14e3f24a61abf01",
+    "src/sesslint/outcome/engine.py": "0637f2b82544a07c11d0a9f5ca4fbc16e16c74913d70d86e1e29ab7f5819de1e",
+    "src/sesslint/outcome/report.py": "d1424dbd08de853db27ec31238c00f9e58768476f3d87169c0a20dd505b95a59",
+    "src/sesslint/outcome/snapshot.py": "2b2848e2ec927a1e2f07be7d3c0eeecdf18a7d8f75e7ed107e221e9950e6a10a",
+    "tests/outcome/test_outcome_engine.py": "f890f8ba2b890812258b727ee9b422764b6b8afcae69b56b919b23c28464a1c3"
+  },
+  "valid_count": 303,
+  "validation_count": 1957,
+  "vectors_sha256": "8b03543fb5d50e0ca2df75d7f289b125d2d10e5bcc34cf5d7b2410680c35da9b"
+}

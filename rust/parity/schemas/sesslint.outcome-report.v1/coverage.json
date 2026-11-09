@@ -1,0 +1,196 @@
+{
+  "covered_count": 1,
+  "not_applicable_count": 37,
+  "rows": [
+    {
+      "note": "Complete schema/golden/status/exit assertions reproduced",
+      "status": "covered",
+      "test": "tests/outcome/test_outcome_engine.py::test_orders_fixture_end_to_end_against_golden"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at06_missing_and_duplicate_per_id_not_totals"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at07_ineligible_items_are_not_applicable"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_eligibility_on_missing_field_is_undecidable"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at08_before_deadline_is_pending"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at09_missing_after_deadline_in_complete_target_is_violated"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at10_11_22_absence_needs_complete_current_target"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_unkeyed_target_rows_block_absence"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at12_late_arrival_exists_but_on_time_violated"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_on_time_uses_earliest_valid_completion"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at46_47_observation_basis"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at13_17_keys_match_exactly"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_integer_and_string_keys_compare_as_text"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_invalid_keys_are_inconclusive_not_dropped"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at14_composite_namespaced_keys"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at15_identical_retries_merge_and_conflicts_do_not"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at16_route_is_separate_from_existence"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at18_19_session_integrity_is_a_separate_dimension"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at21_unproven_source_coverage_never_verifies"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at23_mapping_problems_surface"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_field_conditions_and_typing"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_csv_values_coerce_strictly"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_any_of_advisory_and_disabled"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at41_violations_and_inconclusive_items_are_both_reported"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at42_naive_source_time_is_inconclusive"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at45_run_status_is_not_the_outcome"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_empty_or_unavailable_source"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_evaluation_instant_is_never_the_wall_clock"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_at38_deterministic_regardless_of_record_order"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_hash_keys_hide_plain_keys"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_reports_are_content_free"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_demo_snapshots_are_flagged"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_every_emitted_reason_is_documented"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_unevaluated_items_never_roll_up_to_verified"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_extreme_numbers_and_times_do_not_crash"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_equals_compares_json_numbers_numerically"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_hashed_output_order_does_not_follow_plain_keys"
+    },
+    {
+      "note": "No partial credit from schema or emission projections",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_engine.py::test_default_detail_lists_only_non_passing_conditions"
+    }
+  ]
+}

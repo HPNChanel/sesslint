@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic",
+  "generator": "hand-authored",
+  "seed": 0,
+  "created": "2026-10-21",
+  "contains_real_data": false,
+  "description": "Synthetic OutcomeGuard orders-to-shipments scenario: one contract, a CSV source of invented order ids, and the same invented shipment records as raw JSONL (no metadata) and as a complete sesslint.snapshot/v1 envelope."
+}

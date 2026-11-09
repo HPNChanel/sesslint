@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+"""Pinned actual report emission plus independent Draft202012 schema mutations."""
+
+import ast
+import copy
+import hashlib
+import importlib
+import io
+import itertools
+import json
+import subprocess
+import sys
+import tempfile
+import types
+import zipfile
+from datetime import UTC, datetime
+from importlib.metadata import version
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+FIXTURE_ROOT = "fixtures/outcome/orders/"
+FIXTURES = [
+    "contract.json",
+    "source.csv",
+    "target_complete.json",
+    "target.jsonl",
+    "expected_report.json",
+    "PROVENANCE.json",
+]
+TEST = "tests/outcome/test_outcome_engine.py"
+FULL_TEST = "test_orders_fixture_end_to_end_against_golden"
+assert sys.implementation.name == "cpython" and sys.version_info[:3] == (3, 11, 9), sys.version
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def digest(payload):
+    return hashlib.sha256(payload).hexdigest()
+
+
+def encode(value):
+    return (
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True, allow_nan=False) + "\n"
+    ).encode()
+
+
+def dump(name, value):
+    (HERE / name).write_bytes(encode(value))
+
+
+schema_bytes = show("schemas/sesslint.outcome-report.v1.json")
+(HERE / "schema.json").write_bytes(schema_bytes)
+schema = json.loads(schema_bytes)
+Draft202012Validator.check_schema(schema)
+validator = Draft202012Validator(schema)
+assert json.loads(show(FIXTURE_ROOT + "PROVENANCE.json"))["contains_real_data"] is False
+fixtures = HERE / "fixtures"
+fixtures.mkdir(exist_ok=True)
+for name in FIXTURES:
+    (fixtures / name).write_bytes(show(FIXTURE_ROOT + name))
+
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+emissions = []
+with tempfile.TemporaryDirectory(prefix="sesslint-report-schema-") as temporary:
+    root = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            if member.is_dir():
+                continue
+            path = Path(member.filename)
+            assert (
+                not path.is_absolute()
+                and ".." not in path.parts
+                and path.parts[:2] == ("src", "sesslint")
+            )
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(z.read(member))
+    sys.path.insert(0, str(root / "src"))
+    api = importlib.import_module("sesslint.outcome")
+    assert Path(api.__file__).resolve() == (root / "src/sesslint/outcome/__init__.py").resolve()
+    base_report = api.verify_outcome(
+        fixtures / "contract.json",
+        api.load_snapshot(fixtures / "source.csv", role="source", completeness="complete"),
+        fixtures / "target_complete.json",
+    )
+    base = base_report.to_dict()
+    validator.validate(base)
+    golden = copy.deepcopy(base)
+    golden.pop("tool_version")
+    assert golden == json.loads((fixtures / "expected_report.json").read_text(encoding="utf-8"))
+    assert {tuple(e["key"]): e["status"] for e in base["items"]} == {
+        ("0001",): "VERIFIED",
+        ("0002",): "VIOLATED",
+        ("0003",): "NOT_APPLICABLE",
+        ("0004",): "VIOLATED",
+        ("0005",): "VIOLATED",
+        ("0006",): "PENDING",
+        ("0007",): "VERIFIED",
+        ("0008",): "VIOLATED",
+    }
+    assert base_report.exit_code == 1
+    emissions.append(
+        dict(
+            id=0,
+            target="target_complete.json",
+            completeness="complete",
+            hash=False,
+            all=False,
+            session="none",
+            as_of=None,
+            json=base_report.to_json(),
+            full_test=True,
+        )
+    )
+    previous = sys.modules.get("sesslint.api")
+    for target, completeness, hashed, all_conditions, session in itertools.product(
+        ["target_complete.json", "target.jsonl"],
+        [None, "complete"],
+        [False, True],
+        [False, True],
+        ["none", "findings", "no_findings", "unreadable", "os"],
+    ):
+
+        def check_file(path, *, max_file_bytes, state=session):
+            assert max_file_bytes == 100 * 1024 * 1024
+            if state == "os":
+                raise OSError("synthetic")
+            return types.SimpleNamespace(
+                assurance="A0" if state == "unreadable" else "A2",
+                counts=types.SimpleNamespace(
+                    total=2 if state == "findings" else 0,
+                    by_code={"SL001": 2} if state == "findings" else {},
+                ),
+                source_fingerprint="a" * 64,
+            )
+
+        sys.modules["sesslint.api"] = types.SimpleNamespace(check_file=check_file)
+        source = api.load_snapshot(
+            fixtures / "source.csv", role="source", completeness=completeness
+        )
+        report = api.verify_outcome(
+            fixtures / "contract.json",
+            source,
+            fixtures / target,
+            as_of=datetime(2026, 10, 21, tzinfo=UTC),
+            session=None if session == "none" else "synthetic-session",
+            hash_keys=hashed,
+            all_conditions=all_conditions,
+        )
+        validator.validate(report.to_dict())
+        emissions.append(
+            dict(
+                id=len(emissions),
+                target=target,
+                completeness=completeness,
+                hash=hashed,
+                all=all_conditions,
+                session=session,
+                as_of="2026-10-21T00:00:00Z",
+                json=report.to_json(),
+                full_test=False,
+            )
+        )
+    if previous is None:
+        del sys.modules["sesslint.api"]
+    else:
+        sys.modules["sesslint.api"] = previous
+    sys.path.pop(0)
+
+rows = []
+
+
+def add(label, value):
+    rows.append(
+        dict(
+            id=len(rows),
+            label=label,
+            input=json.dumps(value, ensure_ascii=True, allow_nan=False),
+            valid=validator.is_valid(value),
+        )
+    )
+
+
+def replace(path, value, remove=False):
+    result = copy.deepcopy(base)
+    if not path:
+        return value
+    node = result
+    for step in path[:-1]:
+        node = node[step]
+    if remove:
+        del node[path[-1]]
+    else:
+        node[path[-1]] = value
+    return result
+
+
+def paths(value, path=()):
+    yield path, value
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from paths(child, (*path, key))
+    elif isinstance(value, list) and value:
+        yield from paths(value[0], (*path, 0))
+
+
+for path, value in paths(base):
+    label = "/".join(map(str, path)) or "$"
+    for index, candidate in enumerate(
+        [None, True, False, -1, 0, 1, 1.0, 1.5, "", "synthetic", [], {}]
+    ):
+        add(f"{label}:type-{index}", replace(path, candidate))
+    if path and isinstance(path[-1], str):
+        add(f"{label}:missing", replace(path, None, remove=True))
+    if isinstance(value, dict):
+        changed = dict(value, **{"PRIVATE-MARKER": "SYNTHETIC-PAYLOAD-MARKER"})
+        add(f"{label}:extra", replace(path, changed))
+
+# Exercise every session union arm, including the optional unreadable fields.
+sessions = {
+    row["session"]: json.loads(row["json"])["dimensions"]["session_integrity"] for row in emissions
+}
+for name, session in sessions.items():
+    add(f"session-{name}", replace(("dimensions", "session_integrity"), session))
+    for key in session:
+        changed = dict(session)
+        del changed[key]
+        add(f"session-{name}-missing-{key}", replace(("dimensions", "session_integrity"), changed))
+    for key, value in [
+        ("status", "unknown"),
+        ("link", None),
+        ("assurance", "A4"),
+        ("assurance", "A0"),
+        ("finding_count", -1),
+        ("finding_count", 1.0),
+        ("by_code", {"SL001": True}),
+        ("source_fingerprint", 1),
+        ("extra", "private-marker"),
+    ]:
+        add(
+            f"session-{name}-{key}",
+            replace(("dimensions", "session_integrity"), dict(session, **{key: value})),
+        )
+
+for value in [0, -0.0, 1.0, 1e308, 10**200, -1, 0.5, True]:
+    add("count-boundary", replace(("coverage", "source_rows"), value))
+for value in ["a" * 64, "a" * 64 + "\n", "a" * 64 + "\r\n", "A" * 64, "é" * 64, "a" * 63, "a" * 65]:
+    add("hash-pattern", replace(("contract", "sha256"), value))
+for value in [
+    "2026-00-99T:Z",
+    "2026-01-01T0Z\n",
+    "2026-01-01TZ",
+    "2026-01-01T00:00:00+00:00",
+    "2026-01-01T00:00:00Z\r\n",
+    "0000-00-00T.Z",
+    "２０２６-01-01T0Z",
+]:
+    add("instant-pattern", replace(("evaluated_at",), value))
+for value in ["a", "a_b", "a_", "a\n", "a\n\n", "_a", "A", "a1", "é"]:
+    add("reason-pattern", replace(("outcome_reasons",), [value]))
+for value in [
+    None,
+    [],
+    [""],
+    ["x"] * 8,
+    ["x"] * 9,
+    "sha256:" + "a" * 16,
+    "sha256:" + "a" * 16 + "\n",
+    "sha256:" + "A" * 16,
+]:
+    add("item-key", replace(("items", 0, "key"), value))
+for n in [999, 1000, 1001]:
+    add("unmatched-boundary", replace(("unmatched_target_keys",), [["x"]] * n))
+condition = dict(id="branch", type="exists", status="VERIFIED", reason="present", advisory=False)
+for n in range(12):
+    condition = dict(condition, branches=[copy.deepcopy(condition)])
+    add(f"branches-{n}", replace(("items", 0, "conditions"), [condition]))
+for value in [None, "", 1, 1.0, -3, 1.5, True, [], {}]:
+    add("detail-value", replace(("items", 0, "detail"), {"synthetic": value}))
+
+tests = [
+    node.name
+    for node in ast.parse(show(TEST)).body
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+]
+assert FULL_TEST in tests
+dump(
+    "coverage.json",
+    dict(
+        covered_count=1,
+        not_applicable_count=len(tests) - 1,
+        rows=[
+            dict(
+                test=TEST + "::" + name,
+                status="covered" if name == FULL_TEST else "not_applicable",
+                note="Complete schema/golden/status/exit assertions reproduced"
+                if name == FULL_TEST
+                else "No partial credit from schema or emission projections",
+            )
+            for name in tests
+        ],
+    ),
+)
+dump("vectors.json", dict(python_commit=PIN, emissions=emissions, validation=rows))
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        python_commit=PIN,
+        source="pinned synthetic orders fixture and synthetic schema mutations",
+        session="injected synthetic check_file only; no live sessions",
+    ),
+)
+runtime = [
+    "rust/crates/outcome/src/" + name
+    for name in [
+        "lib.rs",
+        "engine.rs",
+        "report.rs",
+        "contract.rs",
+        "snapshot.rs",
+        "schema/sesslint.outcome-report.v1.rs",
+    ]
+] + ["rust/crates/codec/src/canonical_codec.rs", "rust/crates/model/src/version.rs"]
+sources = (
+    ["schemas/sesslint.outcome-report.v1.json", TEST]
+    + [
+        "src/sesslint/outcome/" + name
+        for name in ["__init__.py", "report.py", "engine.py", "contract.py", "snapshot.py"]
+    ]
+    + [FIXTURE_ROOT + name for name in FIXTURES]
+)
+dump(
+    "manifest.json",
+    dict(
+        python_commit=PIN,
+        python_version=sys.version,
+        jsonschema_version=version("jsonschema"),
+        oracle="Draft202012Validator",
+        source_sha256={p: digest(show(p)) for p in sources},
+        rust_sha256={p: digest((ROOT / p).read_bytes()) for p in runtime},
+        generator_sha256=digest(Path(__file__).read_bytes()),
+        vectors_sha256=digest((HERE / "vectors.json").read_bytes()),
+        coverage_sha256=digest((HERE / "coverage.json").read_bytes()),
+        fixture_sha256={name: digest((fixtures / name).read_bytes()) for name in FIXTURES},
+        emission_count=len(emissions),
+        validation_count=len(rows),
+        valid_count=sum(row["valid"] for row in rows),
+        invalid_count=sum(not row["valid"] for row in rows),
+        negative_module_corpus_sha256=digest(
+            (ROOT / "rust/parity/vectors/outcome.report/vectors.json").read_bytes()
+        ),
+    ),
+)
+print(
+    json.dumps(
+        dict(
+            emissions=len(emissions),
+            validation=len(rows),
+            valid=sum(row["valid"] for row in rows),
+            sha256=digest((HERE / "vectors.json").read_bytes()),
+        )
+    )
+)

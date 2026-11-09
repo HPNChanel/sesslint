@@ -15,6 +15,9 @@ pub mod snapshot;
 #[path = "schema/sesslint.snapshot.v1.rs"]
 pub mod snapshot_schema;
 
+#[path = "schema/sesslint.outcome-report.v1.rs"]
+pub mod report_schema;
+
 pub use contract::{
     contract_from_dict, load_contract, Contract, ContractError, CONTRACT_SCHEMA_VERSION,
 };

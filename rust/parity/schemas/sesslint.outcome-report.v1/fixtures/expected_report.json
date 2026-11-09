@@ -1,0 +1,641 @@
+{
+  "condition_detail": "non_passing",
+  "condition_summary": {
+    "eu-warehouse": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 5,
+      "NOT_EVALUATED": 0,
+      "PENDING": 0,
+      "VERIFIED": 1,
+      "VIOLATED": 1
+    },
+    "shipment-exists": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 0,
+      "PENDING": 1,
+      "VERIFIED": 5,
+      "VIOLATED": 1
+    },
+    "shipped-on-time": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 0,
+      "PENDING": 1,
+      "VERIFIED": 4,
+      "VIOLATED": 2
+    },
+    "single-shipment": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 0,
+      "PENDING": 1,
+      "VERIFIED": 4,
+      "VIOLATED": 2
+    },
+    "sku-matches": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 1,
+      "PENDING": 1,
+      "VERIFIED": 5,
+      "VIOLATED": 0
+    },
+    "status-known": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 1,
+      "PENDING": 1,
+      "VERIFIED": 5,
+      "VIOLATED": 0
+    },
+    "status-set": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 1,
+      "PENDING": 1,
+      "VERIFIED": 5,
+      "VIOLATED": 0
+    },
+    "weight-plausible": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 0,
+      "NOT_EVALUATED": 1,
+      "PENDING": 1,
+      "VERIFIED": 5,
+      "VIOLATED": 0
+    }
+  },
+  "contract": {
+    "condition_count": 8,
+    "name": "orders-to-shipments",
+    "sha256": "5a7b49f1e67e4ff0542044726313775703af5615a1c9d9d6d81a8f21aae6475b",
+    "version": "1",
+    "warnings": []
+  },
+  "coverage": {
+    "counts": {
+      "INCONCLUSIVE": 0,
+      "NOT_APPLICABLE": 1,
+      "NOT_EVALUATED": 0,
+      "PENDING": 1,
+      "VERIFIED": 2,
+      "VIOLATED": 4
+    },
+    "excluded_items": 1,
+    "matched_target_records": 6,
+    "retried_items": 1,
+    "source_rows": 9,
+    "target_rows": 7,
+    "unkeyed_source_rows": 0,
+    "unkeyed_target_rows": 0,
+    "unmatched_target_records": 1,
+    "work_items": 8
+  },
+  "demo": false,
+  "dimensions": {
+    "incident_handling": {
+      "status": "not_tracked"
+    },
+    "monitoring_health": {
+      "detail": "snapshot evaluation; no live monitoring",
+      "status": "not_configured"
+    },
+    "outcome_verification": {
+      "status": "VIOLATED"
+    },
+    "session_integrity": {
+      "status": "not_linked"
+    }
+  },
+  "evaluated_at": "2026-10-20T12:00:00Z",
+  "items": [
+    {
+      "conditions": [],
+      "deadline": "2026-10-20T09:00:00Z",
+      "key": [
+        "0001"
+      ],
+      "matched_records": 1,
+      "reason": "conditions_verified",
+      "source_row": 1,
+      "source_rows": 1,
+      "status": "VERIFIED"
+    },
+    {
+      "conditions": [
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 0
+          },
+          "id": "shipment-exists",
+          "reason": "missing",
+          "status": "VIOLATED",
+          "type": "exists"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 0,
+            "max": 1,
+            "min": 1
+          },
+          "id": "single-shipment",
+          "reason": "missing",
+          "status": "VIOLATED",
+          "type": "count"
+        },
+        {
+          "advisory": false,
+          "id": "status-set",
+          "reason": "no_target_record",
+          "status": "NOT_EVALUATED",
+          "type": "required"
+        },
+        {
+          "advisory": false,
+          "id": "status-known",
+          "reason": "no_target_record",
+          "status": "NOT_EVALUATED",
+          "type": "one_of"
+        },
+        {
+          "advisory": false,
+          "id": "sku-matches",
+          "reason": "no_target_record",
+          "status": "NOT_EVALUATED",
+          "type": "equals"
+        },
+        {
+          "advisory": false,
+          "id": "eu-warehouse",
+          "reason": "route_not_applicable",
+          "status": "NOT_APPLICABLE",
+          "type": "route"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "basis": "target_time",
+            "deadline": "2026-10-20T09:00:00Z"
+          },
+          "id": "shipped-on-time",
+          "reason": "not_completed_by_deadline",
+          "status": "VIOLATED",
+          "type": "on_time"
+        },
+        {
+          "advisory": true,
+          "id": "weight-plausible",
+          "reason": "no_target_record",
+          "status": "NOT_EVALUATED",
+          "type": "range"
+        }
+      ],
+      "deadline": "2026-10-20T09:00:00Z",
+      "key": [
+        "0002"
+      ],
+      "matched_records": 0,
+      "reason": "condition_violated",
+      "source_row": 2,
+      "source_rows": 1,
+      "status": "VIOLATED"
+    },
+    {
+      "conditions": [],
+      "deadline": null,
+      "detail": {
+        "field": "state",
+        "predicate": 0
+      },
+      "key": [
+        "0003"
+      ],
+      "matched_records": 0,
+      "reason": "not_eligible",
+      "source_row": 3,
+      "source_rows": 1,
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "conditions": [
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 1
+          },
+          "id": "shipment-exists",
+          "reason": "present",
+          "status": "VERIFIED",
+          "type": "exists"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 1,
+            "max": 1,
+            "min": 1
+          },
+          "id": "single-shipment",
+          "reason": "count_within",
+          "status": "VERIFIED",
+          "type": "count"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-set",
+          "reason": "field_present",
+          "status": "VERIFIED",
+          "type": "required"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-known",
+          "reason": "value_allowed",
+          "status": "VERIFIED",
+          "type": "one_of"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "sku"
+          },
+          "id": "sku-matches",
+          "reason": "values_match",
+          "status": "VERIFIED",
+          "type": "equals"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "warehouse"
+          },
+          "id": "eu-warehouse",
+          "reason": "wrong_route",
+          "status": "VIOLATED",
+          "type": "route"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "basis": "target_time",
+            "deadline": "2026-10-20T09:10:00Z"
+          },
+          "id": "shipped-on-time",
+          "reason": "completed_on_time",
+          "status": "VERIFIED",
+          "type": "on_time"
+        },
+        {
+          "advisory": true,
+          "detail": {
+            "field": "weight_kg"
+          },
+          "id": "weight-plausible",
+          "reason": "in_range",
+          "status": "VERIFIED",
+          "type": "range"
+        }
+      ],
+      "deadline": "2026-10-20T09:10:00Z",
+      "key": [
+        "0004"
+      ],
+      "matched_records": 1,
+      "reason": "condition_violated",
+      "source_row": 4,
+      "source_rows": 1,
+      "status": "VIOLATED"
+    },
+    {
+      "conditions": [
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 1
+          },
+          "id": "shipment-exists",
+          "reason": "present",
+          "status": "VERIFIED",
+          "type": "exists"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 1,
+            "max": 1,
+            "min": 1
+          },
+          "id": "single-shipment",
+          "reason": "count_within",
+          "status": "VERIFIED",
+          "type": "count"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-set",
+          "reason": "field_present",
+          "status": "VERIFIED",
+          "type": "required"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-known",
+          "reason": "value_allowed",
+          "status": "VERIFIED",
+          "type": "one_of"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "sku"
+          },
+          "id": "sku-matches",
+          "reason": "values_match",
+          "status": "VERIFIED",
+          "type": "equals"
+        },
+        {
+          "advisory": false,
+          "id": "eu-warehouse",
+          "reason": "route_not_applicable",
+          "status": "NOT_APPLICABLE",
+          "type": "route"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "basis": "target_time",
+            "deadline": "2026-10-20T09:30:00Z",
+            "late_by_seconds": 1800
+          },
+          "id": "shipped-on-time",
+          "reason": "late",
+          "status": "VIOLATED",
+          "type": "on_time"
+        },
+        {
+          "advisory": true,
+          "detail": {
+            "field": "weight_kg"
+          },
+          "id": "weight-plausible",
+          "reason": "in_range",
+          "status": "VERIFIED",
+          "type": "range"
+        }
+      ],
+      "deadline": "2026-10-20T09:30:00Z",
+      "key": [
+        "0005"
+      ],
+      "matched_records": 1,
+      "reason": "condition_violated",
+      "source_row": 5,
+      "source_rows": 1,
+      "status": "VIOLATED"
+    },
+    {
+      "conditions": [
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 0
+          },
+          "id": "shipment-exists",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "exists"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 0,
+            "max": 1,
+            "min": 1
+          },
+          "id": "single-shipment",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "count"
+        },
+        {
+          "advisory": false,
+          "id": "status-set",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "required"
+        },
+        {
+          "advisory": false,
+          "id": "status-known",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "one_of"
+        },
+        {
+          "advisory": false,
+          "id": "sku-matches",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "equals"
+        },
+        {
+          "advisory": false,
+          "id": "eu-warehouse",
+          "reason": "route_not_applicable",
+          "status": "NOT_APPLICABLE",
+          "type": "route"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "basis": "target_time",
+            "deadline": "2026-10-20T12:30:00Z"
+          },
+          "id": "shipped-on-time",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "on_time"
+        },
+        {
+          "advisory": true,
+          "id": "weight-plausible",
+          "reason": "awaiting_due",
+          "status": "PENDING",
+          "type": "range"
+        }
+      ],
+      "deadline": "2026-10-20T12:30:00Z",
+      "key": [
+        "0006"
+      ],
+      "matched_records": 0,
+      "reason": "condition_pending",
+      "source_row": 6,
+      "source_rows": 1,
+      "status": "PENDING"
+    },
+    {
+      "conditions": [],
+      "deadline": "2026-10-20T10:00:00Z",
+      "key": [
+        "0007"
+      ],
+      "matched_records": 1,
+      "reason": "conditions_verified",
+      "source_row": 7,
+      "source_rows": 2,
+      "status": "VERIFIED"
+    },
+    {
+      "conditions": [
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 2
+          },
+          "id": "shipment-exists",
+          "reason": "present",
+          "status": "VERIFIED",
+          "type": "exists"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "matched_records": 2,
+            "max": 1,
+            "min": 1
+          },
+          "id": "single-shipment",
+          "reason": "too_many",
+          "status": "VIOLATED",
+          "type": "count"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-set",
+          "reason": "field_present",
+          "status": "VERIFIED",
+          "type": "required"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "status"
+          },
+          "id": "status-known",
+          "reason": "value_allowed",
+          "status": "VERIFIED",
+          "type": "one_of"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "field": "sku"
+          },
+          "id": "sku-matches",
+          "reason": "values_match",
+          "status": "VERIFIED",
+          "type": "equals"
+        },
+        {
+          "advisory": false,
+          "id": "eu-warehouse",
+          "reason": "route_not_applicable",
+          "status": "NOT_APPLICABLE",
+          "type": "route"
+        },
+        {
+          "advisory": false,
+          "detail": {
+            "basis": "target_time",
+            "deadline": "2026-10-20T10:00:00Z"
+          },
+          "id": "shipped-on-time",
+          "reason": "completed_on_time",
+          "status": "VERIFIED",
+          "type": "on_time"
+        },
+        {
+          "advisory": true,
+          "detail": {
+            "field": "weight_kg"
+          },
+          "id": "weight-plausible",
+          "reason": "in_range",
+          "status": "VERIFIED",
+          "type": "range"
+        }
+      ],
+      "deadline": "2026-10-20T10:00:00Z",
+      "key": [
+        "0008"
+      ],
+      "matched_records": 2,
+      "reason": "condition_violated",
+      "source_row": 9,
+      "source_rows": 1,
+      "status": "VIOLATED"
+    }
+  ],
+  "key_display": "plain",
+  "limitations": [
+    "Verdicts cover only the supplied snapshots at their observation times; they do not prove who or what produced a record, exactly-once effects, or semantic correctness.",
+    "Absence is proven only from a target snapshot declared complete and observed at or after the deadline; a session that looks clean is not evidence of a correct outcome.",
+    "Keys are compared exactly, without trimming, case folding or numeric conversion."
+  ],
+  "observations": {
+    "source": {
+      "completeness": "complete",
+      "demo": false,
+      "input_format": "csv",
+      "name": "source.csv",
+      "observed_at": null,
+      "origin": "user_file",
+      "record_count": 9,
+      "role": "source",
+      "sha256": "cdda00817ffd2448070be1b8edefbc3aaee613377c2b4ba606c87e0167ee6a23"
+    },
+    "target": {
+      "completeness": "complete",
+      "demo": false,
+      "input_format": "envelope",
+      "name": "target_complete.json",
+      "observed_at": "2026-10-20T12:00:00Z",
+      "origin": "target_system",
+      "record_count": 7,
+      "role": "target",
+      "sha256": "0db206ca7f9c93d054da4bb3681069bd9a4bfaa5150db83984033aff9412c44f"
+    }
+  },
+  "outcome": "VIOLATED",
+  "outcome_reasons": [
+    "some_items_violated"
+  ],
+  "run_status": "completed",
+  "schema_version": "sesslint.outcome-report/v1",
+  "unmatched_target_keys": [
+    [
+      "0099"
+    ]
+  ],
+  "unmatched_target_keys_truncated": false
+}
