@@ -25,8 +25,7 @@ const EXPECTED_EXPORTER_RS_SHA256: &str =
 const EXPECTED_VECTORS_SHA256: &str =
     "a3a31ce8e6bc3833a485e0f84a0e95336778d5fbbfeb1ac5d4e6727a382ff716";
 
-const LIVE_STORE_UNAVAILABLE: &str =
-    "sesslint.repair.executor.is_live_store_path is not available";
+const LIVE_STORE_UNAVAILABLE: &str = "sesslint.repair.executor.is_live_store_path is not available";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -134,8 +133,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("gaps");
     assert!(
-        gaps
-            .iter()
+        gaps.iter()
             .any(|item| gap_contains(item, "GAP-evidence-exporter-live-store")),
         "expected live-store gap in vectors metadata"
     );
@@ -235,7 +233,11 @@ fn assert_export_not_found(case: &VectorCase) {
     let err = export_to_canonical(&source, &output, format.as_deref()).expect_err("export");
     let output_abs = root.join(&output);
     std::env::set_current_dir(&prev).expect("restore cwd");
-    assert!(matches!(err, ExportToCanonicalError::FileNotFound(_)), "{}", case.id);
+    assert!(
+        matches!(err, ExportToCanonicalError::FileNotFound(_)),
+        "{}",
+        case.id
+    );
     assert_eq!(normalize_slashes(&err.to_string()), want, "{}", case.id);
     assert!(err.source().is_none());
     assert!(!output_abs.exists(), "{}", case.id);
@@ -294,11 +296,7 @@ fn export_json_value(value: &ExportJson) -> JsonValue {
     }
 }
 
-fn assert_json_object_eq(
-    want: &[(String, JsonValue)],
-    got: &[(String, JsonValue)],
-    id: &str,
-) {
+fn assert_json_object_eq(want: &[(String, JsonValue)], got: &[(String, JsonValue)], id: &str) {
     assert_eq!(got.len(), want.len(), "object length {id}");
     for (index, (want_key, want_value)) in want.iter().enumerate() {
         let (got_key, got_value) = &got[index];

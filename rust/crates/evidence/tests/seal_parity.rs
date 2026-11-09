@@ -2,8 +2,8 @@
 
 use evidence::seal::{
     build_entry, get_seal_schema_path, load_seal_schema, sha256_bytes, sha256_file, verify_ledger,
-    verify_lines, AppendInput, DIVERGENCE_KINDS, EntryInput, GENESIS, RESOURCES_UNAVAILABLE,
-    SEAL_SCHEMA_ID, SEAL_TOOLS, SealEntry, SealError, SealInstant,
+    verify_lines, AppendInput, EntryInput, SealEntry, SealError, SealInstant, DIVERGENCE_KINDS,
+    GENESIS, RESOURCES_UNAVAILABLE, SEAL_SCHEMA_ID, SEAL_TOOLS,
 };
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -64,10 +64,7 @@ fn seal_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(
-        !normalized.contains('\r'),
-        "vectors.json must use LF only"
-    );
+    assert!(!normalized.contains('\r'), "vectors.json must use LF only");
     let digest = evidence::seal::sha256_bytes(normalized.as_bytes());
     assert_eq!(digest, EXPECTED_VECTORS_SHA256, "vectors.json sha256 pin");
 
@@ -219,8 +216,7 @@ fn assert_verify_lines(case: &VectorCase) {
 fn assert_verify_ledger(case: &VectorCase) {
     let rel = string_field(&case.construct, "ledger_path").expect("ledger_path");
     let path = posix_join(&vectors_root(), &rel);
-    let (verified, got) =
-        verify_ledger(&path).unwrap_or_else(|err| panic!("{}: {err}", case.id));
+    let (verified, got) = verify_ledger(&path).unwrap_or_else(|err| panic!("{}: {err}", case.id));
     assert_eq!(
         verified,
         i64_field(&case.expected, "entries_verified").expect("entries_verified"),
@@ -288,19 +284,21 @@ fn assert_verify_outcome(
         "detail for {id}"
     );
     if let Ok(seq) = i64_field(want, "seq") {
-        assert_eq!(div.seq.as_deref(), Some(seq.to_string().as_str()), "seq for {id}");
+        assert_eq!(
+            div.seq.as_deref(),
+            Some(seq.to_string().as_str()),
+            "seq for {id}"
+        );
     } else {
         assert!(div.seq.is_none(), "seq absent for {id}");
     }
 }
 
-fn build_entry_from_construct(
-    construct: &[(String, JsonValue)],
-) -> Result<SealEntry, SealError> {
+fn build_entry_from_construct(construct: &[(String, JsonValue)]) -> Result<SealEntry, SealError> {
     let now = fixed_instant();
     let seq = i64_field(construct, "seq").map_err(|err| SealError::Message(err.message))?;
-    let prev = string_field(construct, "prev_sha256")
-        .map_err(|err| SealError::Message(err.message))?;
+    let prev =
+        string_field(construct, "prev_sha256").map_err(|err| SealError::Message(err.message))?;
     let file = materialize_hex_field(construct, "file_sha256")
         .map_err(|err| SealError::Message(err.message))?;
     let report = materialize_hex_field(construct, "report_sha256")
@@ -311,8 +309,8 @@ fn build_entry_from_construct(
     let path = optional_string_field(construct, "path");
     let genesis = optional_hex_field(construct, "genesis_of")
         .map_err(|err| SealError::Message(err.message))?;
-    let code_strings = code_pair_strings(construct)
-        .map_err(|err| SealError::Message(err.message))?;
+    let code_strings =
+        code_pair_strings(construct).map_err(|err| SealError::Message(err.message))?;
     let code_refs: Vec<(&str, i64)> = code_strings
         .iter()
         .map(|(name, count)| (name.as_str(), *count))
@@ -403,7 +401,11 @@ fn optional_hex_field(
 }
 
 fn assert_entry_matches(entry: &SealEntry, want: &[(String, JsonValue)], id: &str) {
-    assert_eq!(entry.schema, string_field(want, "schema").expect("schema"), "{id}");
+    assert_eq!(
+        entry.schema,
+        string_field(want, "schema").expect("schema"),
+        "{id}"
+    );
     assert_eq!(entry.seq, i64_field(want, "seq").expect("seq"), "{id}");
     assert_eq!(
         entry.prev_sha256,
@@ -415,7 +417,11 @@ fn assert_entry_matches(entry: &SealEntry, want: &[(String, JsonValue)], id: &st
         string_field(want, "file_sha256").expect("file"),
         "{id}"
     );
-    assert_eq!(entry.tool, string_field(want, "tool").expect("tool"), "{id}");
+    assert_eq!(
+        entry.tool,
+        string_field(want, "tool").expect("tool"),
+        "{id}"
+    );
     assert_eq!(
         entry.verdict,
         string_field(want, "verdict").expect("verdict"),
@@ -442,7 +448,11 @@ fn assert_entry_matches(entry: &SealEntry, want: &[(String, JsonValue)], id: &st
         assert!(entry.path.is_none(), "path omitted for {id}");
     }
     if let Ok(genesis) = string_field(want, "genesis_of") {
-        assert_eq!(entry.genesis_of.as_deref(), Some(genesis.as_str()), "genesis for {id}");
+        assert_eq!(
+            entry.genesis_of.as_deref(),
+            Some(genesis.as_str()),
+            "genesis for {id}"
+        );
     } else {
         assert!(entry.genesis_of.is_none(), "genesis omitted for {id}");
     }
@@ -501,8 +511,14 @@ fn gap_contains(value: &JsonValue, marker: &str) -> bool {
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT

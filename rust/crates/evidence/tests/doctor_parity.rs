@@ -66,10 +66,7 @@ fn doctor_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(
-        !normalized.contains('\r'),
-        "vectors.json must use LF only"
-    );
+    assert!(!normalized.contains('\r'), "vectors.json must use LF only");
 
     let prov_raw = std::fs::read_to_string(provenance_path())
         .unwrap_or_else(|err| panic!("read PROVENANCE: {err}"));
@@ -95,7 +92,11 @@ fn doctor_module_parity_vectors() {
 
     let doc = parse_document_with_meta(&normalized).expect("parse vectors.json");
     assert_root_meta(&doc.meta);
-    assert_eq!(doc.cases.len(), EXPECTED_VECTOR_COUNT, "unexpected vector count");
+    assert_eq!(
+        doc.cases.len(),
+        EXPECTED_VECTOR_COUNT,
+        "unexpected vector count"
+    );
 
     for case in &doc.cases {
         assert_case(case);
@@ -127,11 +128,9 @@ fn construct_timestamp(construct: &[(String, JsonValue)]) -> Result<f64, ParseEr
             "nan" => f64::NAN,
             "inf" => f64::INFINITY,
             "-inf" => f64::NEG_INFINITY,
-            other => other
-                .parse()
-                .map_err(|_| ParseError {
-                    message: "bad timestamp string".into(),
-                })?,
+            other => other.parse().map_err(|_| ParseError {
+                message: "bad timestamp string".into(),
+            })?,
         }),
         Some((_, JsonValue::Number(raw))) => raw.parse().map_err(|_| ParseError {
             message: "bad timestamp number".into(),
@@ -253,10 +252,8 @@ fn assert_render_key_error(case: &VectorCase) {
 
 fn assert_count_files_cap(case: &VectorCase) {
     let extra = usize_field(&case.construct, "extra_files").expect("extra_files");
-    let scratch = std::env::temp_dir().join(format!(
-        "sesslint-doctor-cap-parity-{}",
-        std::process::id()
-    ));
+    let scratch =
+        std::env::temp_dir().join(format!("sesslint-doctor-cap-parity-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).expect("cap scratch");
     for index in 0..extra {
@@ -281,7 +278,11 @@ fn assert_count_files_cap(case: &VectorCase) {
         case.id
     );
     let want_candidates = string_array_field(&case.expected, "candidates").expect("candidates");
-    assert!(want_candidates.is_empty(), "cap candidates empty for {}", case.id);
+    assert!(
+        want_candidates.is_empty(),
+        "cap candidates empty for {}",
+        case.id
+    );
 }
 
 fn assert_count_files(case: &VectorCase) {
@@ -608,8 +609,14 @@ fn gap_contains(value: &JsonValue, marker: &str) -> bool {
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT

@@ -1,8 +1,6 @@
 //! Byte-exact parity for `sesslint.precheck` directory paths against pinned Python vectors.
 
-use evidence::precheck::{
-    precheck, CheckFileUnavailable, PrecheckReason, CHECK_FILE_UNAVAILABLE,
-};
+use evidence::precheck::{precheck, CheckFileUnavailable, PrecheckReason, CHECK_FILE_UNAVAILABLE};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -72,7 +70,9 @@ fn precheck_module_parity_vectors() {
     );
     let prov_gaps = array_field(&provenance, "known_parity_gaps").expect("PROVENANCE gaps");
     assert!(
-        prov_gaps.iter().any(|item| gap_contains(item, "GAP-precheck-check-file")),
+        prov_gaps
+            .iter()
+            .any(|item| gap_contains(item, "GAP-precheck-check-file")),
         "PROVENANCE must document check_file gap"
     );
 
@@ -156,12 +156,8 @@ fn assert_directory_case(case: &VectorCase) {
     let profile = optional_string_field(&case.construct, "profile");
     let format_override = optional_string_field(&case.construct, "format");
 
-    let result = precheck(
-        &path,
-        profile.as_deref(),
-        format_override.as_deref(),
-    )
-    .unwrap_or_else(|err| panic!("{}: directory precheck must succeed, got {err}", case.id));
+    let result = precheck(&path, profile.as_deref(), format_override.as_deref())
+        .unwrap_or_else(|err| panic!("{}: directory precheck must succeed, got {err}", case.id));
 
     let want_ok = bool_field(&case.expected, "ok").expect("ok");
     let want_reason = string_field(&case.expected, "reason").expect("reason");
@@ -181,8 +177,16 @@ fn assert_directory_case(case: &VectorCase) {
         "reason string mismatch for {}",
         case.id
     );
-    assert!(result.report.is_none(), "report must be absent for {}", case.id);
-    assert_eq!(result.exit_code, want_exit, "exit_code mismatch for {}", case.id);
+    assert!(
+        result.report.is_none(),
+        "report must be absent for {}",
+        case.id
+    );
+    assert_eq!(
+        result.exit_code, want_exit,
+        "exit_code mismatch for {}",
+        case.id
+    );
 }
 
 fn assert_rust_check_file_seam() {

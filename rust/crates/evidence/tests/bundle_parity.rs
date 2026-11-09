@@ -2,13 +2,11 @@
 
 use evidence::bundle::{
     build_bundle, get_bundle_schema_path, load_bundle_schema, Bundle, JsonValue as BundleJson,
-    ShortHashUnavailable,
-    ValidateDetectionThresholdsUnavailable, VersionInfoUnavailable, _build_created_by,
-    _count_records_bounded, _extract_kinds_fallback, _sanitize_evidence, _sanitize_remediation,
-    BUNDLE_SCHEMA_VERSION, DEFAULT_JSON_INDENT, FIXTURE_TEMPLATE, MAX_PROBE_LINES,
-    SAFE_DISCRIMINATOR_UNAVAILABLE,
-    SCHEMA_PATH_UNAVAILABLE, SHORT_HASH_UNAVAILABLE, VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE,
-    VERSION_INFO_UNAVAILABLE,
+    ShortHashUnavailable, ValidateDetectionThresholdsUnavailable, VersionInfoUnavailable,
+    _build_created_by, _count_records_bounded, _extract_kinds_fallback, _sanitize_evidence,
+    _sanitize_remediation, BUNDLE_SCHEMA_VERSION, DEFAULT_JSON_INDENT, FIXTURE_TEMPLATE,
+    MAX_PROBE_LINES, SAFE_DISCRIMINATOR_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE,
+    SHORT_HASH_UNAVAILABLE, VALIDATE_DETECTION_THRESHOLDS_UNAVAILABLE, VERSION_INFO_UNAVAILABLE,
 };
 use evidence::seal::sha256_bytes;
 use std::collections::BTreeMap;
@@ -187,7 +185,11 @@ fn assert_count_io_error_pin(case: &VectorCase) {
     let dir = posix_join(&vectors_root(), &dir_rel);
     let missing = posix_join(&vectors_root(), &miss_rel);
     assert!(dir.is_dir(), "{}: directory fixture", case.id);
-    assert!(!missing.exists(), "{}: missing fixture must not exist", case.id);
+    assert!(
+        !missing.exists(),
+        "{}: missing fixture must not exist",
+        case.id
+    );
     let dir_count = _count_records_bounded(&dir);
     let miss_count = _count_records_bounded(&missing);
     assert_eq!(
@@ -221,9 +223,8 @@ fn assert_extract_kinds(case: &VectorCase) {
         }
         return;
     }
-    let counter = _extract_kinds_fallback(&path).unwrap_or_else(|err| {
-        panic!("{}: empty-file probe must succeed, got {err}", case.id)
-    });
+    let counter = _extract_kinds_fallback(&path)
+        .unwrap_or_else(|err| panic!("{}: empty-file probe must succeed, got {err}", case.id));
     let want_obj = object_field(&case.expected, "kinds").expect("kinds");
     let want = kinds_map_from_json(want_obj);
     assert_eq!(counter, want, "{}", case.id);
@@ -371,8 +372,14 @@ fn gap_contains(value: &JsonValue, marker: &str) -> bool {
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT

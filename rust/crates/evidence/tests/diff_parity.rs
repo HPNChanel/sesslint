@@ -2,10 +2,10 @@
 
 use codec::canonical_codec::CanonicalError;
 use evidence::diff::{
-    diff_events, diff_sessions, get_diff_schema_path, load_diff_schema, _delta_label, _load_side,
-    Delta, DeltaCategory, DiffEvent, DiffJson, DiffSessionsError, SessionDiff,
-    DELTA_CATEGORIES, DIFF_SCHEMA_VERSION, MAX_ROWS, MINIMIZE_PATH_UNAVAILABLE,
-    RESOLVE_FORMAT_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE,
+    _delta_label, _load_side, diff_events, diff_sessions, get_diff_schema_path, load_diff_schema,
+    Delta, DeltaCategory, DiffEvent, DiffJson, DiffSessionsError, SessionDiff, DELTA_CATEGORIES,
+    DIFF_SCHEMA_VERSION, MAX_ROWS, MINIMIZE_PATH_UNAVAILABLE, RESOLVE_FORMAT_UNAVAILABLE,
+    SCHEMA_PATH_UNAVAILABLE,
 };
 use evidence::seal::sha256_bytes;
 use std::collections::BTreeMap;
@@ -254,8 +254,7 @@ fn assert_diff_events_hash_gap(case: &VectorCase) {
         kind: "message".to_owned(),
         parent_id: None,
     };
-    let err = diff_events(std::slice::from_ref(&event), std::slice::from_ref(&event))
-        .unwrap_err();
+    let err = diff_events(std::slice::from_ref(&event), std::slice::from_ref(&event)).unwrap_err();
     assert_eq!(err.to_string(), HASH_SEAM);
     let _ = err as CanonicalError;
     let pin = object_field(&case.expected, "pin").expect("pin");
@@ -269,17 +268,18 @@ fn assert_diff_events_hash_gap(case: &VectorCase) {
 
 fn assert_diff_sessions_path(case: &VectorCase) {
     let root = vectors_root();
-    let path_a = posix_join(&root, &string_field(&case.construct, "path_a").expect("path_a"));
-    let path_b = posix_join(&root, &string_field(&case.construct, "path_b").expect("path_b"));
+    let path_a = posix_join(
+        &root,
+        &string_field(&case.construct, "path_a").expect("path_a"),
+    );
+    let path_b = posix_join(
+        &root,
+        &string_field(&case.construct, "path_b").expect("path_b"),
+    );
     let format_a = optional_string_field(&case.construct, "format_a");
     let format_b = optional_string_field(&case.construct, "format_b");
     let rust_mode = string_field(&case.construct, "rust_mode").expect("rust_mode");
-    let err = sessions_err(
-        &path_a,
-        &path_b,
-        format_a.as_deref(),
-        format_b.as_deref(),
-    );
+    let err = sessions_err(&path_a, &path_b, format_a.as_deref(), format_b.as_deref());
     match rust_mode.as_str() {
         "path_not_found" => match err {
             DiffSessionsError::PathNotFound(_) => {
@@ -421,8 +421,7 @@ fn detail_from_row(row: &[(String, JsonValue)]) -> Vec<(String, String)> {
     let Some(obj) = object_field(row, "detail").ok() else {
         return Vec::new();
     };
-    obj
-        .iter()
+    obj.iter()
         .map(|(key, value)| (key.clone(), string_from_json(value).expect("detail value")))
         .collect()
 }
@@ -471,7 +470,9 @@ fn assert_json_object_eq(
 ) {
     assert_eq!(want.len(), got.len(), "field count {id}");
     for (key, value) in want {
-        let got_value = got.get(key).unwrap_or_else(|| panic!("missing {key} in {id}"));
+        let got_value = got
+            .get(key)
+            .unwrap_or_else(|| panic!("missing {key} in {id}"));
         assert_json_eq(value, got_value, id, key);
     }
 }
@@ -479,7 +480,9 @@ fn assert_json_object_eq(
 fn assert_json_eq(want: &JsonValue, got: &JsonValue, id: &str, key: &str) {
     match (want, got) {
         (JsonValue::Str(left), JsonValue::Str(right)) => assert_eq!(left, right, "{key} {id}"),
-        (JsonValue::Number(left), JsonValue::Number(right)) => assert_eq!(left, right, "{key} {id}"),
+        (JsonValue::Number(left), JsonValue::Number(right)) => {
+            assert_eq!(left, right, "{key} {id}")
+        }
         (JsonValue::Bool(left), JsonValue::Bool(right)) => assert_eq!(left, right, "{key} {id}"),
         (JsonValue::Object(left), JsonValue::Object(right)) => {
             assert_eq!(left.len(), right.len(), "{key} object len {id}");

@@ -1381,7 +1381,7 @@ mod tests {
         }
     }
 
-    fn properties<'a>(schema: &'a Json) -> &'a Json {
+    fn properties(schema: &Json) -> &Json {
         field(schema, "properties")
     }
 

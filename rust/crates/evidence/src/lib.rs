@@ -6,16 +6,16 @@ mod error;
 
 pub use error::EvidenceError;
 
-pub mod stats;
 pub mod bundle;
-pub mod diff;
-pub mod doctor;
-pub mod precheck;
-pub mod seal;
-pub mod verify {}
-pub mod exporter;
-pub mod preview;
-#[path = "schema/sesslint.seal-ledger.v1.rs"]
-pub mod seal_ledger_schema;
 #[path = "schema/sesslint.bundle.v1.rs"]
 pub mod bundle_schema;
+pub mod diff;
+pub mod doctor;
+pub mod exporter;
+pub mod precheck;
+pub mod preview;
+pub mod seal;
+#[path = "schema/sesslint.seal-ledger.v1.rs"]
+pub mod seal_ledger_schema;
+pub mod stats;
+pub mod verify;

@@ -3,10 +3,10 @@
 use evidence::seal::sha256_bytes;
 use evidence::stats::{
     get_stats_schema_path, load_stats_schema, stats_paths, Dist, MinimizePathUnavailable,
-    PayloadValue, SessionStats, StatsCounters, StatsError, StatsEvent, MAX_TOOL_ROWS,
-    LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE, MINIMIZE_PATH_UNAVAILABLE,
-    SCAN_DEFAULT_MAX_FILES_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE, STATS_SCHEMA_VERSION,
-    _count_events, _dist, _iter_files, _percentile, _tool_hash,
+    PayloadValue, SessionStats, StatsCounters, StatsError, StatsEvent, _count_events, _dist,
+    _iter_files, _percentile, _tool_hash, LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE, MAX_TOOL_ROWS,
+    MINIMIZE_PATH_UNAVAILABLE, SCAN_DEFAULT_MAX_FILES_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE,
+    STATS_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -221,9 +221,7 @@ fn json_to_payload(value: &JsonValue) -> PayloadValue {
         JsonValue::Null => PayloadValue::None,
         JsonValue::Bool(flag) => PayloadValue::Bool(*flag),
         JsonValue::Str(text) => PayloadValue::Str(text.clone()),
-        JsonValue::Number(raw) => PayloadValue::Other {
-            truthy: *raw != 0,
-        },
+        JsonValue::Number(raw) => PayloadValue::Other { truthy: *raw != 0 },
         JsonValue::Object(_) | JsonValue::Array(_) => PayloadValue::Other { truthy: true },
     }
 }
@@ -255,11 +253,21 @@ fn assert_iter_files(case: &VectorCase) {
     let (files, skipped) = _iter_files(&roots, max_files);
     let rel_files: Vec<String> = files
         .iter()
-        .map(|path| path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|path| {
+            path.strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
     let rel_skipped: Vec<String> = skipped
         .iter()
-        .map(|path| path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|path| {
+            path.strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
     assert_eq!(
         rel_files,
@@ -337,7 +345,12 @@ fn assert_scan_default_gap(case: &VectorCase) {
         None,
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), SCAN_DEFAULT_MAX_FILES_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        err.to_string(),
+        SCAN_DEFAULT_MAX_FILES_UNAVAILABLE,
+        "{}",
+        case.id
+    );
     let assertion = object_field(&case.expected, "rust_assertion").expect("rust_assertion");
     assert_eq!(
         string_field(assertion, "mode").expect("mode"),
@@ -363,20 +376,27 @@ fn assert_stats_paths_error(case: &VectorCase) {
             }
             "path_not_found" => {
                 let leaf = string_field(assertion, "leaf").expect("leaf");
-                let err = stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
+                let err =
+                    stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
                 assert!(matches!(err, StatsError::PathNotFound(_)), "{}", case.id);
                 assert!(err.to_string().contains("Path not found:"));
                 assert!(err.to_string().replace('\\', "/").ends_with(leaf.as_str()));
             }
             "directory_requires_recursive" => {
                 let leaf = string_field(assertion, "leaf").expect("leaf");
-                let err = stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
-                assert!(matches!(err, StatsError::DirectoryRequiresRecursive(_)), "{}", case.id);
+                let err =
+                    stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
+                assert!(
+                    matches!(err, StatsError::DirectoryRequiresRecursive(_)),
+                    "{}",
+                    case.id
+                );
                 assert!(err.to_string().contains("is a directory"));
                 assert!(err.to_string().replace('\\', "/").contains(leaf.as_str()));
             }
             "load_events_unavailable" => {
-                let err = stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
+                let err =
+                    stats_paths(&paths, recursive, format_ref, max_files, max_bytes).unwrap_err();
                 assert_eq!(err.to_string(), LOAD_EVENTS_FOR_FORMAT_UNAVAILABLE);
                 let _pin = object_field(&case.expected, "pin").expect("pin");
             }
@@ -440,8 +460,14 @@ fn gap_contains(value: &JsonValue, marker: &str) -> bool {
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT
