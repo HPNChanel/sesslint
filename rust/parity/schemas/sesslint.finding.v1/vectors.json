@@ -1,0 +1,1338 @@
+{
+  "facts": {
+    "additional_properties": false,
+    "code_enum": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL008",
+      "SL009",
+      "SL010",
+      "SL011",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL204",
+      "SL205",
+      "SL206",
+      "SL207",
+      "SL208",
+      "SL301",
+      "SL302",
+      "SL303",
+      "SL304",
+      "SL305",
+      "SL306",
+      "SL401",
+      "SL402"
+    ],
+    "emitter_codes": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL008",
+      "SL009",
+      "SL010",
+      "SL011",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL204",
+      "SL205",
+      "SL206",
+      "SL207",
+      "SL208",
+      "SL301",
+      "SL302",
+      "SL303",
+      "SL304",
+      "SL305",
+      "SL306",
+      "SL401",
+      "SL402"
+    ],
+    "emitter_keys": [
+      "code",
+      "fingerprint",
+      "message",
+      "related_ids",
+      "repairability",
+      "schema_version",
+      "severity",
+      "source"
+    ],
+    "emitter_repairabilities": [
+      "deterministic",
+      "lossy-explicit",
+      "manual",
+      "unsupported"
+    ],
+    "emitter_schema_version": "sesslint.finding/v1",
+    "emitter_severities": [
+      "fatal",
+      "error",
+      "warning",
+      "info"
+    ],
+    "fingerprint_pattern": "^[0-9a-f]{16}$",
+    "id": "https://sesslint.dev/schemas/sesslint.finding/v1",
+    "line_minimum": 1,
+    "message_max_length": 500,
+    "path_min_length": 1,
+    "property_names": [
+      "schema_version",
+      "code",
+      "severity",
+      "repairability",
+      "message",
+      "source",
+      "related_ids",
+      "fingerprint",
+      "message_template",
+      "evidence"
+    ],
+    "related_ids_unique_items": true,
+    "repairability_enum": [
+      "deterministic",
+      "lossy-explicit",
+      "manual",
+      "unsupported"
+    ],
+    "required": [
+      "code",
+      "fingerprint",
+      "message",
+      "related_ids",
+      "repairability",
+      "schema_version",
+      "severity",
+      "source"
+    ],
+    "schema_version_const": "sesslint.finding/v1",
+    "severity_enum": [
+      "fatal",
+      "error",
+      "warning",
+      "info"
+    ],
+    "source_additional_properties": false,
+    "source_property_names": [
+      "path",
+      "line",
+      "record_id"
+    ],
+    "source_required": [
+      "path"
+    ]
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "emitter_to_dict",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "code",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "code",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_code",
+      "instance": {
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_fingerprint",
+      "instance": {
+        "code": "SL001",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "message",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_message",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "related_ids",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_related_ids",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "repairability",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_repairability",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "severity",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_severity",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "source",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_source",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "code": "SL001",
+        "extra": 1,
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "nope",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/code"
+      },
+      "id": "code_enum",
+      "instance": {
+        "code": "SL999",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/code"
+      },
+      "id": "code_type",
+      "instance": {
+        "code": 1,
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/severity"
+      },
+      "id": "severity_enum",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "nope",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/repairability"
+      },
+      "id": "repairability_enum",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "nope",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "severity_fatal",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "fatal",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "severity_warning",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "warning",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "severity_info",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "info",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "repairability_deterministic",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "deterministic",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "repairability_lossy_explicit",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "lossy-explicit",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "repairability_unsupported",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "unsupported",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "code_sl402",
+      "instance": {
+        "code": "SL402",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source"
+      },
+      "id": "source_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": []
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/source"
+      },
+      "id": "source_missing_path",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/source"
+      },
+      "id": "source_additional_property",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "path": "a.jsonl",
+          "z": 1
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "source_path_only",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "path": "a.jsonl"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/source/path"
+      },
+      "id": "path_min_length",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source/path"
+      },
+      "id": "path_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": 1,
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "line_null",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": null,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_minimum_zero",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 0,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_negative",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": -1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_boolean",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": true,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "line_one_point_zero",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1.0,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_one_point_five",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1.5,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_zero_point_zero",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 0.0,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "line_exponent_integer",
+      "raw": "{\"code\": \"SL001\", \"fingerprint\": \"0123456789abcdef\", \"message\": \"m\", \"related_ids\": [], \"repairability\": \"manual\", \"schema_version\": \"sesslint.finding/v1\", \"severity\": \"error\", \"source\": {\"line\": 1e1, \"path\": \"a.jsonl\", \"record_id\": \"r1\"}}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source/line"
+      },
+      "id": "line_exponent_fraction",
+      "raw": "{\"code\": \"SL001\", \"fingerprint\": \"0123456789abcdef\", \"message\": \"m\", \"related_ids\": [], \"repairability\": \"manual\", \"schema_version\": \"sesslint.finding/v1\", \"severity\": \"error\", \"source\": {\"line\": 1e-1, \"path\": \"a.jsonl\", \"record_id\": \"r1\"}}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "record_id_null",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": null
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source/record_id"
+      },
+      "id": "record_id_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": 1
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/fingerprint"
+      },
+      "id": "fingerprint_pattern",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdeg",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/fingerprint"
+      },
+      "id": "fingerprint_uppercase",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789ABCDEF",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_empty",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_at_max_length",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxLength",
+        "ok": false,
+        "path": "/message"
+      },
+      "id": "message_max_length",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_unicode",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "caf\u00e9",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "related_ids_unsorted",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [
+          "b",
+          "a"
+        ],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": "/related_ids"
+      },
+      "id": "related_ids_unique",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [
+          "a",
+          "a"
+        ],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/related_ids"
+      },
+      "id": "related_ids_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": "a",
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/related_ids/1"
+      },
+      "id": "related_ids_item_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [
+          "a",
+          1
+        ],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_template_null",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "message_template": null,
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/message_template"
+      },
+      "id": "message_template_type",
+      "instance": {
+        "code": "SL001",
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "message_template": 1,
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "evidence_null",
+      "instance": {
+        "code": "SL001",
+        "evidence": null,
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "evidence_object",
+      "instance": {
+        "code": "SL001",
+        "evidence": {
+          "k": "v"
+        },
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/evidence"
+      },
+      "id": "evidence_type",
+      "instance": {
+        "code": "SL001",
+        "evidence": [],
+        "fingerprint": "0123456789abcdef",
+        "message": "m",
+        "related_ids": [],
+        "repairability": "manual",
+        "schema_version": "sesslint.finding/v1",
+        "severity": "error",
+        "source": {
+          "line": 1,
+          "path": "a.jsonl",
+          "record_id": "r1"
+        }
+      }
+    }
+  ]
+}

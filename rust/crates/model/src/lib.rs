@@ -14,4 +14,6 @@ pub mod secret_families;
 pub mod canonical;
 pub mod events;
 pub mod finding;
+#[path = "schema/sesslint.finding.v1.rs"]
+pub mod finding_schema;
 pub mod reference;

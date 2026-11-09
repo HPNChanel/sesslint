@@ -1,0 +1,934 @@
+#!/usr/bin/env python3
+"""Generate sesslint.finding.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. The finding emitter is
+executed from a temporary file. This script does not import the checkout package.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import importlib.util
+import json
+import math
+import re
+import subprocess
+import sys
+import tempfile
+import types
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = ROOT / "rust" / "crates" / "model" / "src" / "schema" / "sesslint.finding.v1.rs"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.finding.v1.json"
+FINDING_GIT = f"{PYTHON_COMMIT}:src/sesslint/finding.py"
+PIN_FILES = (
+    "src/sesslint/errors.py",
+    "src/sesslint/codes.py",
+    "src/sesslint/_version.py",
+    "src/sesslint/context.py",
+    "src/sesslint/finding.py",
+)
+GENERATOR = "rust/parity/schemas/sesslint.finding.v1/generate"
+FINGERPRINT_PATTERN = "^[0-9a-f]{16}$"
+SCHEMA_TESTS = (
+    "tests/test_finding.py::test_schema_file_matches_dataclass",
+    "tests/test_finding.py::test_finding_schema_structure_anti_drift",
+    "tests/test_finding.py::test_get_finding_schema_path_prefix_resolution",
+    "tests/test_finding.py::test_schema_loader_file_not_found",
+    "tests/test_codes.py::test_codes_and_taxonomies_match_finding_schema_anti_drift",
+)
+NOTES = {
+    "tests/test_finding.py::test_schema_file_matches_dataclass": (
+        "get_finding_schema_path and load_finding_schema open the schema file, then "
+        "make_finding, to_dict, and parse_finding_dict round-trip one finding. "
+        "validate_finding_json does not resolve a path and does not construct a Finding. "
+        "emitter_to_dict is one object, not that round-trip."
+    ),
+    "tests/test_finding.py::test_finding_schema_structure_anti_drift": (
+        "load_finding_schema compares the required set and the property set, including "
+        "source path, line, and record_id, with the Finding model. validate_finding_json "
+        "checks one instance. Recording those names in facts is not that loader call."
+    ),
+    "tests/test_finding.py::test_get_finding_schema_path_prefix_resolution": (
+        "get_finding_schema_path follows the prefix share directory when the repo schema "
+        "is hidden. No vector resolves a schema path."
+    ),
+    "tests/test_finding.py::test_schema_loader_file_not_found": (
+        "load_finding_schema raises FileNotFoundError when the schema path is missing. "
+        "validate_finding_json does not open a path."
+    ),
+    "tests/test_codes.py::test_codes_and_taxonomies_match_finding_schema_anti_drift": (
+        "the test reads the schema file and compares the code, severity, and repairability "
+        "enums with codes.py as sets. validate_finding_json accepts or rejects one value. "
+        "One accepted code is not that lockstep sweep."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "uniqueItems",
+}
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class Unproven(Exception):
+    """A comparison or keyword cannot be proven."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def fullname_for(path: str) -> str:
+    return path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+
+
+def ensure_pkg(name: str) -> None:
+    if name not in sys.modules:
+        module = types.ModuleType(name)
+        module.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = module
+
+
+def exec_blob(blob: bytes, fullname: str) -> types.ModuleType:
+    handle = tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False)
+    handle.write(blob)
+    handle.close()
+    tmp = Path(handle.name)
+    spec = importlib.util.spec_from_file_location(fullname, tmp)
+    if spec is None or spec.loader is None:
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(f"spec failed {fullname}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = module
+    resolved = tmp.resolve()
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+    parent = fullname.rsplit(".", 1)[0] if "." in fullname else ""
+    if parent:
+        parent_mod = sys.modules.setdefault(parent, types.ModuleType(parent))
+        setattr(parent_mod, fullname.split(".")[-1], module)
+    if resolved == ROOT or ROOT in resolved.parents:
+        raise SystemExit(f"{fullname} loaded from the checkout")
+    return module
+
+
+def load_emitter() -> Any:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.meta_path.insert(0, _PinOnly())
+    for rel in PIN_FILES:
+        blob = git_show_bytes(f"{PYTHON_COMMIT}:{rel}")
+        fullname = fullname_for(rel)
+        parts = fullname.split(".")
+        for index in range(1, len(parts)):
+            ensure_pkg(".".join(parts[:index]))
+        exec_blob(blob, fullname)
+    module = sys.modules["sesslint.finding"]
+    if module.Finding.__module__ != "sesslint.finding":
+        raise SystemExit("Finding is not the pin blob")
+    if module.Finding.to_dict.__module__ != "sesslint.finding":
+        raise SystemExit("to_dict is not the pin blob")
+    return module
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'FINDING_SCHEMA_JSON: &str = r#"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"#;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def schema_test_names(path: str) -> list[str]:
+    source = git_show_bytes(f"{PYTHON_COMMIT}:{path}").decode("utf-8")
+    tree = ast.parse(source)
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
+        and "schema" in node.name
+    ]
+
+
+def assert_test_list() -> None:
+    by_file: dict[str, list[str]] = {}
+    for test_id in SCHEMA_TESTS:
+        path, name = test_id.split("::", 1)
+        by_file.setdefault(path, []).append(name)
+    for path, names in by_file.items():
+        actual = schema_test_names(path)
+        if actual != names:
+            raise SystemExit(f"schema test list mismatch for {path}: {actual}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            raise Unproven()
+        return left_int == right_int
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def check(schema: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path)
+    if failure is not None:
+        return failure
+    return check_array(schema, value, path)
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            return ("unsupported", path, "pattern")
+        try:
+            matched = pattern_match(pattern, value)
+        except Unproven:
+            return ("unsupported", path, "pattern")
+        if not matched:
+            return ("pattern", path, "")
+    return None
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        flag = schema["additionalProperties"]
+        if flag is False:
+            props = schema.get("properties", {})
+            if not isinstance(props, dict):
+                return ("unsupported", path, "properties")
+            for key in value:
+                if key not in props:
+                    return ("additionalProperties", path, str(key))
+        elif flag is not True:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)))
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_array(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}")
+            if failure is not None:
+                return failure
+    if schema.get("uniqueItems") is True:
+        for right in range(1, len(value)):
+            for left in range(right):
+                compared = equal_result(value[left], value[right])
+                if compared is None:
+                    return ("unsupported", path, "uniqueItems")
+                if compared:
+                    return ("uniqueItems", path, "")
+    elif "uniqueItems" in schema and schema["uniqueItems"] is not False:
+        return ("unsupported", path, "uniqueItems")
+    return None
+
+
+def pattern_match(pattern: str, text: str) -> bool:
+    return match_here(list(pattern), 0, list(text), 0)
+
+
+def match_here(pattern: list[str], index: int, text: list[str], text_index: int) -> bool:
+    if index == len(pattern):
+        return text_index == len(text)
+    if pattern[index] == "^":
+        if text_index != 0:
+            return False
+        return match_here(pattern, index + 1, text, text_index)
+    if pattern[index] == "$":
+        if text_index != len(text):
+            return False
+        return match_here(pattern, index + 1, text, text_index)
+    atom, next_index = parse_atom(pattern, index)
+    minimum, maximum, after = parse_quant(pattern, next_index)
+    return match_quant(atom, minimum, maximum, pattern, after, text, text_index)
+
+
+def parse_atom(pattern: list[str], index: int) -> tuple[tuple[str, object], int]:
+    if index >= len(pattern):
+        raise Unproven()
+    ch = pattern[index]
+    if ch == "\\":
+        if index + 1 >= len(pattern):
+            raise Unproven()
+        return (("char", pattern[index + 1]), index + 2)
+    if ch in "^$|*+?(){}].":
+        raise Unproven()
+    if ch == "[":
+        return parse_class(pattern, index)
+    return (("char", ch), index + 1)
+
+
+def parse_class(pattern: list[str], index: int) -> tuple[tuple[str, object], int]:
+    cursor = index + 1
+    if cursor < len(pattern) and pattern[cursor] == "^":
+        raise Unproven()
+    ranges: list[tuple[str, str]] = []
+    while cursor < len(pattern) and pattern[cursor] != "]":
+        if (
+            cursor + 2 < len(pattern)
+            and pattern[cursor + 1] == "-"
+            and pattern[cursor + 2] != "]"
+        ):
+            start = pattern[cursor]
+            end = pattern[cursor + 2]
+            if start > end:
+                raise Unproven()
+            ranges.append((start, end))
+            cursor += 3
+        else:
+            ranges.append((pattern[cursor], pattern[cursor]))
+            cursor += 1
+    if cursor >= len(pattern) or pattern[cursor] != "]" or not ranges:
+        raise Unproven()
+    return (("class", ranges), cursor + 1)
+
+
+def parse_quant(pattern: list[str], index: int) -> tuple[int, int, int]:
+    if index >= len(pattern):
+        return (1, 1, index)
+    ch = pattern[index]
+    if ch == "*":
+        return (0, sys.maxsize, index + 1)
+    if ch == "+":
+        return (1, sys.maxsize, index + 1)
+    if ch == "?":
+        return (0, 1, index + 1)
+    if ch == "{":
+        return parse_brace(pattern, index)
+    return (1, 1, index)
+
+
+def parse_brace(pattern: list[str], index: int) -> tuple[int, int, int]:
+    cursor = index + 1
+    start = cursor
+    while cursor < len(pattern) and pattern[cursor].isdigit():
+        cursor += 1
+    if cursor == start:
+        raise Unproven()
+    minimum = parse_usize(pattern[start:cursor])
+    if cursor < len(pattern) and pattern[cursor] == "}":
+        return (minimum, minimum, cursor + 1)
+    if cursor >= len(pattern) or pattern[cursor] != ",":
+        raise Unproven()
+    cursor += 1
+    if cursor < len(pattern) and pattern[cursor] == "}":
+        return (minimum, sys.maxsize, cursor + 1)
+    max_start = cursor
+    while cursor < len(pattern) and pattern[cursor].isdigit():
+        cursor += 1
+    if cursor == max_start or cursor >= len(pattern) or pattern[cursor] != "}":
+        raise Unproven()
+    maximum = parse_usize(pattern[max_start:cursor])
+    if maximum < minimum:
+        raise Unproven()
+    return (minimum, maximum, cursor + 1)
+
+
+def parse_usize(chars: list[str]) -> int:
+    value = 0
+    for ch in chars:
+        value = value * 10 + int(ch)
+    return value
+
+
+def match_quant(
+    atom: tuple[str, object],
+    minimum: int,
+    maximum: int,
+    pattern: list[str],
+    after: int,
+    text: list[str],
+    text_index: int,
+) -> bool:
+    ends = [text_index]
+    cursor = text_index
+    limit = min(maximum, len(text))
+    while len(ends) - 1 < limit and cursor < len(text) and atom_matches(atom, text[cursor]):
+        cursor += 1
+        ends.append(cursor)
+    have = len(ends) - 1
+    if have < minimum:
+        return False
+    for count in range(have, minimum - 1, -1):
+        if match_here(pattern, after, text, ends[count]):
+            return True
+    return False
+
+
+def atom_matches(atom: tuple[str, object], ch: str) -> bool:
+    kind, payload = atom
+    if kind == "char":
+        return ch == payload
+    ranges = payload
+    if not isinstance(ranges, list):
+        raise Unproven()
+    return any(start <= ch <= end for start, end in ranges)
+
+
+def assert_pattern_engine() -> None:
+    samples = {
+        "0123456789abcdef": True,
+        "0123456789ABCDEF": False,
+        "0123456789abcde": False,
+        "0123456789abcdef0": False,
+        "": False,
+    }
+    for text, expected in samples.items():
+        direct = len(text) == 16 and all(ch in "0123456789abcdef" for ch in text)
+        if direct != expected or pattern_match(FINGERPRINT_PATTERN, text) != expected:
+            raise SystemExit("fingerprint pattern engine mismatch")
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "")
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword == "unsupported":
+        raise SystemExit(f"oracle unsupported at {path} ({detail})")
+    return {"ok": False, "detail": detail, "keyword": keyword, "path": path}
+
+
+def dumps(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False)
+    return text + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "02694d5" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def clone_doc(value: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(value))
+    if not isinstance(cloned, dict):
+        raise SystemExit("emitter document is not an object")
+    return cloned
+
+
+def raw_line(document: dict[str, Any], token: str) -> str:
+    text = json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    needle = '"line": 1,'
+    if needle not in text:
+        raise SystemExit("line field missing from raw rewrite")
+    return text.replace(needle, f'"line": {token},', 1)
+
+
+def build_vectors(schema: dict[str, Any], emitted: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, instance: object = None, raw: str | None = None) -> None:
+        if raw is None:
+            vectors.append(
+                {"expected": expect(schema, instance), "id": vector_id, "instance": instance}
+            )
+            return
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    add("emitter_to_dict", clone_doc(emitted))
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    for name in schema["required"]:
+        document = clone_doc(emitted)
+        document.pop(name)
+        add(f"missing_{name}", document)
+    extra = clone_doc(emitted)
+    extra["extra"] = 1
+    add("root_additional_property", extra)
+    const_bad = clone_doc(emitted)
+    const_bad["schema_version"] = "nope"
+    add("schema_version_const", const_bad)
+    code_bad = clone_doc(emitted)
+    code_bad["code"] = "SL999"
+    add("code_enum", code_bad)
+    code_type = clone_doc(emitted)
+    code_type["code"] = 1
+    add("code_type", code_type)
+    severity_bad = clone_doc(emitted)
+    severity_bad["severity"] = "nope"
+    add("severity_enum", severity_bad)
+    repair_bad = clone_doc(emitted)
+    repair_bad["repairability"] = "nope"
+    add("repairability_enum", repair_bad)
+    for severity in ("fatal", "warning", "info"):
+        document = clone_doc(emitted)
+        document["severity"] = severity
+        add(f"severity_{severity}", document)
+    for repairability, label in (
+        ("deterministic", "deterministic"),
+        ("lossy-explicit", "lossy_explicit"),
+        ("unsupported", "unsupported"),
+    ):
+        document = clone_doc(emitted)
+        document["repairability"] = repairability
+        add(f"repairability_{label}", document)
+    code_last = clone_doc(emitted)
+    code_last["code"] = "SL402"
+    add("code_sl402", code_last)
+    source_type = clone_doc(emitted)
+    source_type["source"] = []
+    add("source_type", source_type)
+    source_missing = clone_doc(emitted)
+    source_missing["source"] = {"line": 1}
+    add("source_missing_path", source_missing)
+    source_extra = clone_doc(emitted)
+    source_extra["source"] = {"path": "a.jsonl", "z": 1}
+    add("source_additional_property", source_extra)
+    source_path = clone_doc(emitted)
+    source_path["source"] = {"path": "a.jsonl"}
+    add("source_path_only", source_path)
+    path_empty = clone_doc(emitted)
+    path_empty["source"]["path"] = ""
+    add("path_min_length", path_empty)
+    path_type = clone_doc(emitted)
+    path_type["source"]["path"] = 1
+    add("path_type", path_type)
+    line_null = clone_doc(emitted)
+    line_null["source"]["line"] = None
+    add("line_null", line_null)
+    line_zero = clone_doc(emitted)
+    line_zero["source"]["line"] = 0
+    add("line_minimum_zero", line_zero)
+    line_negative = clone_doc(emitted)
+    line_negative["source"]["line"] = -1
+    add("line_negative", line_negative)
+    line_bool = clone_doc(emitted)
+    line_bool["source"]["line"] = True
+    add("line_boolean", line_bool)
+    line_one = clone_doc(emitted)
+    line_one["source"]["line"] = 1.0
+    add("line_one_point_zero", line_one)
+    line_fraction = clone_doc(emitted)
+    line_fraction["source"]["line"] = 1.5
+    add("line_one_point_five", line_fraction)
+    line_zero_float = clone_doc(emitted)
+    line_zero_float["source"]["line"] = 0.0
+    add("line_zero_point_zero", line_zero_float)
+    add("line_exponent_integer", raw=raw_line(clone_doc(emitted), "1e1"))
+    add("line_exponent_fraction", raw=raw_line(clone_doc(emitted), "1e-1"))
+    record_null = clone_doc(emitted)
+    record_null["source"]["record_id"] = None
+    add("record_id_null", record_null)
+    record_type = clone_doc(emitted)
+    record_type["source"]["record_id"] = 1
+    add("record_id_type", record_type)
+    fingerprint_bad = clone_doc(emitted)
+    fingerprint_bad["fingerprint"] = "0123456789abcdeg"
+    add("fingerprint_pattern", fingerprint_bad)
+    fingerprint_upper = clone_doc(emitted)
+    fingerprint_upper["fingerprint"] = "0123456789ABCDEF"
+    add("fingerprint_uppercase", fingerprint_upper)
+    message_empty = clone_doc(emitted)
+    message_empty["message"] = ""
+    add("message_empty", message_empty)
+    message_max = clone_doc(emitted)
+    message_max["message"] = "m" * 500
+    add("message_at_max_length", message_max)
+    message_over = clone_doc(emitted)
+    message_over["message"] = "m" * 501
+    add("message_max_length", message_over)
+    message_unicode = clone_doc(emitted)
+    message_unicode["message"] = "caf\u00e9"
+    add("message_unicode", message_unicode)
+    related_order = clone_doc(emitted)
+    related_order["related_ids"] = ["b", "a"]
+    add("related_ids_unsorted", related_order)
+    related_dup = clone_doc(emitted)
+    related_dup["related_ids"] = ["a", "a"]
+    add("related_ids_unique", related_dup)
+    related_type = clone_doc(emitted)
+    related_type["related_ids"] = "a"
+    add("related_ids_type", related_type)
+    related_item = clone_doc(emitted)
+    related_item["related_ids"] = ["a", 1]
+    add("related_ids_item_type", related_item)
+    template_null = clone_doc(emitted)
+    template_null["message_template"] = None
+    add("message_template_null", template_null)
+    template_type = clone_doc(emitted)
+    template_type["message_template"] = 1
+    add("message_template_type", template_type)
+    evidence_null = clone_doc(emitted)
+    evidence_null["evidence"] = None
+    add("evidence_null", evidence_null)
+    evidence_object = clone_doc(emitted)
+    evidence_object["evidence"] = {"k": "v"}
+    add("evidence_object", evidence_object)
+    evidence_type = clone_doc(emitted)
+    evidence_type["evidence"] = []
+    add("evidence_type", evidence_type)
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def emitter_document(finding: Any) -> dict[str, Any]:
+    source = finding.SourceRef(path="a.jsonl", line=1, record_id="r1")
+    item = finding.Finding(
+        code="SL001",
+        severity=finding.Severity.ERROR,
+        repairability=finding.Repairability.MANUAL,
+        message="m",
+        source=source,
+        related_ids=(),
+        fingerprint="0123456789abcdef",
+    )
+    document = item.to_dict()
+    if not isinstance(document, dict):
+        raise SystemExit("to_dict did not return an object")
+    return document
+
+
+def facts_from(schema: dict[str, Any], finding: Any, emitted: dict[str, Any]) -> dict[str, Any]:
+    properties = schema["properties"]
+    source = properties["source"]
+    codes = set(finding.ALL_CODES)
+    schema_codes = set(properties["code"]["enum"])
+    severities = {item.value for item in finding.Severity}
+    schema_severities = set(properties["severity"]["enum"])
+    repairabilities = {item.value for item in finding.Repairability}
+    schema_repairabilities = set(properties["repairability"]["enum"])
+    if codes != schema_codes or severities != schema_severities or repairabilities != schema_repairabilities:
+        raise SystemExit("emitter enums disagree with the pinned schema")
+    if finding.SCHEMA_VERSION != properties["schema_version"]["const"]:
+        raise SystemExit("emitter schema_version disagrees with the pinned const")
+    if properties["fingerprint"]["pattern"] != FINGERPRINT_PATTERN:
+        raise SystemExit("pinned fingerprint pattern changed")
+    return {
+        "additional_properties": schema["additionalProperties"],
+        "code_enum": properties["code"]["enum"],
+        "emitter_codes": sorted(codes),
+        "emitter_repairabilities": [item.value for item in finding.Repairability],
+        "emitter_schema_version": finding.SCHEMA_VERSION,
+        "emitter_severities": [item.value for item in finding.Severity],
+        "fingerprint_pattern": properties["fingerprint"]["pattern"],
+        "id": schema["$id"],
+        "line_minimum": source["properties"]["line"]["minimum"],
+        "message_max_length": properties["message"]["maxLength"],
+        "path_min_length": source["properties"]["path"]["minLength"],
+        "property_names": list(properties.keys()),
+        "related_ids_unique_items": properties["related_ids"]["uniqueItems"],
+        "repairability_enum": properties["repairability"]["enum"],
+        "required": schema["required"],
+        "schema_version_const": properties["schema_version"]["const"],
+        "severity_enum": properties["severity"]["enum"],
+        "source_additional_properties": source["additionalProperties"],
+        "source_property_names": list(source["properties"].keys()),
+        "source_required": source["required"],
+        "emitter_keys": sorted(emitted.keys()),
+    }
+
+
+def coverage_doc() -> dict[str, Any]:
+    rows = [
+        {
+            "note": NOTES[test_id],
+            "status": "not_applicable",
+            "test": test_id,
+            "vector_id": None,
+        }
+        for test_id in SCHEMA_TESTS
+    ]
+    return {
+        "covered_count": 0,
+        "module": "sesslint.finding",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.finding.v1.json",
+    }
+
+
+def main() -> None:
+    assert_pattern_engine()
+    assert_test_list()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    finding_bytes = git_show_bytes(FINDING_GIT)
+    if b"\r" in schema_bytes or b"\r" in finding_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    finding = load_emitter()
+    emitted = emitter_document(finding)
+    if expect(schema, emitted) != {"ok": True}:
+        raise SystemExit("emitter to_dict is not valid for the pinned schema")
+    vectors = build_vectors(schema, emitted)
+    document = {
+        "facts": facts_from(schema, finding, emitted),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "finding_py_sha256": hashlib.sha256(finding_bytes).hexdigest(),
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.finding.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.finding.v1 schema parity. Constraints and expected "
+            "rejections come from the pinned schema. One object comes from Finding.to_dict "
+            "on the pinned emitter. No session text is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            "Schema path resolution and the missing-file loader are not this validator.",
+            "make_finding round-trip and canonical fingerprint bytes are not produced.",
+            "The codes enum lockstep sweep is not one accepted or rejected value.",
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage_doc()))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    print(f"vector_count={len(vectors)}")
+    print(f"vectors_sha256={vectors_sha}")
+
+
+if __name__ == "__main__":
+    main()
