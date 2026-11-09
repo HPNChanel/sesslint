@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.cli.outcome configure declarations from pinned src/sesslint/cli/outcome.py (isolated exec stubs). Run and _instant vectors omitted where outcome runtime exports are unavailable.",
+  "generator": "rust/parity/vectors/cli.outcome/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-cli-outcome-parse-instant: Python `_instant` imports `sesslint.outcome.snapshot.parse_instant` before validating text; Rust `instant()` returns Display `sesslint.outcome.snapshot.parse_instant is not available` before reading inputs.",
+    "GAP-cli-outcome-runtime: Python `run` imports `sesslint.outcome` evaluation/load/report exports before contract or snapshot I/O; Rust `run()` returns Display `sesslint.outcome evaluation/report/load exports are not available` before args or context use. No exit code or emit_text parity is claimed."
+  ]
+}

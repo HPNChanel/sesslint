@@ -1,0 +1,294 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.cli.outcome",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "outcome_py_sha256": "ad73e1f3e61a981a442bffa6df20b660d1c590568bf85314b3868c29447f0bec",
+  "outcome_rs_sha256": "95df454d4d8b81995e1903387db1cde0d3b251e526e9040baf751924eecaaa2f",
+  "known_parity_gaps": [
+    "GAP-cli-outcome-parse-instant: Python `_instant` imports `sesslint.outcome.snapshot.parse_instant` before validating text; Rust `instant()` returns Display `sesslint.outcome.snapshot.parse_instant is not available` before reading inputs.",
+    "GAP-cli-outcome-runtime: Python `run` imports `sesslint.outcome` evaluation/load/report exports before contract or snapshot I/O; Rust `run()` returns Display `sesslint.outcome evaluation/report/load exports are not available` before args or context use. No exit code or emit_text parity is claimed."
+  ],
+  "vectors": [
+    {
+      "id": "configure_subcommand_declarations",
+      "construct": {
+        "type": "configure"
+      },
+      "expected": {
+        "name": "outcome",
+        "help": "[read-only] Verify an outcome contract against source/target snapshots.",
+        "description": "OutcomeGuard: reconcile work items in a source snapshot with results in a target snapshot, per a declared contract. Offline and read-only; absence is proven only from a complete target snapshot observed after the deadline.",
+        "arguments": [
+          {
+            "flags": [
+              "contract"
+            ],
+            "dest": "contract",
+            "action": "store",
+            "type_name": "Path",
+            "choices": null,
+            "help": "sesslint.outcome-contract/v1 JSON file",
+            "default_keyword": false,
+            "default": "none",
+            "required": true
+          },
+          {
+            "flags": [
+              "--explain"
+            ],
+            "dest": "explain",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "help": "Validate the contract and print what it checks; read no snapshots",
+            "default_keyword": false,
+            "default": "false",
+            "required": false
+          },
+          {
+            "flags": [
+              "--source"
+            ],
+            "dest": "source",
+            "action": "store",
+            "type_name": "Path",
+            "choices": null,
+            "help": "Source snapshot (.csv/.json/.jsonl)",
+            "default_keyword": false,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--target"
+            ],
+            "dest": "target",
+            "action": "store",
+            "type_name": "Path",
+            "choices": null,
+            "help": "Target snapshot (.csv/.json/.jsonl)",
+            "default_keyword": false,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--as-of"
+            ],
+            "dest": "as_of",
+            "action": "store",
+            "type_name": "_instant",
+            "choices": null,
+            "help": "Evaluation instant (default: the target observation time; no wall clock)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--source-observed-at"
+            ],
+            "dest": "source_observed_at",
+            "action": "store",
+            "type_name": "_instant",
+            "choices": null,
+            "help": "When the source snapshot was taken (UTC offset required)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--source-completeness"
+            ],
+            "dest": "source_completeness",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "complete",
+              "partial",
+              "unknown",
+              "unavailable"
+            ],
+            "help": "Declared completeness of the source snapshot (default: unknown)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--source-origin"
+            ],
+            "dest": "source_origin",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "target_system",
+              "workflow_log",
+              "user_file",
+              "manual"
+            ],
+            "help": "Where the source snapshot came from (default: user_file)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--target-observed-at"
+            ],
+            "dest": "target_observed_at",
+            "action": "store",
+            "type_name": "_instant",
+            "choices": null,
+            "help": "When the target snapshot was taken (UTC offset required)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--target-completeness"
+            ],
+            "dest": "target_completeness",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "complete",
+              "partial",
+              "unknown",
+              "unavailable"
+            ],
+            "help": "Declared completeness of the target snapshot (default: unknown)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--target-origin"
+            ],
+            "dest": "target_origin",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "target_system",
+              "workflow_log",
+              "user_file",
+              "manual"
+            ],
+            "help": "Where the target snapshot came from (default: user_file)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--session"
+            ],
+            "dest": "session",
+            "action": "store",
+            "type_name": "Path",
+            "choices": null,
+            "help": "Session file you link to this run (user-asserted); checked, never modified",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--hash-keys"
+            ],
+            "dest": "hash_keys",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "help": "Show keys as truncated SHA-256 pseudonyms (pseudonymous, not anonymous)",
+            "default_keyword": false,
+            "default": "false",
+            "required": false
+          },
+          {
+            "flags": [
+              "--all-conditions"
+            ],
+            "dest": "all_conditions",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "help": "List every condition result for passing items too (default: problems only)",
+            "default_keyword": false,
+            "default": "false",
+            "required": false
+          },
+          {
+            "flags": [
+              "--max-file-bytes"
+            ],
+            "dest": "max_file_bytes",
+            "action": "store",
+            "type_name": "_validate_positive_int",
+            "choices": null,
+            "help": null,
+            "default_keyword": true,
+            "default": {
+              "int": 104857600
+            },
+            "required": false
+          },
+          {
+            "flags": [
+              "-f",
+              "--format"
+            ],
+            "dest": "output_format",
+            "action": "store",
+            "type_name": null,
+            "choices": [
+              "human",
+              "json"
+            ],
+            "help": "Output format (default: human)",
+            "default_keyword": true,
+            "default": "none",
+            "required": false
+          },
+          {
+            "flags": [
+              "--json"
+            ],
+            "dest": "json",
+            "action": "store_true",
+            "type_name": null,
+            "choices": null,
+            "help": null,
+            "default_keyword": false,
+            "default": "false",
+            "required": false
+          }
+        ],
+        "exclusive_group": [
+          15,
+          16
+        ],
+        "report_output": [
+          {
+            "option_strings": [
+              "-o",
+              "--output"
+            ],
+            "dest": "output",
+            "action": "store",
+            "type_name": "Path",
+            "metavar": "FILE",
+            "help": "Write the report to FILE instead of stdout (existing report files are overwritten atomically)",
+            "default_keyword": {
+              "present": "none"
+            },
+            "effective_default": "none"
+          }
+        ]
+      }
+    }
+  ]
+}
