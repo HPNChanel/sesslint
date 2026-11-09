@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.session.v1 schema parity. Header, event, and framed bytes come from to_canonical_json. Flat bytes come from dump_canonical format json. No session payload from a real transcript is stored.",
+  "generator": "rust/parity/schemas/sesslint.session.v1/generate",
+  "known_parity_gaps": [
+    "dump_session and dump_canonical format jsonl return a header line plus one line per event. That byte string is not one JSON document, so it is not expected output.",
+    "format date-time is an annotation under the pinned draft 2020-12 schema. RFC 3339 checks in canonical.py are not applied.",
+    "The dataclass emitters omit optional None fields. JSON null for title, version, source, execution_state, and nullable event strings is schema-valid and is not an emitter document.",
+    "get_session_schema_path and load_session_schema open a file. validate_session_json does not.",
+    "A root oneOf failure reports oneOf. required, const, enum, type, minimum, minLength, and additionalProperties rows use the header, event, flat, or framed subschema.",
+    "Rust reprints emitter documents. It does not reimplement internal source-key stripping."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

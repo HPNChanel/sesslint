@@ -20,4 +20,6 @@ pub mod finding_schema;
 pub mod repair_manifest_schema;
 #[path = "schema/sesslint.report.v1.rs"]
 pub mod report_schema;
+#[path = "schema/sesslint.session.v1.rs"]
+pub mod session_schema;
 pub mod reference;

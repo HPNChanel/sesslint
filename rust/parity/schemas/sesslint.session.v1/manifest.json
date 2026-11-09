@@ -1,0 +1,12 @@
+{
+  "adapters_canonical_py_sha256": "1b47487f9b63697087937c009c2222dccb9a9e3131f4e807733b30bac0bbe28e",
+  "canonical_py_sha256": "b96950c6a2cbe22022118c89097170e9ebe72bed2d39d28cdd95320b3202d634",
+  "codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
+  "generator": "rust/parity/schemas/sesslint.session.v1/generate",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.session.v1.json",
+  "schema_sha256": "698914f5fa98a72f42ef572c1a4e62b88b3a286f815e12ec9fc63d227a0e2de7",
+  "vector_count": 106,
+  "vectors_sha256": "91796102395e26160eb2b09c588adb8258deaaec8c9b23151745391c978434be"
+}

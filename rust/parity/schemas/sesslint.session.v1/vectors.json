@@ -1,0 +1,1641 @@
+{
+  "facts": {
+    "actor_enum": [
+      "assistant",
+      "system",
+      "tool",
+      "user"
+    ],
+    "branch_count": 4,
+    "event_emit_order": [
+      "actor",
+      "agent_id",
+      "branch_id",
+      "content_hash",
+      "correlation_id",
+      "execution_state",
+      "id",
+      "interaction_id",
+      "kind",
+      "original_id",
+      "parent_id",
+      "payload",
+      "seq",
+      "side_effects",
+      "source_adapter",
+      "source_line",
+      "source_location",
+      "source_record_hash",
+      "ts"
+    ],
+    "event_required": [
+      "actor",
+      "id",
+      "kind",
+      "parent_id",
+      "payload",
+      "seq",
+      "ts"
+    ],
+    "execution_state_enum": [
+      "aborted",
+      "failure",
+      "pending",
+      "success",
+      "unknown",
+      null
+    ],
+    "flat_emit_order": [
+      "created_at",
+      "events",
+      "metadata",
+      "schema_version",
+      "session_id",
+      "source",
+      "title",
+      "version"
+    ],
+    "flat_required": [
+      "created_at",
+      "events",
+      "schema_version",
+      "session_id"
+    ],
+    "format_value": "date-time",
+    "framed_emit_order": [
+      "events",
+      "header"
+    ],
+    "framed_required": [
+      "events",
+      "header"
+    ],
+    "header_emit_order": [
+      "created_at",
+      "metadata",
+      "schema_version",
+      "session_id",
+      "source",
+      "title",
+      "version"
+    ],
+    "header_required": [
+      "created_at",
+      "schema_version",
+      "session_id"
+    ],
+    "id": "https://sesslint.dev/schemas/sesslint.session/v1",
+    "kind_enum": [
+      "approval",
+      "checkpoint",
+      "compaction_boundary",
+      "error",
+      "handoff",
+      "message",
+      "opaque",
+      "subagent_boundary",
+      "tool_call",
+      "tool_result",
+      "unknown"
+    ],
+    "pattern_property": "^experimental_",
+    "schema_version_const": "sesslint.session/v1"
+  },
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "header_min",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "header_full",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"experimental_flag\":true,\"metadata\":{\"lane\":\"l\",\"rank\":1},\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s-full\",\"source\":{\"channel\":\"lab\"},\"title\":\"Note\",\"version\":2}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "header_source_string",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\",\"source\":\"lab\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "header_version_zero",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\",\"version\":0}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_min",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_parent",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e2\",\"kind\":\"message\",\"parent_id\":\"e1\",\"payload\":{\"k\":\"v\"},\"seq\":1,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_empty_payload",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-empty\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_scalars",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-scalars\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"flag\":true,\"missing\":null,\"n\":1,\"ratio\":1.5},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_unicode",
+      "python_json": "{\"actor\":\"user\",\"experimental_note\":{\"ok\":true},\"id\":\"e-unicode\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"text\":\"a\\\"b\\\\c\\n\u00e9\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "event_full",
+      "python_json": "{\"actor\":\"assistant\",\"agent_id\":\"a\",\"branch_id\":\"b\",\"content_hash\":\"abc\",\"correlation_id\":\"c\",\"execution_state\":\"success\",\"experimental_note\":\"n\",\"id\":\"e-full\",\"interaction_id\":\"i\",\"kind\":\"tool_call\",\"original_id\":\"o\",\"parent_id\":\"e0\",\"payload\":{\"n\":1},\"seq\":1,\"side_effects\":\"none\",\"source_adapter\":\"synthetic\",\"source_line\":1,\"source_location\":\"loc\",\"source_record_hash\":\"r\",\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "actor_assistant",
+      "python_json": "{\"actor\":\"assistant\",\"id\":\"e-assistant\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "actor_system",
+      "python_json": "{\"actor\":\"system\",\"id\":\"e-system\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "actor_tool",
+      "python_json": "{\"actor\":\"tool\",\"id\":\"e-tool\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "actor_user",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-user\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_approval",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-approval\",\"kind\":\"approval\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_checkpoint",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-checkpoint\",\"kind\":\"checkpoint\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_compaction_boundary",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-compaction_boundary\",\"kind\":\"compaction_boundary\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_error",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-error\",\"kind\":\"error\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_handoff",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-handoff\",\"kind\":\"handoff\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_message",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-message\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_opaque",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-opaque\",\"kind\":\"opaque\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_subagent_boundary",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-subagent_boundary\",\"kind\":\"subagent_boundary\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_tool_call",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-tool_call\",\"kind\":\"tool_call\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_tool_result",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-tool_result\",\"kind\":\"tool_result\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "kind_unknown",
+      "python_json": "{\"actor\":\"user\",\"id\":\"e-unknown\",\"kind\":\"unknown\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "exec_aborted",
+      "python_json": "{\"actor\":\"user\",\"execution_state\":\"aborted\",\"id\":\"e-aborted\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "exec_failure",
+      "python_json": "{\"actor\":\"user\",\"execution_state\":\"failure\",\"id\":\"e-failure\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "exec_pending",
+      "python_json": "{\"actor\":\"user\",\"execution_state\":\"pending\",\"id\":\"e-pending\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "exec_success",
+      "python_json": "{\"actor\":\"user\",\"execution_state\":\"success\",\"id\":\"e-success\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "exec_unknown",
+      "python_json": "{\"actor\":\"user\",\"execution_state\":\"unknown\",\"id\":\"e-unknown\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "framed_min",
+      "python_json": "{\"events\":[{\"actor\":\"user\",\"id\":\"e1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}],\"header\":{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\"}}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "framed_empty",
+      "python_json": "{\"events\":[],\"header\":{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\"}}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.canonical.to_canonical_json",
+      "expected": {
+        "ok": true
+      },
+      "id": "framed_experimental",
+      "python_json": "{\"events\":[{\"actor\":\"user\",\"id\":\"e1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}],\"experimental_root\":1,\"header\":{\"created_at\":\"2026-01-02T03:04:05Z\",\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\"}}",
+      "trailing_newline": false
+    },
+    {
+      "emitter": "sesslint.adapters.canonical.dump_canonical",
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_min",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"events\":[{\"actor\":\"user\",\"id\":\"e1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}],\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\",\"source\":{},\"version\":1}\n",
+      "trailing_newline": true
+    },
+    {
+      "emitter": "sesslint.adapters.canonical.dump_canonical",
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_empty",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"events\":[],\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\",\"source\":{},\"version\":1}\n",
+      "trailing_newline": true
+    },
+    {
+      "emitter": "sesslint.adapters.canonical.dump_canonical",
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_titled",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"events\":[{\"actor\":\"user\",\"id\":\"e1\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{\"k\":\"v\"},\"seq\":0,\"ts\":\"2026-01-02T03:04:05Z\"}],\"metadata\":{\"lane\":\"l\"},\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s-flat\",\"source\":{\"channel\":\"lab\"},\"title\":\"Note\",\"version\":2}\n",
+      "trailing_newline": true
+    },
+    {
+      "emitter": "sesslint.adapters.canonical.dump_canonical",
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_source_stripped",
+      "python_json": "{\"created_at\":\"2026-01-02T03:04:05Z\",\"events\":[],\"schema_version\":\"sesslint.session/v1\",\"session_id\":\"s1\",\"source\":{\"channel\":\"lab\"},\"version\":1}\n",
+      "trailing_newline": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "mmmmmmmmmmmmmmmmmmmm"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_empty",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_events_not_array",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": 1,
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "oneOf",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bad_actor",
+      "instance": {
+        "actor": "nope",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "expected": {
+        "detail": "created_at",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_missing_created_at",
+      "instance": {
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "created_at",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_missing_created_at_and_session_id",
+      "instance": {
+        "schema_version": "sesslint.session/v1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_missing_schema_version",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "session_id",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_missing_session_id",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "header_bad_const",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v0",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/session_id"
+      },
+      "id": "header_empty_session_id",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": ""
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/session_id"
+      },
+      "id": "header_session_id_number",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": 1
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/created_at"
+      },
+      "id": "header_created_at_number",
+      "instance": {
+        "created_at": 1,
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "header_created_at_not_date",
+      "instance": {
+        "created_at": "not-a-date",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/title"
+      },
+      "id": "header_title_number",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "title": 1
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "header_title_null",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "title": null
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/metadata"
+      },
+      "id": "header_metadata_array",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "metadata": [],
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source"
+      },
+      "id": "header_source_number",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "source": 1
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "header_source_null",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "source": null
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "header_version_string",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "version": "1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "header_version_bool",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "version": true
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "header_version_null",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "version": null
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "header_version_fraction",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+        "version": 1.5
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_additional",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "extra": 1,
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "header_experimental",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "experimental_flag": {
+          "n": 1
+        },
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "created_at",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "header_empty",
+      "instance": {},
+      "schema_pointer": "#/$defs/header"
+    },
+    {
+      "expected": {
+        "detail": "actor",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_actor",
+      "instance": {
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "id",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_id",
+      "instance": {
+        "actor": "user",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "kind",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_kind",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "parent_id",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_parent_id",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "payload",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_payload",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "seq",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_seq",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "ts",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_ts",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "actor",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_missing_actor_and_id",
+      "instance": {
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/id"
+      },
+      "id": "event_empty_id",
+      "instance": {
+        "actor": "user",
+        "id": "",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/parent_id"
+      },
+      "id": "event_parent_number",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": 1,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/seq"
+      },
+      "id": "event_seq_negative",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": -1,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/seq"
+      },
+      "id": "event_seq_bool",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": true,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/seq"
+      },
+      "id": "event_seq_fraction",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 1.5,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/actor"
+      },
+      "id": "event_bad_actor",
+      "instance": {
+        "actor": "nope",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/kind"
+      },
+      "id": "event_bad_kind",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "nope",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/execution_state"
+      },
+      "id": "event_bad_execution_state",
+      "instance": {
+        "actor": "user",
+        "execution_state": "nope",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "event_execution_state_null",
+      "instance": {
+        "actor": "user",
+        "execution_state": null,
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/payload"
+      },
+      "id": "event_payload_array",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": [],
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/payload"
+      },
+      "id": "event_payload_null",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": null,
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/source_line"
+      },
+      "id": "event_source_line_zero",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "source_line": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "event_source_line_null",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "source_line": null,
+        "ts": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/source_line"
+      },
+      "id": "event_source_line_bool",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "source_line": true,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "event_content_hash_null",
+      "instance": {
+        "actor": "user",
+        "content_hash": null,
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/content_hash"
+      },
+      "id": "event_content_hash_number",
+      "instance": {
+        "actor": "user",
+        "content_hash": 1,
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/ts"
+      },
+      "id": "event_ts_number",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": 1
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "nope",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_additional",
+      "instance": {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "nope": 1,
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      },
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "event_experimental",
+      "instance": {
+        "actor": "user",
+        "experimental_flag": [
+          1,
+          "v"
+        ],
+        "id": "e1",
+        "kind": "message",
+        "parent_id": null,
+        "payload": {
+          "k": "v"
+        },
+        "seq": 0,
+        "ts": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "expected": {
+        "detail": "actor",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "event_empty",
+      "instance": {},
+      "schema_pointer": "#/$defs/event"
+    },
+    {
+      "expected": {
+        "detail": "events",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "flat_missing_events",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/oneOf/0"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events"
+      },
+      "id": "flat_events_object",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": {},
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/oneOf/0"
+    },
+    {
+      "expected": {
+        "detail": "id",
+        "keyword": "required",
+        "ok": false,
+        "path": "/events/0"
+      },
+      "id": "flat_event_missing_id",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": [
+          {
+            "actor": "user",
+            "kind": "message",
+            "parent_id": null,
+            "payload": {
+              "k": "v"
+            },
+            "seq": 0,
+            "ts": "2026-01-02T03:04:05Z"
+          }
+        ],
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/oneOf/0"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/events/0"
+      },
+      "id": "flat_event_string",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": [
+          "e"
+        ],
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/oneOf/0"
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "flat_additional",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": [
+          {
+            "actor": "user",
+            "id": "e1",
+            "kind": "message",
+            "parent_id": null,
+            "payload": {
+              "k": "v"
+            },
+            "seq": 0,
+            "ts": "2026-01-02T03:04:05Z"
+          }
+        ],
+        "extra": 1,
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      },
+      "schema_pointer": "#/oneOf/0"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_without_source_or_version",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": [],
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "flat_experimental",
+      "instance": {
+        "created_at": "2026-01-02T03:04:05Z",
+        "events": [
+          {
+            "actor": "user",
+            "id": "e1",
+            "kind": "message",
+            "parent_id": null,
+            "payload": {
+              "k": "v"
+            },
+            "seq": 0,
+            "ts": "2026-01-02T03:04:05Z"
+          }
+        ],
+        "experimental_flag": "y",
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "header",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "framed_missing_header",
+      "instance": {
+        "events": []
+      },
+      "schema_pointer": "#/oneOf/1"
+    },
+    {
+      "expected": {
+        "detail": "events",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "framed_missing_events",
+      "instance": {
+        "header": {
+          "created_at": "2026-01-02T03:04:05Z",
+          "schema_version": "sesslint.session/v1",
+          "session_id": "s1"
+        }
+      },
+      "schema_pointer": "#/oneOf/1"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/header"
+      },
+      "id": "framed_header_array",
+      "instance": {
+        "events": [],
+        "header": []
+      },
+      "schema_pointer": "#/oneOf/1"
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "framed_additional",
+      "instance": {
+        "events": [
+          {
+            "actor": "user",
+            "id": "e1",
+            "kind": "message",
+            "parent_id": null,
+            "payload": {
+              "k": "v"
+            },
+            "seq": 0,
+            "ts": "2026-01-02T03:04:05Z"
+          }
+        ],
+        "extra": 1,
+        "header": {
+          "created_at": "2026-01-02T03:04:05Z",
+          "schema_version": "sesslint.session/v1",
+          "session_id": "s1"
+        }
+      },
+      "schema_pointer": "#/oneOf/1"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/events/0/seq"
+      },
+      "id": "framed_bad_event",
+      "instance": {
+        "events": [
+          {
+            "actor": "user",
+            "id": "e1",
+            "kind": "message",
+            "parent_id": null,
+            "payload": {
+              "k": "v"
+            },
+            "seq": -1,
+            "ts": "2026-01-02T03:04:05Z"
+          }
+        ],
+        "header": {
+          "created_at": "2026-01-02T03:04:05Z",
+          "schema_version": "sesslint.session/v1",
+          "session_id": "s1"
+        }
+      },
+      "schema_pointer": "#/oneOf/1"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.canonical",
+  "not_applicable_count": 7,
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "note": "The test reads the schema file and checks $id and $schema. validate_session_json checks one instance and does not open a path.",
+      "status": "not_applicable",
+      "test": "tests/test_session_schema.py::test_schema_file_exists_and_parses",
+      "vector_id": null
+    },
+    {
+      "note": "The test compares required sets, property sets, and enums with the canonical parser. validate_session_json checks one instance. Recording those names in facts is not that comparison.",
+      "status": "not_applicable",
+      "test": "tests/test_session_schema.py::test_schema_and_parser_required_keys_match",
+      "vector_id": null
+    },
+    {
+      "note": "The test searches canonical.py and the schema file for vendor words. validate_session_json does not read source text.",
+      "status": "not_applicable",
+      "test": "tests/test_session_schema.py::test_vendor_neutrality_in_canonical_and_schema",
+      "vector_id": null
+    },
+    {
+      "note": "The test checks oneOf refs, then required and known keys on each line of a fixture, and it does not run one schema result for one document.",
+      "status": "not_applicable",
+      "test": "tests/test_session_schema.py::test_jsonl_header_and_event_lines_satisfy_schema",
+      "vector_id": null
+    },
+    {
+      "note": "The test checks key sets on a fixture and then parse_session. validate_session_json does not parse a Session. One accepted document is not that pair of asserts.",
+      "status": "not_applicable",
+      "test": "tests/test_session_schema.py::test_minimal_canonical_fixture_satisfies_flat_schema",
+      "vector_id": null
+    },
+    {
+      "note": "get_session_schema_path and load_session_schema open the schema file and the missing-file case raises FileNotFoundError. validate_session_json does not open a path.",
+      "status": "not_applicable",
+      "test": "tests/test_canonical.py::test_schema_loader_helpers",
+      "vector_id": null
+    },
+    {
+      "note": "The test expects SchemaError when to_canonical_json receives bytes, a set, or another unserializable object. That is not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/test_canonical.py::test_to_canonical_json_unserializable_maps_to_schema_error",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.session.v1.json"
+}

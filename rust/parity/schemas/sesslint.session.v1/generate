@@ -1,0 +1,1217 @@
+#!/usr/bin/env python3
+"""Generate sesslint.session.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` and ``git archive`` of PYTHON_COMMIT.
+Emitters are imported from that archive, not from the checkout. ``python_json``
+is the return value of a pinned function. This script does not build those
+bytes with ``json.dumps``.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib
+import io
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+GENERATOR = "rust/parity/schemas/sesslint.session.v1/generate"
+EXPERIMENTAL_PATTERN = "^experimental_"
+HEADER_REF = "#/$defs/header"
+EVENT_REF = "#/$defs/event"
+FLAT_REF = "#/oneOf/0"
+FRAMED_REF = "#/oneOf/1"
+CANONICAL_EMITTER = "sesslint.canonical.to_canonical_json"
+DUMP_EMITTER = "sesslint.adapters.canonical.dump_canonical"
+TS = "2026-01-02T03:04:05Z"
+SCHEMA_TESTS = (
+    "tests/test_session_schema.py::test_schema_file_exists_and_parses",
+    "tests/test_session_schema.py::test_schema_and_parser_required_keys_match",
+    "tests/test_session_schema.py::test_vendor_neutrality_in_canonical_and_schema",
+    "tests/test_session_schema.py::test_jsonl_header_and_event_lines_satisfy_schema",
+    "tests/test_session_schema.py::test_minimal_canonical_fixture_satisfies_flat_schema",
+    "tests/test_canonical.py::test_schema_loader_helpers",
+    "tests/test_canonical.py::test_to_canonical_json_unserializable_maps_to_schema_error",
+)
+NOTES = {
+    "tests/test_session_schema.py::test_schema_file_exists_and_parses": (
+        "The test reads the schema file and checks $id and $schema. "
+        "validate_session_json checks one instance and does not open a path."
+    ),
+    "tests/test_session_schema.py::test_schema_and_parser_required_keys_match": (
+        "The test compares required sets, property sets, and enums with the "
+        "canonical parser. validate_session_json checks one instance. Recording "
+        "those names in facts is not that comparison."
+    ),
+    "tests/test_session_schema.py::test_vendor_neutrality_in_canonical_and_schema": (
+        "The test searches canonical.py and the schema file for vendor words. "
+        "validate_session_json does not read source text."
+    ),
+    "tests/test_session_schema.py::test_jsonl_header_and_event_lines_satisfy_schema": (
+        "The test checks oneOf refs, then required and known keys on each line of "
+        "a fixture, and it does not run one schema result for one document."
+    ),
+    "tests/test_session_schema.py::test_minimal_canonical_fixture_satisfies_flat_schema": (
+        "The test checks key sets on a fixture and then parse_session. "
+        "validate_session_json does not parse a Session. One accepted document "
+        "is not that pair of asserts."
+    ),
+    "tests/test_canonical.py::test_schema_loader_helpers": (
+        "get_session_schema_path and load_session_schema open the schema file and "
+        "the missing-file case raises FileNotFoundError. validate_session_json "
+        "does not open a path."
+    ),
+    "tests/test_canonical.py::test_to_canonical_json_unserializable_maps_to_schema_error": (
+        "The test expects SchemaError when to_canonical_json receives bytes, a "
+        "set, or another unserializable object. That is not one schema result."
+    ),
+}
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "patternProperties",
+    "items",
+    "uniqueItems",
+    "$ref",
+    "oneOf",
+    "$defs",
+    "format",
+}
+MAX_DEPTH = 64
+
+
+class Unproven(Exception):
+    """A comparison or keyword cannot be proven."""
+
+
+def git_bytes(rev_path: str) -> bytes:
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def schema_test_names(path: str) -> list[str]:
+    source = git_bytes(f"{PYTHON_COMMIT}:{path}").decode("utf-8")
+    tree = ast.parse(source)
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
+        and "schema" in node.name
+    ]
+
+
+def assert_test_list() -> None:
+    by_file: dict[str, list[str]] = {}
+    for test_id in SCHEMA_TESTS:
+        path, name = test_id.split("::", 1)
+        by_file.setdefault(path, []).append(name)
+    for path, names in by_file.items():
+        actual = schema_test_names(path)
+        if actual != names:
+            raise SystemExit(f"schema test list mismatch for {path}: {actual}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) < value < 2**127:
+            return value
+        return None
+    if not value.is_integer() or abs(value) > 2**53:
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is not None and right_int is not None:
+            return left_int == right_int
+        if left_int is None and right_int is None:
+            if left == right:
+                return True
+            raise Unproven()
+        return False
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        if not spec:
+            raise Unproven()
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    escaped = key.replace("~", "~0").replace("/", "~1")
+    return f"{parent}/{escaped}"
+
+
+def unescape(raw: str) -> str:
+    out: list[str] = []
+    index = 0
+    while index < len(raw):
+        if raw[index] != "~":
+            out.append(raw[index])
+            index += 1
+            continue
+        if index + 1 >= len(raw) or raw[index + 1] not in "01":
+            raise Unproven()
+        out.append("~" if raw[index + 1] == "0" else "/")
+        index += 2
+    return "".join(out)
+
+
+def resolve(root: object, pointer_text: str) -> object:
+    if not pointer_text.startswith("#"):
+        raise Unproven()
+    rest = pointer_text[1:]
+    if rest == "":
+        return root
+    if not rest.startswith("/"):
+        raise Unproven()
+    node = root
+    for raw in rest[1:].split("/") if rest != "/" else [""]:
+        key = unescape(raw)
+        if isinstance(node, dict):
+            if key not in node:
+                raise Unproven()
+            node = node[key]
+            continue
+        if isinstance(node, list):
+            if key == "0":
+                index = 0
+            elif key.isdigit() and not key.startswith("0"):
+                index = int(key)
+            else:
+                raise Unproven()
+            if index >= len(node):
+                raise Unproven()
+            node = node[index]
+            continue
+        raise Unproven()
+    return node
+
+
+def pattern_match(pattern: str, text: str) -> bool:
+    if pattern != EXPERIMENTAL_PATTERN:
+        raise Unproven()
+    return text.startswith("experimental_")
+
+
+def check(
+    root: object,
+    schema: object,
+    value: object,
+    path: str,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if depth >= MAX_DEPTH:
+        return ("unsupported", path, "depth")
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "format" in schema and not isinstance(schema["format"], str):
+        return ("unsupported", path, "format")
+    if "$defs" in schema and not isinstance(schema["$defs"], dict):
+        return ("unsupported", path, "$defs")
+    if "patternProperties" in schema:
+        raw_patterns = schema["patternProperties"]
+        if not isinstance(raw_patterns, dict):
+            return ("unsupported", path, "patternProperties")
+        for pattern, sub in raw_patterns.items():
+            if pattern != EXPERIMENTAL_PATTERN or not isinstance(sub, dict):
+                return ("unsupported", path, "pattern")
+    if "properties" in schema and not isinstance(schema["properties"], dict):
+        return ("unsupported", path, "properties")
+    if "items" in schema and not isinstance(schema["items"], dict):
+        return ("unsupported", path, "items")
+    if "additionalProperties" in schema and not isinstance(
+        schema["additionalProperties"], (bool, dict)
+    ):
+        return ("unsupported", path, "additionalProperties")
+    if "required" in schema and (
+        not isinstance(schema["required"], list)
+        or any(not isinstance(name, str) for name in schema["required"])
+    ):
+        return ("unsupported", path, "required")
+    if "enum" in schema and (not isinstance(schema["enum"], list) or not schema["enum"]):
+        return ("unsupported", path, "enum")
+    if "oneOf" in schema and (not isinstance(schema["oneOf"], list) or not schema["oneOf"]):
+        return ("unsupported", path, "oneOf")
+    if "$ref" in schema:
+        reference = schema["$ref"]
+        if not isinstance(reference, str):
+            return ("unsupported", path, "$ref")
+        try:
+            target = resolve(root, reference)
+        except Unproven:
+            return ("unsupported", path, "$ref")
+        failure = check(root, target, value, path, depth + 1)
+        if failure is not None:
+            return failure
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list) or not choices:
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(root, schema, value, path, depth)
+    if failure is not None:
+        return failure
+    failure = check_array(root, schema, value, path, depth)
+    if failure is not None:
+        return failure
+    if "oneOf" in schema:
+        return check_one_of(root, schema, value, path, depth)
+    return None
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            return ("unsupported", path, "pattern")
+        try:
+            matched = pattern_match(pattern, value)
+        except Unproven:
+            return ("unsupported", path, "pattern")
+        if not matched:
+            return ("pattern", path, "")
+    return None
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def proven_patterns(schema: dict[str, Any]) -> list[tuple[str, dict[str, Any]]] | tuple[str, str, str]:
+    raw = schema.get("patternProperties")
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return ("unsupported", "", "patternProperties")
+    proven: list[tuple[str, dict[str, Any]]] = []
+    for pattern, sub in raw.items():
+        if pattern != EXPERIMENTAL_PATTERN or not isinstance(sub, dict):
+            return ("unsupported", "", "pattern")
+        proven.append((pattern, sub))
+    return proven
+
+
+def pattern_hit(key: str, patterns: list[tuple[str, dict[str, Any]]]) -> bool | tuple[str, str, str]:
+    matched = False
+    for pattern, _sub in patterns:
+        try:
+            hit = pattern_match(pattern, key)
+        except Unproven:
+            return ("unsupported", "", "pattern")
+        matched = matched or hit
+    return matched
+
+
+def check_object(
+    root: object,
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    props = schema.get("properties", {})
+    patterns = proven_patterns(schema)
+    if isinstance(patterns, tuple):
+        return (patterns[0], path, patterns[2])
+    if "additionalProperties" in schema:
+        if "properties" in schema and not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        names = props if isinstance(props, dict) else {}
+        flag = schema["additionalProperties"]
+        if flag is False:
+            unknown: list[str] = []
+            for key in value:
+                if key in names:
+                    continue
+                hit = pattern_hit(str(key), patterns)
+                if isinstance(hit, tuple):
+                    return (hit[0], path, hit[2])
+                if hit:
+                    continue
+                unknown.append(str(key))
+            unknown.sort()
+            if unknown:
+                return ("additionalProperties", path, unknown[0])
+        elif flag is True:
+            pass
+        elif isinstance(flag, dict):
+            for key in sorted(value):
+                if key in names:
+                    continue
+                hit = pattern_hit(str(key), patterns)
+                if isinstance(hit, tuple):
+                    return (hit[0], path, hit[2])
+                if hit:
+                    continue
+                failure = check(root, flag, value[key], pointer(path, str(key)), depth + 1)
+                if failure is not None:
+                    return failure
+        else:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(root, sub, value[name], pointer(path, str(name)), depth + 1)
+                if failure is not None:
+                    return failure
+    for key in sorted(value):
+        for pattern, sub in patterns:
+            try:
+                hit = pattern_match(pattern, str(key))
+            except Unproven:
+                return ("unsupported", path, "pattern")
+            if not hit:
+                continue
+            failure = check(root, sub, value[key], pointer(path, str(key)), depth + 1)
+            if failure is not None:
+                return failure
+    return None
+
+
+def check_array(
+    root: object,
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(root, item_schema, item, f"{path}/{index}", depth + 1)
+            if failure is not None:
+                return failure
+    if schema.get("uniqueItems") is True:
+        for right in range(1, len(value)):
+            for left in range(right):
+                compared = equal_result(value[left], value[right])
+                if compared is None:
+                    return ("unsupported", path, "uniqueItems")
+                if compared:
+                    return ("uniqueItems", path, "")
+    elif "uniqueItems" in schema and schema["uniqueItems"] is not False:
+        return ("unsupported", path, "uniqueItems")
+    return None
+
+
+def check_one_of(
+    root: object,
+    schema: dict[str, Any],
+    value: object,
+    path: str,
+    depth: int,
+) -> tuple[str, str, str] | None:
+    branches = schema["oneOf"]
+    if not isinstance(branches, list) or not branches:
+        return ("unsupported", path, "oneOf")
+    matched = 0
+    unsupported: tuple[str, str, str] | None = None
+    for branch in branches:
+        failure = check(root, branch, value, path, depth + 1)
+        if failure is None:
+            matched += 1
+        elif failure[0] == "unsupported":
+            unsupported = failure
+    if matched > 1:
+        return ("oneOf", path, "")
+    if unsupported is not None:
+        return unsupported
+    if matched != 1:
+        return ("oneOf", path, "")
+    return None
+
+
+def walk_keywords(node: object) -> None:
+    if isinstance(node, dict):
+        for key in node:
+            if key not in ANNOTATIONS and key not in KNOWN:
+                raise SystemExit(f"unproven keyword {key}")
+        if "patternProperties" in node:
+            patterns = node["patternProperties"]
+            if not isinstance(patterns, dict) or set(patterns) != {EXPERIMENTAL_PATTERN}:
+                raise SystemExit("patternProperties changed")
+            for sub in patterns.values():
+                if sub != {}:
+                    raise SystemExit("pattern schema is not empty")
+        if "format" in node and node["format"] != "date-time":
+            raise SystemExit("format changed")
+        if "$ref" in node and node["$ref"] not in {HEADER_REF, EVENT_REF}:
+            raise SystemExit("ref changed")
+        for key, value in node.items():
+            if key in {"properties", "patternProperties", "$defs"} and isinstance(value, dict):
+                for child in value.values():
+                    walk_keywords(child)
+            elif key in {"items", "additionalProperties"} and isinstance(value, dict):
+                walk_keywords(value)
+            elif key == "oneOf" and isinstance(value, list):
+                for child in value:
+                    walk_keywords(child)
+    elif isinstance(node, list):
+        for child in node:
+            walk_keywords(child)
+
+
+def dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "C:" in text or "/Users/" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if "sbp_" in text:
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_bytes(path: Path, payload: bytes) -> None:
+    text = payload.decode("utf-8")
+    assert_clean(text)
+    path.write_bytes(payload)
+
+
+def load_package() -> tuple[Any, Any, Any]:
+    os.environ["SESSLINT_DISABLE_ACCEL"] = "1"
+    sys.dont_write_bytecode = True
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=ROOT,
+    )
+    temporary = tempfile.TemporaryDirectory(prefix="sesslint-session-schema-")
+    root = Path(temporary.name)
+    with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+        zipped.extractall(root)
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.path.insert(0, str(root / "src"))
+    canonical = importlib.import_module("sesslint.canonical")
+    adapters = importlib.import_module("sesslint.adapters.canonical")
+    codec = importlib.import_module("sesslint._canonical_codec")
+    codec.set_active_codec(codec.PurePythonCanonicalCodec())
+    for module in (canonical, adapters, codec):
+        file_path = Path(module.__file__).resolve()
+        if not file_path.is_relative_to(root.resolve()):
+            raise SystemExit(f"{module.__name__} loaded from outside the pin archive")
+    if not isinstance(codec.get_active_codec(), codec.PurePythonCanonicalCodec):
+        raise SystemExit("accel codec is active")
+    load_package.keep = temporary  # type: ignore[attr-defined]
+    return canonical, adapters, codec
+
+
+def header(
+    canonical: Any,
+    *,
+    session_id: str = "s1",
+    created_at: str = TS,
+    title: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    source: dict[str, Any] | str | None = None,
+    version: int | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Any:
+    return canonical.SessionHeader(
+        schema_version="sesslint.session/v1",
+        session_id=session_id,
+        created_at=created_at,
+        title=title,
+        metadata=metadata or {},
+        source=source,
+        version=version,
+        extra_fields=extra or {},
+    )
+
+
+def event(
+    canonical: Any,
+    *,
+    event_id: str = "e1",
+    parent_id: str | None = None,
+    seq: int = 0,
+    ts: str = TS,
+    actor: str = "user",
+    kind: str = "message",
+    payload: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
+    **optional: Any,
+) -> Any:
+    values: dict[str, Any] = {
+        "id": event_id,
+        "parent_id": parent_id,
+        "seq": seq,
+        "ts": ts,
+        "actor": actor,
+        "kind": kind,
+        "payload": {"k": "v"} if payload is None else payload,
+        "extra_fields": extra or {},
+    }
+    values.update(optional)
+    return canonical.SessionEvent(**values)
+
+
+def canonical_text(canonical: Any, value: Any) -> str:
+    first = canonical.to_canonical_json(value)
+    second = canonical.to_canonical_json(value)
+    if not isinstance(first, str) or first != second or "\r" in first or first.endswith("\n"):
+        raise SystemExit("to_canonical_json is not one stable document")
+    json.loads(first)
+    return first
+
+
+def dump_text(adapters: Any, session: Any, source: dict[str, Any] | None = None) -> str:
+    first = adapters.dump_canonical(session, source, format="json")
+    second = adapters.dump_canonical(session, source, format="json")
+    if not isinstance(first, bytes) or first != second or b"\r" in first or not first.endswith(b"\n"):
+        raise SystemExit("dump_canonical json is not one stable document")
+    text = first.decode("utf-8")
+    json.loads(text)
+    return text
+
+
+def base_event_map() -> dict[str, Any]:
+    return {
+        "actor": "user",
+        "id": "e1",
+        "kind": "message",
+        "parent_id": None,
+        "payload": {"k": "v"},
+        "seq": 0,
+        "ts": TS,
+    }
+
+
+def base_header_map() -> dict[str, Any]:
+    return {
+        "created_at": TS,
+        "schema_version": "sesslint.session/v1",
+        "session_id": "s1",
+    }
+
+
+def main() -> None:
+    assert_test_list()
+    schema_bytes = git_bytes(f"{PYTHON_COMMIT}:schemas/sesslint.session.v1.json")
+    if b"\r" in schema_bytes or not schema_bytes.endswith(b"\n"):
+        raise SystemExit("pin schema line endings changed")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    walk_keywords(schema)
+    if schema.get("$id") != "https://sesslint.dev/schemas/sesslint.session/v1":
+        raise SystemExit("schema id changed")
+    if len(schema.get("oneOf", [])) != 4:
+        raise SystemExit("oneOf branch count changed")
+    canonical, adapters, _codec = load_package()
+    actors = list(schema["$defs"]["event"]["properties"]["actor"]["enum"])
+    kinds = list(schema["$defs"]["event"]["properties"]["kind"]["enum"])
+    states = [
+        item
+        for item in schema["$defs"]["event"]["properties"]["execution_state"]["enum"]
+        if item is not None
+    ]
+    vectors: list[dict[str, Any]] = []
+
+    def add_python(vector_id: str, text: str, *, newline: bool, emitter: str) -> None:
+        if newline:
+            if not text.endswith("\n") or text[:-1].endswith("\n"):
+                raise SystemExit(f"{vector_id} newline")
+            body = text[:-1]
+        else:
+            if text.endswith(("\n", " ", "\t")):
+                raise SystemExit(f"{vector_id} trailing whitespace")
+            body = text
+        parsed = json.loads(body)
+        failure = check(schema, schema, parsed, "", 0)
+        if failure is not None:
+            raise SystemExit(f"{vector_id} emitter rejected {failure}")
+        vectors.append(
+            {
+                "emitter": emitter,
+                "expected": {"ok": True},
+                "id": vector_id,
+                "python_json": text,
+                "trailing_newline": newline,
+            }
+        )
+
+    def add_instance(vector_id: str, instance: object, pointer_text: str = "#") -> None:
+        try:
+            target = resolve(schema, pointer_text)
+        except Unproven as err:
+            raise SystemExit(f"{vector_id} pointer") from err
+        failure = check(schema, target, instance, "", 0)
+        if failure is None:
+            expected: dict[str, Any] = {"ok": True}
+        else:
+            keyword, path, detail = failure
+            if keyword == "unsupported":
+                raise SystemExit(f"{vector_id} unsupported at {path} ({detail})")
+            expected = {"detail": detail, "keyword": keyword, "ok": False, "path": path}
+        item: dict[str, Any] = {"expected": expected, "id": vector_id, "instance": instance}
+        if pointer_text != "#":
+            item["schema_pointer"] = pointer_text
+        vectors.append(item)
+
+    plain_header = header(canonical)
+    plain_event = event(canonical)
+    add_python(
+        "header_min",
+        canonical_text(canonical, plain_header),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "header_full",
+        canonical_text(
+            canonical,
+            header(
+                canonical,
+                session_id="s-full",
+                title="Note",
+                metadata={"lane": "l", "rank": 1},
+                source={"channel": "lab"},
+                version=2,
+                extra={"experimental_flag": True},
+            ),
+        ),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "header_source_string",
+        canonical_text(canonical, header(canonical, source="lab")),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "header_version_zero",
+        canonical_text(canonical, header(canonical, version=0)),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_min",
+        canonical_text(canonical, plain_event),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_parent",
+        canonical_text(canonical, event(canonical, event_id="e2", parent_id="e1", seq=1)),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_empty_payload",
+        canonical_text(canonical, event(canonical, event_id="e-empty", payload={})),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_scalars",
+        canonical_text(
+            canonical,
+            event(
+                canonical,
+                event_id="e-scalars",
+                payload={"flag": True, "missing": None, "n": 1, "ratio": 1.5},
+            ),
+        ),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_unicode",
+        canonical_text(
+            canonical,
+            event(
+                canonical,
+                event_id="e-unicode",
+                payload={"text": "a\"b\\c\né"},
+                extra={"experimental_note": {"ok": True}},
+            ),
+        ),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "event_full",
+        canonical_text(
+            canonical,
+            event(
+                canonical,
+                event_id="e-full",
+                parent_id="e0",
+                seq=1,
+                actor="assistant",
+                kind="tool_call",
+                payload={"n": 1},
+                content_hash="abc",
+                correlation_id="c",
+                branch_id="b",
+                interaction_id="i",
+                agent_id="a",
+                execution_state="success",
+                source_line=1,
+                source_record_hash="r",
+                original_id="o",
+                source_adapter="synthetic",
+                source_location="loc",
+                side_effects="none",
+                extra={"experimental_note": "n"},
+            ),
+        ),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    for actor in actors:
+        add_python(
+            f"actor_{actor}",
+            canonical_text(canonical, event(canonical, event_id=f"e-{actor}", actor=actor)),
+            newline=False,
+            emitter=CANONICAL_EMITTER,
+        )
+    for kind in kinds:
+        add_python(
+            f"kind_{kind}",
+            canonical_text(canonical, event(canonical, event_id=f"e-{kind}", kind=kind)),
+            newline=False,
+            emitter=CANONICAL_EMITTER,
+        )
+    for state in states:
+        add_python(
+            f"exec_{state}",
+            canonical_text(
+                canonical,
+                event(canonical, event_id=f"e-{state}", execution_state=state),
+            ),
+            newline=False,
+            emitter=CANONICAL_EMITTER,
+        )
+    framed = canonical.Session(header=plain_header, events=(plain_event,))
+    add_python(
+        "framed_min",
+        canonical_text(canonical, framed),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "framed_empty",
+        canonical_text(canonical, canonical.Session(header=plain_header, events=())),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "framed_experimental",
+        canonical_text(
+            canonical,
+            canonical.Session(
+                header=plain_header,
+                events=(plain_event,),
+                extra_fields={"experimental_root": 1},
+            ),
+        ),
+        newline=False,
+        emitter=CANONICAL_EMITTER,
+    )
+    add_python(
+        "flat_min",
+        dump_text(adapters, canonical.Session(header=plain_header, events=(plain_event,))),
+        newline=True,
+        emitter=DUMP_EMITTER,
+    )
+    add_python(
+        "flat_empty",
+        dump_text(adapters, canonical.Session(header=plain_header, events=())),
+        newline=True,
+        emitter=DUMP_EMITTER,
+    )
+    add_python(
+        "flat_titled",
+        dump_text(
+            adapters,
+            canonical.Session(
+                header=header(
+                    canonical,
+                    session_id="s-flat",
+                    title="Note",
+                    metadata={"lane": "l"},
+                    version=2,
+                ),
+                events=(plain_event,),
+            ),
+            {"channel": "lab"},
+        ),
+        newline=True,
+        emitter=DUMP_EMITTER,
+    )
+    stripped = dump_text(
+        adapters,
+        canonical.Session(header=plain_header, events=()),
+        {"channel": "lab", "links": ["x"], "record_sizes": [1]},
+    )
+    stripped_doc = json.loads(stripped)
+    if "links" in stripped_doc["source"] or "record_sizes" in stripped_doc["source"]:
+        raise SystemExit("pin did not strip internal source keys")
+    add_python("flat_source_stripped", stripped, newline=True, emitter=DUMP_EMITTER)
+    jsonl = adapters.dump_canonical(canonical.Session(header=plain_header, events=(plain_event,)))
+    if not isinstance(jsonl, bytes) or jsonl.count(b"\n") < 2:
+        raise SystemExit("jsonl emitter did not return multiple documents")
+    try:
+        json.loads(jsonl.decode("utf-8"))
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise SystemExit("jsonl emitter unexpectedly returned one document")
+
+    for name, value in (
+        ("root_array", []),
+        ("root_string", "mmmmmmmmmmmmmmmmmmmm"),
+        ("root_null", None),
+        ("root_bool", True),
+        ("root_number", 1),
+        ("root_empty", {}),
+    ):
+        add_instance(name, value)
+    add_instance(
+        "root_events_not_array",
+        {**base_header_map(), "events": 1},
+    )
+    bad_actor = base_event_map()
+    bad_actor["actor"] = "nope"
+    add_instance("root_bad_actor", bad_actor)
+
+    header_map = base_header_map()
+    add_instance("header_missing_created_at", {"schema_version": "sesslint.session/v1", "session_id": "s1"}, HEADER_REF)
+    add_instance(
+        "header_missing_created_at_and_session_id",
+        {"schema_version": "sesslint.session/v1"},
+        HEADER_REF,
+    )
+    add_instance("header_missing_schema_version", {"created_at": TS, "session_id": "s1"}, HEADER_REF)
+    add_instance("header_missing_session_id", {"created_at": TS, "schema_version": "sesslint.session/v1"}, HEADER_REF)
+    add_instance("header_bad_const", {**header_map, "schema_version": "sesslint.session/v0"}, HEADER_REF)
+    add_instance("header_empty_session_id", {**header_map, "session_id": ""}, HEADER_REF)
+    add_instance("header_session_id_number", {**header_map, "session_id": 1}, HEADER_REF)
+    add_instance("header_created_at_number", {**header_map, "created_at": 1}, HEADER_REF)
+    add_instance("header_created_at_not_date", {**header_map, "created_at": "not-a-date"})
+    add_instance("header_title_number", {**header_map, "title": 1}, HEADER_REF)
+    add_instance("header_title_null", {**header_map, "title": None})
+    add_instance("header_metadata_array", {**header_map, "metadata": []}, HEADER_REF)
+    add_instance("header_source_number", {**header_map, "source": 1}, HEADER_REF)
+    add_instance("header_source_null", {**header_map, "source": None})
+    add_instance("header_version_string", {**header_map, "version": "1"}, HEADER_REF)
+    add_instance("header_version_bool", {**header_map, "version": True}, HEADER_REF)
+    add_instance("header_version_null", {**header_map, "version": None})
+    add_instance("header_version_fraction", {**header_map, "version": 1.5}, HEADER_REF)
+    add_instance("header_additional", {**header_map, "extra": 1}, HEADER_REF)
+    add_instance("header_experimental", {**header_map, "experimental_flag": {"n": 1}})
+    add_instance("header_empty", {}, HEADER_REF)
+
+    event_map = base_event_map()
+    for missing in ("actor", "id", "kind", "parent_id", "payload", "seq", "ts"):
+        item = dict(event_map)
+        item.pop(missing)
+        add_instance(f"event_missing_{missing}", item, EVENT_REF)
+    add_instance("event_missing_actor_and_id", {key: value for key, value in event_map.items() if key not in {"actor", "id"}}, EVENT_REF)
+    add_instance("event_empty_id", {**event_map, "id": ""}, EVENT_REF)
+    add_instance("event_parent_number", {**event_map, "parent_id": 1}, EVENT_REF)
+    add_instance("event_seq_negative", {**event_map, "seq": -1}, EVENT_REF)
+    add_instance("event_seq_bool", {**event_map, "seq": True}, EVENT_REF)
+    add_instance("event_seq_fraction", {**event_map, "seq": 1.5}, EVENT_REF)
+    add_instance("event_bad_actor", {**event_map, "actor": "nope"}, EVENT_REF)
+    add_instance("event_bad_kind", {**event_map, "kind": "nope"}, EVENT_REF)
+    add_instance("event_bad_execution_state", {**event_map, "execution_state": "nope"}, EVENT_REF)
+    add_instance("event_execution_state_null", {**event_map, "execution_state": None})
+    add_instance("event_payload_array", {**event_map, "payload": []}, EVENT_REF)
+    add_instance("event_payload_null", {**event_map, "payload": None}, EVENT_REF)
+    add_instance("event_source_line_zero", {**event_map, "source_line": 0}, EVENT_REF)
+    add_instance("event_source_line_null", {**event_map, "source_line": None})
+    add_instance("event_source_line_bool", {**event_map, "source_line": True}, EVENT_REF)
+    add_instance("event_content_hash_null", {**event_map, "content_hash": None})
+    add_instance("event_content_hash_number", {**event_map, "content_hash": 1}, EVENT_REF)
+    add_instance("event_ts_number", {**event_map, "ts": 1}, EVENT_REF)
+    add_instance("event_additional", {**event_map, "nope": 1}, EVENT_REF)
+    add_instance("event_experimental", {**event_map, "experimental_flag": [1, "v"]})
+    add_instance("event_empty", {}, EVENT_REF)
+
+    flat_map = {**header_map, "events": [event_map]}
+    add_instance("flat_missing_events", header_map, FLAT_REF)
+    add_instance("flat_events_object", {**header_map, "events": {}}, FLAT_REF)
+    add_instance("flat_event_missing_id", {**header_map, "events": [{key: value for key, value in event_map.items() if key != "id"}]}, FLAT_REF)
+    add_instance("flat_event_string", {**header_map, "events": ["e"]}, FLAT_REF)
+    add_instance("flat_additional", {**flat_map, "extra": 1}, FLAT_REF)
+    add_instance("flat_without_source_or_version", {**header_map, "events": []})
+    add_instance("flat_experimental", {**flat_map, "experimental_flag": "y"})
+
+    framed_map = {"events": [event_map], "header": header_map}
+    add_instance("framed_missing_header", {"events": []}, FRAMED_REF)
+    add_instance("framed_missing_events", {"header": header_map}, FRAMED_REF)
+    add_instance("framed_header_array", {"events": [], "header": []}, FRAMED_REF)
+    add_instance("framed_additional", {**framed_map, "extra": 1}, FRAMED_REF)
+    add_instance("framed_bad_event", {"events": [{**event_map, "seq": -1}], "header": header_map}, FRAMED_REF)
+
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    header_props = schema["$defs"]["header"]["properties"]
+    event_props = schema["$defs"]["event"]["properties"]
+    flat_props = schema["oneOf"][0]["properties"]
+    framed_props = schema["oneOf"][1]["properties"]
+    facts = {
+        "actor_enum": actors,
+        "branch_count": 4,
+        "event_emit_order": sorted(event_props),
+        "event_required": list(schema["$defs"]["event"]["required"]),
+        "execution_state_enum": list(schema["$defs"]["event"]["properties"]["execution_state"]["enum"]),
+        "flat_emit_order": sorted(flat_props),
+        "flat_required": list(schema["oneOf"][0]["required"]),
+        "format_value": "date-time",
+        "framed_emit_order": sorted(framed_props),
+        "framed_required": list(schema["oneOf"][1]["required"]),
+        "header_emit_order": sorted(header_props),
+        "header_required": list(schema["$defs"]["header"]["required"]),
+        "id": schema["$id"],
+        "kind_enum": kinds,
+        "pattern_property": EXPERIMENTAL_PATTERN,
+        "schema_version_const": header_props["schema_version"]["const"],
+    }
+    document = {
+        "facts": facts,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    coverage = {
+        "covered_count": 0,
+        "module": "sesslint.canonical",
+        "not_applicable_count": len(SCHEMA_TESTS),
+        "python_commit": PYTHON_COMMIT,
+        "rows": [
+            {
+                "note": NOTES[test_id],
+                "status": "not_applicable",
+                "test": test_id,
+                "vector_id": None,
+            }
+            for test_id in SCHEMA_TESTS
+        ],
+        "schema_file": "schemas/sesslint.session.v1.json",
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.session.v1 schema parity. Header, event, and framed "
+            "bytes come from to_canonical_json. Flat bytes come from dump_canonical "
+            "format json. No session payload from a real transcript is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            "dump_session and dump_canonical format jsonl return a header line plus one line per event. That byte string is not one JSON document, so it is not expected output.",
+            "format date-time is an annotation under the pinned draft 2020-12 schema. RFC 3339 checks in canonical.py are not applied.",
+            "The dataclass emitters omit optional None fields. JSON null for title, version, source, execution_state, and nullable event strings is schema-valid and is not an emitter document.",
+            "get_session_schema_path and load_session_schema open a file. validate_session_json does not.",
+            "A root oneOf failure reports oneOf. required, const, enum, type, minimum, minLength, and additionalProperties rows use the header, event, flat, or framed subschema.",
+            "Rust reprints emitter documents. It does not reimplement internal source-key stripping.",
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    manifest = {
+        "adapters_canonical_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/adapters/canonical.py")
+        ).hexdigest(),
+        "canonical_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/canonical.py")
+        ).hexdigest(),
+        "codec_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/_canonical_codec.py")
+        ).hexdigest(),
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.session.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": hashlib.sha256(vectors_text.encode("utf-8")).hexdigest(),
+    }
+    coverage_text = dumps(coverage)
+    provenance_text = dumps(provenance)
+    manifest_text = dumps(manifest)
+    for text in (vectors_text, coverage_text, provenance_text, manifest_text):
+        assert_clean(text)
+        if text.count("\r") or not text.endswith("\n"):
+            raise SystemExit("parity text line endings")
+    if coverage_text.count('"status": "covered"') or '"status": "not_applicable"' not in coverage_text:
+        raise SystemExit("coverage status changed")
+    OUT.mkdir(parents=True, exist_ok=True)
+    write_bytes(OUT / "schema.json", schema_bytes)
+    write_bytes(OUT / "vectors.json", vectors_text.encode("utf-8"))
+    write_bytes(OUT / "coverage.json", coverage_text.encode("utf-8"))
+    write_bytes(OUT / "PROVENANCE.json", provenance_text.encode("utf-8"))
+    write_bytes(OUT / "manifest.json", manifest_text.encode("utf-8"))
+    print(f"vector_count {len(vectors)}")
+    print("covered_count 0")
+    print(f"not_applicable_count {len(SCHEMA_TESTS)}")
+    print(f"schema_sha256 {manifest['schema_sha256']}")
+    print(f"vectors_sha256 {manifest['vectors_sha256']}")
+    print(f"vectors_bytes {len(vectors_text.encode('utf-8'))}")
+    print(f"vectors_lf {vectors_text.count(chr(10))}")
+    print(f"vectors_cr {vectors_text.count(chr(13))}")
+    print("emitted_pinned_bytes true")
+
+
+if __name__ == "__main__":
+    main()
