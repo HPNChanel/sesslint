@@ -1,0 +1,125 @@
+{
+  "rows": [
+    {
+      "reason": "Includes assert_schema; schema validation is outside this module, so no partial coverage credit.",
+      "status": "not_applicable",
+      "test_name": "test_fixture_envelope_matches_schema_and_loads",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": []
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_plain_files_default_to_unknown_completeness",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15549,
+        15550
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_csv_keeps_text_exact_and_leading_zeros",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15551
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_csv_short_row_leaves_fields_absent",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15552
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_csv_rejects_ambiguous_shapes",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15553,
+        15554,
+        15555,
+        15556,
+        15557
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_json_nested_values_are_marked_not_compared",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15558
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_snapshot_rejections",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15559,
+        15560,
+        15561,
+        15562,
+        15563,
+        15564,
+        15565,
+        15566,
+        15567,
+        15568
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_flags_fill_gaps_but_never_contradict_the_file",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15569,
+        15570,
+        15571,
+        15572
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_size_limit_and_encoding",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15573,
+        15574,
+        15575
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_parse_instant_requires_offset",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15576,
+        15577,
+        15578,
+        15579,
+        15580,
+        15581
+      ]
+    },
+    {
+      "reason": "Complete source-test operation and assertions, including every parametrized row.",
+      "status": "covered",
+      "test_name": "test_snapshot_metadata_is_content_free",
+      "test_source": "tests/outcome/test_outcome_snapshot.py",
+      "vector_ids": [
+        15582
+      ]
+    }
+  ]
+}

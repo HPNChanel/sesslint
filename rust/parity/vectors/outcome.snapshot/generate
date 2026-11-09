@@ -1,0 +1,589 @@
+#!/usr/bin/env python3
+"""Generate snapshot vectors from pinned Python and synthetic source fixtures."""
+
+import ast
+import hashlib
+import importlib
+import io
+import itertools
+import json
+import random
+import struct
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+SOURCE = "src/sesslint/outcome/snapshot.py"
+CONTRACT = "src/sesslint/outcome/contract.py"
+TEST_SOURCE = "tests/outcome/test_outcome_snapshot.py"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+# datetime.fromisoformat has version-dependent acceptance quirks. Regeneration
+# must use the actual measured interpreter, rather than silently changing goldens.
+assert sys.implementation.name == "cpython" and sys.version_info[:3] == (3, 11, 9), sys.version
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def wire(x):
+    return json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+
+
+def dump(name, x):
+    (HERE / name).write_text(
+        json.dumps(x, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+cases = []
+
+
+def add(op, **kw):
+    cases.append(dict(id=len(cases), op=op, **kw))
+
+
+def load(name, raw, **opts):
+    add("load", name=name, hex=raw.hex(), **opts)
+
+
+def jsonload(obj, **opts):
+    load("s.json", json.dumps(obj, ensure_ascii=True).encode(), **opts)
+
+
+dates = [
+    "9999-W52-6",
+    "9999-W52-7",
+    "2026-10-20",
+    "20261020",
+    "2026-W43-2",
+    "2026W432",
+    "2026-W43",
+    "2026W43",
+    "0001-01-01",
+    "9999-12-31",
+    "2000-02-29",
+    "1900-02-29",
+    "2025-W53-1",
+    "2026-W53-1",
+    "2020-W53-7",
+    "2026-00-01",
+    "2026-13-01",
+    "2026-01-32",
+    "2026-1-01",
+    "2026-001",
+    "0000-01-01",
+    "10000-01-01",
+]
+times = [
+    "12",
+    "1200",
+    "12:00",
+    "120000",
+    "12:00:00",
+    "12:00:00.1234567",
+    "12,5",
+    "12:00.5",
+    "12.",
+    "12:",
+    "12:0000",
+    "1200:00",
+    "00",
+    "23:59:59.999999",
+    "24",
+    "12:60",
+    "12:00:60",
+    "120",
+    "1",
+    "000000",
+    "23:59:59",
+    "12:00:00.000001",
+]
+zones = [
+    "Z",
+    "+07",
+    "-01:30",
+    "+00:00:01.2",
+    "-00:00:00.9",
+    "+00:99",
+    "+23:60",
+    "+24",
+    "+00:00:99",
+    "+000001.1234567",
+    "+00.5",
+    "z",
+    "",
+]
+for d, t, z in itertools.product(dates, times, zones):
+    add("instant", raw=d + "T" + t + z)
+for d, sep, t in itertools.product(
+    dates, [" ", "😀", "0", "1", "-", "\x00", "\n", "TT"], ["12Z", "120000+00"]
+):
+    add("instant", raw=d + sep + t)
+for t in [
+    "12a",
+    "12é",
+    "12😀",
+    "12:00x",
+    "120000x",
+    "12.123456x",
+    "12.123456xy",
+    "12.12345x",
+    "12000012",
+    "120000:12",
+    "12:00:00:12",
+    "12\x00",
+    "12.123456+01x",
+]:
+    for z in ["Z", "+00", "+00:", "+00000012", "+00\x00", "+00:00:00.123456x"]:
+        add("instant", raw="2026-10-20T" + t + z)
+for t, z in itertools.product(
+    ["12", "12:00", "12:00:00", "12.123456", "12.12345"],
+    ["Z\x00", "Z\x00tail", "+00\x00tail", "+00:00:00.123456\x00tail", "+00:00:00.123456x\x00"],
+):
+    add("instant", raw="2026-10-20T" + t + z)
+for raw in [None, True, 1, [], {}, "x" * 65, "2026-10-20T12Z" + " " * 50]:
+    add("instant", raw=raw)
+rng = random.Random(459723)
+for _ in range(2000):
+    year = rng.randint(1, 9999)
+    week = rng.randint(0, 54)
+    day = rng.randint(0, 8)
+    add(
+        "instant",
+        raw=f"{year:04}-W{week:02}-{day}T{rng.randint(0, 25):02}:{rng.randint(0, 61):02}Z",
+    )
+for n in range(6):
+    for parts in itertools.product('a,"\r\n', repeat=n):
+        add("csv", raw="".join(parts))
+for _ in range(1500):
+    add("csv", raw="".join(rng.choice('ab,"\r\n\x00 é') for _ in range(rng.randint(6, 55))))
+for raw in [
+    "id,a,b\n1,x\n2,,\n",
+    'a,a\n"x',
+    "a\n" + "é" * 131072,
+    "a\n" + "é" * 131073,
+    'a\r\n"a\r\nb"\r\n',
+    'a\n"x"\x00',
+    '""',
+    '\n""\n',
+]:
+    add("csv", raw=raw)
+for sep in [
+    "\n",
+    "\r",
+    "\r\n",
+    "\x0b",
+    "\x0c",
+    "\x1c",
+    "\x1d",
+    "\x1e",
+    "\x1f",
+    "\x85",
+    "\u2028",
+    "\u2029",
+]:
+    for a, b in itertools.product(
+        ["{}", "0", "[]", "null", '{"a":1}', '{"a":NaN}', '{"a":1,"a":2}', " ", "\x1f"], repeat=2
+    ):
+        add("jsonl", raw=a + sep + b)
+for raw in [
+    [],
+    [{}],
+    [{}, 0],
+    {},
+    None,
+    [dict(a=1, b=1.0, c=None, d=False, e="x", f=[], g={})],
+    [dict(a=10**100, b=-0.0)],
+]:
+    add("objects", raw=json.dumps(raw))
+base = dict(schema_version="sesslint.snapshot/v1")
+for key in [
+    "schema_version",
+    "records",
+    "observed_at",
+    "completeness",
+    "origin",
+    "demo",
+    "z",
+    "a",
+    "😀",
+    "\n",
+    "'\"\\",
+]:
+    for value in [
+        None,
+        False,
+        True,
+        0,
+        1,
+        1.0,
+        "",
+        "bad",
+        [],
+        {},
+        [{}],
+        [1],
+        "2026-10-20T12Z",
+        "complete",
+        "unavailable",
+        "target_system",
+    ]:
+        jsonload(dict(base, **{key: value}))
+for comp, origin, records in itertools.product(
+    ["complete", "partial", "unknown", "unavailable"],
+    ["target_system", "workflow_log", "user_file", "manual"],
+    [[], [{}]],
+):
+    jsonload(dict(base, completeness=comp, origin=origin, records=records))
+for decl, flag in itertools.product(
+    [None, "complete", "partial", "unknown", "unavailable", "bad", False, 0],
+    [None, "complete", "partial", "bad", ""],
+):
+    jsonload(dict(base, completeness=decl), completeness=flag)
+for decl, flag in itertools.product(
+    [None, "target_system", "workflow_log", "user_file", "manual", "bad", False, 0],
+    [None, "manual", "bad", ""],
+):
+    jsonload(dict(base, origin=decl), origin=flag)
+for decl, flag in itertools.product(
+    ["2026-10-20T12Z", "2026-10-20T19+07", "2026-10-20T11Z", None, "bad", 0],
+    [None, "2026-10-20T12Z", "2026-10-20T11Z"],
+):
+    jsonload(dict(base, observed_at=decl), observed_at=flag)
+for name, data in itertools.product(
+    ["s.json", "s.JSON", "s.csv", "s.jsonl", "s.ndjson", "s.txt", "s", "s.json."],
+    [
+        b"[]",
+        b"{}",
+        b"0",
+        b"null",
+        b'[{"x":true}]',
+        b'{"x":1,"x":2}',
+        b"\xff",
+        b"\xef\xbb\xbf[]",
+        b"\xef\xbb\xbf\xef\xbb\xbf[]",
+        b"",
+        b"\x00",
+    ],
+):
+    load(name, data)
+for role, limit in itertools.product(["source", "target", "other"], [-1, 0, 1, 2, 3]):
+    load("s.json", b"[]", role=role, max_bytes=limit)
+
+load("s.json", b"[]", max_bytes=2**63 - 1)
+
+
+test_bytes = show(TEST_SOURCE)
+test_ast = ast.parse(test_bytes)
+tests = {
+    n.name: n
+    for n in test_ast.body
+    if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+}
+assert len(tests) == 11
+fixture_names = ["PROVENANCE.json", "source.csv", "target.jsonl", "target_complete.json"]
+fixtures = {name: show("fixtures/outcome/orders/" + name) for name in fixture_names}
+assert json.loads(fixtures["PROVENANCE.json"])["contains_real_data"] is False
+test_ids = {name: [] for name in tests}
+
+
+def source_case(test_name, op, **kw):
+    test_ids[test_name].append(len(cases))
+    add(op, **kw)
+
+
+def source_load(test_name, name, data, **kw):
+    source_case(test_name, "load", name=name, hex=data.hex(), **kw)
+
+
+def params(name):
+    calls = [
+        d
+        for d in tests[name].decorator_list
+        if isinstance(d, ast.Call)
+        and isinstance(d.func, ast.Attribute)
+        and d.func.attr == "parametrize"
+    ]
+    assert len(calls) == 1
+    return ast.literal_eval(calls[0].args[1])
+
+
+for name in ["source.csv", "target.jsonl"]:
+    source_load(
+        "test_plain_files_default_to_unknown_completeness", name, fixtures[name], role="source"
+    )
+source_load(
+    "test_csv_keeps_text_exact_and_leading_zeros",
+    "source.csv",
+    fixtures["source.csv"],
+    role="source",
+)
+source_load(
+    "test_csv_short_row_leaves_fields_absent", "s.csv", b"id,a,b\n1,x\n2,,\n", role="source"
+)
+for raw, needle in params("test_csv_rejects_ambiguous_shapes"):
+    source_load(
+        "test_csv_rejects_ambiguous_shapes",
+        "s.csv",
+        raw.encode(),
+        role="source",
+        assert_contains=needle,
+    )
+source_load(
+    "test_json_nested_values_are_marked_not_compared",
+    "t.json",
+    b'[{"ref": "1", "x": {"y": 1}}]',
+    role="target",
+)
+for name, raw, needle in params("test_snapshot_rejections"):
+    source_load(
+        "test_snapshot_rejections", name, raw.encode(), role="target", assert_contains=needle
+    )
+t = "test_flags_fill_gaps_but_never_contradict_the_file"
+source_load(
+    t,
+    "target.jsonl",
+    fixtures["target.jsonl"],
+    role="target",
+    completeness="partial",
+    origin="workflow_log",
+    observed_at="2026-10-20T12:00:00Z",
+)
+source_load(
+    t,
+    "target_complete.json",
+    fixtures["target_complete.json"],
+    role="target",
+    completeness="partial",
+    assert_contains="contradicts",
+)
+source_load(
+    t,
+    "target_complete.json",
+    fixtures["target_complete.json"],
+    role="target",
+    observed_at="2026-10-20T11:00:00Z",
+    assert_contains="contradicts",
+)
+source_load(
+    t,
+    "target_complete.json",
+    fixtures["target_complete.json"],
+    role="target",
+    completeness="complete",
+)
+t = "test_size_limit_and_encoding"
+source_load(
+    t, "t.json", b"[" + b" " * 64 + b"]", role="target", max_bytes=8, assert_contains="exceeds"
+)
+source_load(t, "t.csv", b"id\n\xff\n", role="target", assert_contains="UTF-8")
+source_load(t, "source.csv", fixtures["source.csv"], role="other")
+for raw, ok in params("test_parse_instant_requires_offset"):
+    source_case("test_parse_instant_requires_offset", "instant", raw=raw, assert_some=ok)
+source_load(
+    "test_snapshot_metadata_is_content_free",
+    "target_complete.json",
+    fixtures["target_complete.json"],
+    role="target",
+)
+coverage = []
+for name in tests:
+    covered = bool(test_ids[name])
+    coverage.append(
+        dict(
+            test_source=TEST_SOURCE,
+            test_name=name,
+            status="covered" if covered else "not_applicable",
+            vector_ids=test_ids[name],
+            reason=(
+                "Complete source-test operation and assertions, including every parametrized row."
+                if covered
+                else "Includes assert_schema; schema validation is outside this module, "
+                "so no partial coverage credit."
+            ),
+        )
+    )
+assert sum(r["status"] == "covered" for r in coverage) == 10
+
+
+def tag(v):
+    if v is snap.NON_SCALAR:
+        return ["nested"]
+    if v is None:
+        return ["null"]
+    if type(v) is bool:
+        return ["bool", v]
+    if type(v) is int:
+        return ["int", str(v)]
+    if type(v) is float:
+        return ["float", struct.pack(">d", v).hex()]
+    return ["str", v]
+
+
+def rows(x):
+    return dict(records=[{k: tag(v) for k, v in r.items()} for r in x[0]], fields=sorted(x[1]))
+
+
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+with tempfile.TemporaryDirectory(prefix="sesslint-snapshot-vector-") as temporary:
+    root = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            if member.is_dir():
+                continue
+            p = Path(member.filename)
+            assert (
+                not p.is_absolute() and ".." not in p.parts and p.parts[:2] == ("src", "sesslint")
+            )
+            target = root / p
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(z.read(member))
+    sys.path.insert(0, str(root / "src"))
+    snap = importlib.import_module("sesslint.outcome.snapshot")
+    results = []
+    for case in cases:
+        try:
+            op = case["op"]
+            if op == "instant":
+                out = snap.format_instant(snap.parse_instant(case["raw"]))
+            elif op == "csv":
+                out = rows(snap._from_csv(case["raw"]))
+            elif op == "jsonl":
+                out = rows(snap._from_jsonl(case["raw"]))
+            elif op == "objects":
+                out = rows(snap._from_objects(snap.parse_strict_json(case["raw"]), "items"))
+            elif op == "load":
+                name = case["name"]
+                assert Path(name).name == name and name not in (".", "..")
+                path = root / name
+                path.write_bytes(bytes.fromhex(case["hex"]))
+                opts = {
+                    k: case[k] for k in ["role", "completeness", "origin", "max_bytes"] if k in case
+                }
+                opts.setdefault("role", "target")
+                if case.get("observed_at") is not None:
+                    opts["observed_at"] = snap.parse_instant(case["observed_at"])
+                s = snap.load_snapshot(path, **opts)
+                out = dict(meta=s.to_dict(), **rows((s.records, s.fields)))
+            else:
+                raise AssertionError(op)
+            results.append(dict(ok=out))
+        except (ValueError, RecursionError, OverflowError) as e:
+            results.append(dict(error=str(e), kind=type(e).__name__))
+
+# Reproduce the source assertions before assigning whole-test coverage.
+for c, r in zip(cases, results, strict=True):
+    if "assert_contains" in c:
+        assert c["assert_contains"] in r["error"] and r["kind"] == "SnapshotError"
+    if "assert_some" in c:
+        assert (r["ok"] is not None) == c["assert_some"]
+        if c["assert_some"]:
+            assert r["ok"] == "2026-10-20T12:00:00Z"
+
+
+def outputs(name):
+    return [results[i] for i in test_ids[name]]
+
+
+for r, fmt in zip(
+    outputs("test_plain_files_default_to_unknown_completeness"), ["csv", "jsonl"], strict=True
+):
+    m = r["ok"]["meta"]
+    assert (m["input_format"], m["completeness"], m["origin"], m["observed_at"]) == (
+        fmt,
+        "unknown",
+        "user_file",
+        None,
+    )
+r = outputs("test_csv_keeps_text_exact_and_leading_zeros")[0]["ok"]["records"][0]
+assert r["order_id"] == ["str", "0001"] and all(v[0] == "str" for v in r.values())
+r = outputs("test_csv_short_row_leaves_fields_absent")[0]["ok"]["records"]
+assert "b" not in r[0] and r[1]["b"] == ["str", ""]
+r = outputs("test_json_nested_values_are_marked_not_compared")[0]["ok"]
+assert r["records"][0]["x"] == ["nested"] and r["meta"]["input_format"] == "json"
+r = outputs("test_flags_fill_gaps_but_never_contradict_the_file")
+assert (r[0]["ok"]["meta"]["completeness"], r[0]["ok"]["meta"]["origin"]) == (
+    "partial",
+    "workflow_log",
+) and r[3]["ok"]["meta"]["completeness"] == "complete"
+assert outputs("test_size_limit_and_encoding")[2]["kind"] == "ValueError"
+m = outputs("test_snapshot_metadata_is_content_free")[0]["ok"]["meta"]
+assert (
+    set(m)
+    == {
+        "role",
+        "name",
+        "sha256",
+        "input_format",
+        "record_count",
+        "observed_at",
+        "completeness",
+        "origin",
+        "demo",
+    }
+    and m["name"] == "target_complete.json"
+)
+vectors = [
+    dict(
+        id=c["id"],
+        input={k: v for k, v in c.items() if k not in ("id", "assert_contains", "assert_some")},
+        expected_json=wire(r),
+    )
+    for c, r in zip(cases, results, strict=True)
+]
+dump(
+    "vectors.json",
+    dict(schema=SCHEMA, module="sesslint.outcome.snapshot", python_commit=PIN, cases=vectors),
+)
+digest = hashlib.sha256((HERE / "vectors.json").read_bytes()).hexdigest()
+dump(
+    "manifest.json",
+    dict(
+        schema=SCHEMA,
+        module="sesslint.outcome.snapshot",
+        python_commit=PIN,
+        python_version="CPython 3.11.9",
+        python_sha256=hashlib.sha256(show(SOURCE)).hexdigest(),
+        contract_python_sha256=hashlib.sha256(show(CONTRACT)).hexdigest(),
+        test_source_sha256=hashlib.sha256(test_bytes).hexdigest(),
+        rust_sha256=hashlib.sha256(
+            (ROOT / "rust/crates/outcome/src/snapshot.rs").read_bytes()
+        ).hexdigest(),
+        contract_rust_sha256=hashlib.sha256(
+            (ROOT / "rust/crates/outcome/src/contract.rs").read_bytes()
+        ).hexdigest(),
+        fixtures_sha256={name: hashlib.sha256(data).hexdigest() for name, data in fixtures.items()},
+        generator="rust/parity/vectors/outcome.snapshot/generate",
+        vectors_sha256=digest,
+        vector_count=len(vectors),
+    ),
+)
+dump("coverage.json", dict(rows=coverage))
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        origin="synthetic",
+        python_commit=PIN,
+        generator="rust/parity/vectors/outcome.snapshot/generate",
+        known_parity_gaps=[
+            "Unicode scalar JSON, depth128 and integer parsing4300 digits; "
+            "no Python subclasses/custom mapping or lone surrogates.",
+            "Aware UTC instants only. CPython3.11.9 ISO acceptance quirks, "
+            "not a cross-version Python guarantee.",
+            "Host UTF-8 filenames and i64 max_bytes; "
+            "no allocator exhaustion or mutated csv.field_size_limit.",
+            "No schema/evaluator/report/CLI integration or multi-OS/release proof. "
+            "Schema-combined source test receives no partial coverage.",
+        ],
+    ),
+)
+print(json.dumps(dict(vectors=len(vectors), sha256=digest, covered=10, not_applicable=1)))

@@ -1,0 +1,20 @@
+{
+  "contract_python_sha256": "37ec06a8baa66307c4652a1dc6ce2a64d6b5131af3a44d9ac14e3f24a61abf01",
+  "contract_rust_sha256": "d779d04a4406d1db157ffdf8428d1f492a30cd2f9df75920ac5f54294d7e4872",
+  "fixtures_sha256": {
+    "PROVENANCE.json": "c4bb25e65be56e8baa8b8af6f9b0a3ac2b5bb6fe2950c6de0e46a96d8b4e4c85",
+    "source.csv": "cdda00817ffd2448070be1b8edefbc3aaee613377c2b4ba606c87e0167ee6a23",
+    "target.jsonl": "19df5235e923638937d9b6e0c7619c87d36be1d8ba79554cb809b0b85074301f",
+    "target_complete.json": "0db206ca7f9c93d054da4bb3681069bd9a4bfaa5150db83984033aff9412c44f"
+  },
+  "generator": "rust/parity/vectors/outcome.snapshot/generate",
+  "module": "sesslint.outcome.snapshot",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "python_sha256": "2b2848e2ec927a1e2f07be7d3c0eeecdf18a7d8f75e7ed107e221e9950e6a10a",
+  "python_version": "CPython 3.11.9",
+  "rust_sha256": "e8895e3bdf946a3fa206b33b293573f6b6d8a65ba80640feda551dec41bd4988",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "test_source_sha256": "0de8f3b9577da620b2fde8365ec0c62d6f36263676eef04657da7f6051011c54",
+  "vector_count": 15583,
+  "vectors_sha256": "2520c63eb13537ec26092ee7f5e266e74e51bc1eaf0ee015a420c77e24d8f919"
+}

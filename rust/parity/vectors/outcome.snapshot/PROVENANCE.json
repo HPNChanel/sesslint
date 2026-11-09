@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/outcome.snapshot/generate",
+  "known_parity_gaps": [
+    "Unicode scalar JSON, depth128 and integer parsing4300 digits; no Python subclasses/custom mapping or lone surrogates.",
+    "Aware UTC instants only. CPython3.11.9 ISO acceptance quirks, not a cross-version Python guarantee.",
+    "Host UTF-8 filenames and i64 max_bytes; no allocator exhaustion or mutated csv.field_size_limit.",
+    "No schema/evaluator/report/CLI integration or multi-OS/release proof. Schema-combined source test receives no partial coverage."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}
