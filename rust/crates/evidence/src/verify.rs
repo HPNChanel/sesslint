@@ -7,6 +7,12 @@
 //! salvage recipes, then runs the seven checks in Python's order. A missing
 //! capability is [`VerifyError::Unsupported`], never `ok: true`.
 //!
+//! Part 4 ports `render_verify_human` (lines 1006–1022) and `__all__`
+//! (lines 1025–1030). It formats an existing [`Verdict`] and does not call
+//! the seven checks, [`NativeReaders::stream`], or the registration lock.
+//! That span has no late import, so the renderer does not return
+//! [`VerifyError::Unsupported`] and does not invent `ok: true`.
+//!
 //! [`NativeReaders::stream`] calls [`load_source_with_stream_findings`] because
 //! `verify` loads artifacts through [`load_artifact_events`]. An `Invalid`
 //! stream error still falls back to the strict reader.
@@ -2112,6 +2118,51 @@ fn replan_failed(error: &VerifyReadError) -> Check {
     check("idempotence", false, format!("replan-failed: {name}"))
 }
 
+/// Render a verify [`Verdict`] to human-readable text.
+///
+/// Python: `render_verify_human(verdict, *, color=False)` at
+/// `02694d537104659df66cdd084354739f3cccc440` lines 1006–1022.
+/// Pass `color: false` for that default. Check order is the verdict order.
+/// Color wraps `PASSED` / `[PASS]` in green and `FAILED` / `[FAIL]` in red.
+/// The status line opens bold and the status reset closes it, as in the pin.
+/// A false `ok` stays `FAILED`. This does not build a new verdict.
+///
+/// Lines 1006–1030 do not import `sesslint.adapters.canonical`,
+/// `sesslint.adapters.detect`, `sesslint.adapters.load`, `sesslint.io`, or
+/// `sesslint.reference`. This function therefore has no
+/// [`VerifyError::Unsupported`] path.
+pub fn render_verify_human(verdict: &Verdict, color: bool) -> String {
+    let green = if color { "\u{1b}[32m" } else { "" };
+    let red = if color { "\u{1b}[31m" } else { "" };
+    let bold = if color { "\u{1b}[1m" } else { "" };
+    let reset = if color { "\u{1b}[0m" } else { "" };
+    let status_str = if verdict.ok {
+        format!("{green}PASSED{reset}")
+    } else {
+        format!("{red}FAILED{reset}")
+    };
+    let assurance = &verdict.assurance;
+    let mut lines = vec![
+        format!("Verification: {bold}{status_str}"),
+        format!("Assurance: {assurance}"),
+        "Checks:".to_owned(),
+    ];
+    for check in &verdict.checks {
+        let mark = if check.ok {
+            format!("{green}[PASS]{reset}")
+        } else {
+            format!("{red}[FAIL]{reset}")
+        };
+        let name = &check.name;
+        let detail = &check.detail;
+        lines.push(format!("  {mark} {name}: {detail}"));
+    }
+    lines.join("\n")
+}
+
+/// Python `__all__`, in that order.
+pub const ALL: [&str; 4] = ["Check", "Verdict", "render_verify_human", "verify"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3295,5 +3346,153 @@ mod tests {
                 repair::planner::RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE
             )
         );
+    }
+
+    fn rendered(ok: bool, assurance: &str, checks: Vec<Check>, color: bool) -> String {
+        let text = render_verify_human(
+            &Verdict {
+                ok,
+                checks,
+                assurance: assurance.to_owned(),
+                artifact_sha256: Some("artifact-sha-hidden".to_owned()),
+            },
+            color,
+        );
+        assert!(!text.contains("artifact-sha-hidden"));
+        text
+    }
+
+    fn one_check(name: &str, ok: bool, detail: &str) -> Vec<Check> {
+        vec![Check {
+            name: name.to_owned(),
+            ok,
+            detail: detail.to_owned(),
+        }]
+    }
+
+    #[test]
+    fn render_verify_human_plain_pass() {
+        let text = rendered(
+            true,
+            "repaired-lossless",
+            one_check("source_hash", true, "matched"),
+            false,
+        );
+        assert_eq!(
+            text,
+            "Verification: PASSED\nAssurance: repaired-lossless\nChecks:\n  [PASS] source_hash: matched"
+        );
+        assert!(!text.contains('\u{1b}'));
+        assert!(!text.ends_with('\n'));
+    }
+
+    #[test]
+    fn render_verify_human_plain_fail() {
+        let text = rendered(
+            false,
+            "unrepairable",
+            one_check("idempotence", false, "non-idempotent"),
+            false,
+        );
+        assert_eq!(
+            text,
+            "Verification: FAILED\nAssurance: unrepairable\nChecks:\n  [FAIL] idempotence: non-idempotent"
+        );
+        assert!(!text.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn render_verify_human_color_fail_closes_bold_with_status_reset() {
+        let text = rendered(
+            false,
+            "unrepairable",
+            one_check("idempotence", false, "non-idempotent"),
+            true,
+        );
+        assert_eq!(
+            text,
+            "Verification: \u{1b}[1m\u{1b}[31mFAILED\u{1b}[0m\nAssurance: unrepairable\nChecks:\n  \u{1b}[31m[FAIL]\u{1b}[0m idempotence: non-idempotent"
+        );
+    }
+
+    #[test]
+    fn render_verify_human_color_pass_nests_green_inside_bold() {
+        let text = rendered(
+            true,
+            "repaired-lossless",
+            one_check("source_hash", true, "matched"),
+            true,
+        );
+        assert_eq!(
+            text,
+            "Verification: \u{1b}[1m\u{1b}[32mPASSED\u{1b}[0m\nAssurance: repaired-lossless\nChecks:\n  \u{1b}[32m[PASS]\u{1b}[0m source_hash: matched"
+        );
+    }
+
+    #[test]
+    fn render_verify_human_keeps_check_order_and_splits_status_from_marks() {
+        let text = rendered(
+            false,
+            "repaired-lossy",
+            vec![
+                Check {
+                    name: "source_hash".to_owned(),
+                    ok: true,
+                    detail: "matched".to_owned(),
+                },
+                Check {
+                    name: "idempotence".to_owned(),
+                    ok: false,
+                    detail: "non-idempotent".to_owned(),
+                },
+                Check {
+                    name: "loss_audit".to_owned(),
+                    ok: true,
+                    detail: "matched".to_owned(),
+                },
+            ],
+            false,
+        );
+        assert_eq!(
+            text,
+            "Verification: FAILED\nAssurance: repaired-lossy\nChecks:\n  [PASS] source_hash: matched\n  [FAIL] idempotence: non-idempotent\n  [PASS] loss_audit: matched"
+        );
+        let passed_with_failed_check = rendered(
+            true,
+            "repaired-lossless",
+            one_check("idempotence", false, "non-idempotent"),
+            false,
+        );
+        assert_eq!(
+            passed_with_failed_check,
+            "Verification: PASSED\nAssurance: repaired-lossless\nChecks:\n  [FAIL] idempotence: non-idempotent"
+        );
+    }
+
+    #[test]
+    fn render_verify_human_empty_checks_keep_digits_and_omit_internal_hash() {
+        let text = rendered(true, "0", Vec::new(), false);
+        assert_eq!(text, "Verification: PASSED\nAssurance: 0\nChecks:");
+        assert_eq!(text.matches('\n').count(), 2);
+    }
+
+    #[test]
+    fn render_verify_human_copies_unicode_newline_and_spacing() {
+        let text = rendered(
+            false,
+            "mức-1",
+            one_check("  tên : ", false, "é\nline"),
+            false,
+        );
+        assert_eq!(
+            text,
+            "Verification: FAILED\nAssurance: mức-1\nChecks:\n  [FAIL]   tên : : é\nline"
+        );
+        assert!(!text.contains("\\u"));
+    }
+
+    #[test]
+    fn module_all_matches_pin_order() {
+        assert_eq!(ALL, ["Check", "Verdict", "render_verify_human", "verify"]);
     }
 }
