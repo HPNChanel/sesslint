@@ -1,0 +1,3778 @@
+{
+  "facts": {
+    "action_additional_properties": false,
+    "action_kind_min_length": 1,
+    "action_property_names": [
+      "kind",
+      "record_id",
+      "detail"
+    ],
+    "action_required": [
+      "kind"
+    ],
+    "additional_properties": false,
+    "assurance_enum": [
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "byte_counts_value_type": "integer",
+    "emitter_assurance_levels": [
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "emitter_keys": [
+      "actions",
+      "assurance_ceiling",
+      "declared_loss",
+      "idempotency_key",
+      "input_fingerprint",
+      "output_fingerprint",
+      "policy",
+      "revalidate_report",
+      "revalidation",
+      "schema_version"
+    ],
+    "emitter_policies": [
+      "conservative",
+      "salvage"
+    ],
+    "emitter_schema_version": "sesslint.repair-manifest/v1",
+    "error_count_minimum": 0,
+    "id": "https://sesslint.dev/schemas/sesslint.repair-manifest/v1",
+    "idempotency_pattern": "^[0-9a-f]{64}$",
+    "input_min_length": 1,
+    "output_min_length": 1,
+    "policy_enum": [
+      "conservative",
+      "salvage"
+    ],
+    "profile_id_min_length": 1,
+    "profile_version_min_length": 1,
+    "property_names": [
+      "schema_version",
+      "input_fingerprint",
+      "output_fingerprint",
+      "policy",
+      "actions",
+      "declared_loss",
+      "revalidate_report",
+      "idempotency_key",
+      "plan_fingerprint",
+      "assurance",
+      "recipe_versions",
+      "profile_version",
+      "adapter_id",
+      "adapter_version",
+      "assurance_ceiling",
+      "revalidation",
+      "byte_counts",
+      "record_counts"
+    ],
+    "recipe_versions_value_type": "string",
+    "record_counts_value_type": "integer",
+    "required": [
+      "schema_version",
+      "input_fingerprint",
+      "output_fingerprint",
+      "policy",
+      "actions",
+      "declared_loss",
+      "revalidate_report",
+      "idempotency_key",
+      "revalidation",
+      "assurance_ceiling"
+    ],
+    "revalidation_additional_properties": false,
+    "revalidation_assurance_enum": [
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "revalidation_property_names": [
+      "assurance",
+      "error_count",
+      "warning_count",
+      "profile_id",
+      "profile_version",
+      "report_fingerprint"
+    ],
+    "revalidation_required": [
+      "assurance",
+      "error_count",
+      "warning_count",
+      "profile_id",
+      "profile_version"
+    ],
+    "schema_version_const": "sesslint.repair-manifest/v1",
+    "warning_count_minimum": 0
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "emitter_to_dict",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "detail": "input_fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_input_fingerprint",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "output_fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_output_fingerprint",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "policy",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_policy",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "actions",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_actions",
+      "instance": {
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "declared_loss",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_declared_loss",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "revalidate_report",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_revalidate_report",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "idempotency_key",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_idempotency_key",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "revalidation",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_revalidation",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "assurance_ceiling",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_assurance_ceiling",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "extra": 1,
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "nope"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_number",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": 1
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/policy"
+      },
+      "id": "policy_enum",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "nope",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/policy"
+      },
+      "id": "policy_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": 1,
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "policy_salvage",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "salvage",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/assurance_ceiling"
+      },
+      "id": "assurance_ceiling_enum",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "nope",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/assurance_ceiling"
+      },
+      "id": "assurance_ceiling_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": 1,
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "assurance_ceiling_a0",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A0",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "assurance_ceiling_a2",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A2",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "assurance_ceiling_a3",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A3",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "assurance_ceiling_a4",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A4",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/input_fingerprint"
+      },
+      "id": "input_fingerprint_min_length",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/input_fingerprint"
+      },
+      "id": "input_fingerprint_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": 1,
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "input_fingerprint_unicode",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "caf\u00e9",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/output_fingerprint"
+      },
+      "id": "output_fingerprint_min_length",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/output_fingerprint"
+      },
+      "id": "output_fingerprint_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": 1,
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/idempotency_key"
+      },
+      "id": "idempotency_short",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/idempotency_key"
+      },
+      "id": "idempotency_uppercase",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/idempotency_key"
+      },
+      "id": "idempotency_long",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "00000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/idempotency_key"
+      },
+      "id": "idempotency_non_hex",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "g000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/idempotency_key"
+      },
+      "id": "idempotency_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions"
+      },
+      "id": "actions_type",
+      "instance": {
+        "actions": "k",
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions/0"
+      },
+      "id": "actions_item_type",
+      "instance": {
+        "actions": [
+          "k"
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions/1"
+      },
+      "id": "actions_second_item_type",
+      "instance": {
+        "actions": [
+          {
+            "kind": "k"
+          },
+          "x"
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "kind",
+        "keyword": "required",
+        "ok": false,
+        "path": "/actions/0"
+      },
+      "id": "actions_missing_kind",
+      "instance": {
+        "actions": [
+          {}
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/actions/0/kind"
+      },
+      "id": "actions_kind_min_length",
+      "instance": {
+        "actions": [
+          {
+            "kind": ""
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions/0/kind"
+      },
+      "id": "actions_kind_type",
+      "instance": {
+        "actions": [
+          {
+            "kind": 1
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/actions/0"
+      },
+      "id": "actions_additional_property",
+      "instance": {
+        "actions": [
+          {
+            "kind": "k",
+            "z": 1
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "actions_record_id_null",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "k",
+            "record_id": null
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions/0/record_id"
+      },
+      "id": "actions_record_id_type",
+      "instance": {
+        "actions": [
+          {
+            "kind": "k",
+            "record_id": 1
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/actions/0/detail"
+      },
+      "id": "actions_detail_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": 1,
+            "kind": "k"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "actions_kind_only",
+      "instance": {
+        "actions": [
+          {
+            "kind": "k"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "actions_empty",
+      "instance": {
+        "actions": [],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/declared_loss"
+      },
+      "id": "declared_loss_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": "gap",
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/declared_loss/1"
+      },
+      "id": "declared_loss_item_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap",
+          1
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "declared_loss_empty_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          ""
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "declared_loss_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "declared_loss_duplicate",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap",
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidate_report_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": "r.json",
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidate_report_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": "",
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidate_report"
+      },
+      "id": "revalidate_report_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": 1,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": [],
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "assurance",
+        "keyword": "required",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_missing_assurance",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "error_count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_missing_error_count",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "warning_count",
+        "keyword": "required",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_missing_warning_count",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1"
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "profile_id",
+        "keyword": "required",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_missing_profile_id",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "profile_version",
+        "keyword": "required",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_missing_profile_version",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/revalidation"
+      },
+      "id": "revalidation_additional_property",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0,
+          "z": 1
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/revalidation/assurance"
+      },
+      "id": "revalidation_assurance_enum",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "nope",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/assurance"
+      },
+      "id": "revalidation_assurance_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": 1,
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidation_assurance_a0",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A0",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidation_assurance_a2",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A2",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidation_assurance_a3",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A3",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "revalidation_assurance_a4",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A4",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/revalidation/error_count"
+      },
+      "id": "error_count_negative",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": -1,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/error_count"
+      },
+      "id": "error_count_boolean",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": true,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "error_count_one_point_zero",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 1.0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/error_count"
+      },
+      "id": "error_count_one_point_five",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 1.5,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "error_count_zero_point_zero",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0.0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/error_count"
+      },
+      "id": "error_count_null",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": null,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "error_count_exponent_integer",
+      "raw": "{\"actions\": [{\"detail\": \"d\", \"kind\": \"drop\", \"record_id\": \"r1\"}], \"assurance_ceiling\": \"A1\", \"declared_loss\": [\"gap\"], \"idempotency_key\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"input_fingerprint\": \"in\", \"output_fingerprint\": \"out\", \"policy\": \"conservative\", \"revalidate_report\": null, \"revalidation\": {\"assurance\": \"A1\", \"error_count\": 1e1, \"profile_id\": \"neutral\", \"profile_version\": \"1\", \"warning_count\": 0}, \"schema_version\": \"sesslint.repair-manifest/v1\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/error_count"
+      },
+      "id": "error_count_exponent_fraction",
+      "raw": "{\"actions\": [{\"detail\": \"d\", \"kind\": \"drop\", \"record_id\": \"r1\"}], \"assurance_ceiling\": \"A1\", \"declared_loss\": [\"gap\"], \"idempotency_key\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"input_fingerprint\": \"in\", \"output_fingerprint\": \"out\", \"policy\": \"conservative\", \"revalidate_report\": null, \"revalidation\": {\"assurance\": \"A1\", \"error_count\": 1e-1, \"profile_id\": \"neutral\", \"profile_version\": \"1\", \"warning_count\": 0}, \"schema_version\": \"sesslint.repair-manifest/v1\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "error_count_negative_zero",
+      "raw": "{\"actions\": [{\"detail\": \"d\", \"kind\": \"drop\", \"record_id\": \"r1\"}], \"assurance_ceiling\": \"A1\", \"declared_loss\": [\"gap\"], \"idempotency_key\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"input_fingerprint\": \"in\", \"output_fingerprint\": \"out\", \"policy\": \"conservative\", \"revalidate_report\": null, \"revalidation\": {\"assurance\": \"A1\", \"error_count\": -0, \"profile_id\": \"neutral\", \"profile_version\": \"1\", \"warning_count\": 0}, \"schema_version\": \"sesslint.repair-manifest/v1\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/revalidation/warning_count"
+      },
+      "id": "warning_count_negative",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": -1
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/revalidation/profile_id"
+      },
+      "id": "profile_id_min_length",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/profile_id"
+      },
+      "id": "profile_id_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": 1,
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/revalidation/profile_version"
+      },
+      "id": "revalidation_profile_version_min_length",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/profile_version"
+      },
+      "id": "revalidation_profile_version_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": 1,
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "report_fingerprint_null",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "report_fingerprint": null,
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/revalidation/report_fingerprint"
+      },
+      "id": "report_fingerprint_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "report_fingerprint": 1,
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "report_fingerprint_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "report_fingerprint": "f",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "report_fingerprint_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "report_fingerprint": "",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "optional_fields",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "adapter_id": "a",
+        "adapter_version": "1",
+        "assurance": "A1",
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": 1
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "plan_fingerprint": "p",
+        "policy": "conservative",
+        "profile_version": "1",
+        "recipe_versions": {
+          "drop": "1"
+        },
+        "record_counts": {
+          "n": 0
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/plan_fingerprint"
+      },
+      "id": "plan_fingerprint_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "plan_fingerprint": 1,
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "plan_fingerprint_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "plan_fingerprint": "",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "assurance_unconstrained",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance": "nope",
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/assurance"
+      },
+      "id": "assurance_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance": 1,
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/recipe_versions"
+      },
+      "id": "recipe_versions_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": [],
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "recipe_versions_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": {
+          "k": "v"
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/recipe_versions/k"
+      },
+      "id": "recipe_versions_value_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": {
+          "k": 1
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "recipe_versions_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": {},
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/recipe_versions/a~1b"
+      },
+      "id": "recipe_versions_slash_key",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": {
+          "a/b": 1
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/recipe_versions/m~0n"
+      },
+      "id": "recipe_versions_tilde_key",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "recipe_versions": {
+          "m~n": 1
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "profile_version_empty",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "profile_version": "",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/profile_version"
+      },
+      "id": "profile_version_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "profile_version": 1,
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/adapter_id"
+      },
+      "id": "adapter_id_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "adapter_id": 1,
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/adapter_version"
+      },
+      "id": "adapter_version_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "adapter_version": 1,
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/byte_counts"
+      },
+      "id": "byte_counts_type",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": [],
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "byte_counts_integer",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": 1
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/byte_counts/n"
+      },
+      "id": "byte_counts_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": "1"
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/byte_counts/n"
+      },
+      "id": "byte_counts_boolean",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": true
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/byte_counts/n"
+      },
+      "id": "byte_counts_fraction",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": 1.5
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "byte_counts_one_point_zero",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": 1.0
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "byte_counts_negative",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "byte_counts": {
+          "n": -1
+        },
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/record_counts/n"
+      },
+      "id": "record_counts_string",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "record_counts": {
+          "n": "0"
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "record_counts_negative",
+      "instance": {
+        "actions": [
+          {
+            "detail": "d",
+            "kind": "drop",
+            "record_id": "r1"
+          }
+        ],
+        "assurance_ceiling": "A1",
+        "declared_loss": [
+          "gap"
+        ],
+        "idempotency_key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "input_fingerprint": "in",
+        "output_fingerprint": "out",
+        "policy": "conservative",
+        "record_counts": {
+          "n": -1
+        },
+        "revalidate_report": null,
+        "revalidation": {
+          "assurance": "A1",
+          "error_count": 0,
+          "profile_id": "neutral",
+          "profile_version": "1",
+          "warning_count": 0
+        },
+        "schema_version": "sesslint.repair-manifest/v1"
+      }
+    }
+  ]
+}

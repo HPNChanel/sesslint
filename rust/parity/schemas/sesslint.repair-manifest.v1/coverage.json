@@ -1,0 +1,33 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.report",
+  "not_applicable_count": 4,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "get_manifest_schema_path and load_manifest_schema open the schema file, then compare the required set, the property set, the policy enum, and the idempotency pattern with the RepairManifest model. validate_repair_manifest_json checks one instance. Recording those names in facts is not that loader call.",
+      "status": "not_applicable",
+      "test": "tests/test_manifest.py::test_manifest_schema_anti_drift",
+      "vector_id": null
+    },
+    {
+      "note": "load_manifest_schema raises FileNotFoundError when the schema path is missing. validate_repair_manifest_json does not open a path.",
+      "status": "not_applicable",
+      "test": "tests/test_manifest.py::test_manifest_schema_loader_file_not_found",
+      "vector_id": null
+    },
+    {
+      "note": "get_manifest_schema_path follows the prefix share directory when the repo schema is hidden. No vector resolves a schema path.",
+      "status": "not_applicable",
+      "test": "tests/test_manifest.py::test_get_manifest_schema_path_prefix_resolution",
+      "vector_id": null
+    },
+    {
+      "note": "execute repairs a fixture and then checks that the emitted object contains the required names, the schema_version const, a matching idempotency pattern, and a policy enum member. validate_repair_manifest_json does not execute a repair. emitter_to_dict is one synthetic object, not that execution.",
+      "status": "not_applicable",
+      "test": "tests/repair/test_executor.py::test_manifest_schema_validation",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.repair-manifest.v1.json"
+}

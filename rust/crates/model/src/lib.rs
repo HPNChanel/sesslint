@@ -16,4 +16,6 @@ pub mod events;
 pub mod finding;
 #[path = "schema/sesslint.finding.v1.rs"]
 pub mod finding_schema;
+#[path = "schema/sesslint.repair-manifest.v1.rs"]
+pub mod repair_manifest_schema;
 pub mod reference;

@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.repair-manifest.v1 schema parity. Constraints and expected rejections come from the pinned schema. One object comes from RepairManifest.to_dict on the pinned emitter. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.repair-manifest.v1/generate",
+  "known_parity_gaps": [
+    "Schema path resolution and the missing-file loader are not this validator.",
+    "Fixture repair execution and the model anti-drift set comparison are not one accepted or rejected instance.",
+    "Content-free checks and computed idempotency bytes are not produced."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}
