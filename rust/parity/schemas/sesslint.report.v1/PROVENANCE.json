@@ -1,0 +1,14 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.report.v1 schema parity. Constraints come from the pinned schema. Report JSON bytes come from render_json and from json.dumps of Report.to_dict on the pinned emitters. No session payload is stored.",
+  "generator": "rust/parity/schemas/sesslint.report.v1/generate",
+  "known_parity_gaps": [
+    "Schema path resolution and the missing-file loader are not this validator.",
+    "The report anti-drift comparison and the json-schema test allowlist asserts are not one accepted instance.",
+    "Regular expressions other than the pinned fingerprint pattern are not proven.",
+    "CoverageSkip reasons accepted by the Python class and absent from the pinned schema are not emitted: deselected.",
+    "The report crate and mcp_server.rs are outside this card and were not modified. This module emits render_json and compact Report.to_dict bytes."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

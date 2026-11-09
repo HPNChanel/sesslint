@@ -1,0 +1,359 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.report/v1",
+  "title": "SessLint Report Format v1",
+  "description": "Vendor-neutral integrity check report schema for SessLint.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "source_fingerprint",
+    "tool_version",
+    "findings",
+    "counts",
+    "assurance",
+    "limitation",
+    "coverage"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sesslint.report/v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "fingerprint",
+          "repairability",
+          "severity"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "sesslint.finding/v1"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "SL001",
+              "SL002",
+              "SL003",
+              "SL004",
+              "SL005",
+              "SL006",
+              "SL007",
+                    "SL008",
+              "SL009",
+              "SL010",
+              "SL011",
+              "SL101",
+              "SL102",
+              "SL103",
+              "SL104",
+              "SL105",
+              "SL106",
+              "SL107",
+              "SL108",
+              "SL201",
+              "SL202",
+              "SL203",
+              "SL204",
+              "SL205",
+              "SL206",
+              "SL207",
+              "SL208",
+              "SL301",
+              "SL302",
+              "SL303",
+              "SL304",
+              "SL305",
+                    "SL306",
+              "SL401",
+              "SL402"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "fatal",
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "repairability": {
+            "enum": [
+              "deterministic",
+              "lossy-explicit",
+              "manual",
+              "unsupported"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "source": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "record_id": {
+                "type": ["string", "null"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "related_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$"
+          },
+          "message_template": {
+            "type": ["string", "null"]
+          },
+          "evidence": {
+            "type": ["object", "null"]
+          },
+          "span": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "byte": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "raw_content": {
+            "type": ["string", "object", "array", "null"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "by_code",
+        "by_severity",
+        "total"
+      ],
+      "properties": {
+        "by_severity": {
+          "type": "object",
+          "required": [
+            "fatal",
+            "error",
+            "warning",
+            "info"
+          ],
+          "properties": {
+            "fatal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warning": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "by_code": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "assurance": {
+      "type": "string",
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ]
+    },
+    "limitation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "adapter",
+        "performed",
+        "profile",
+        "skipped"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "object",
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "performed": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "profile": {
+          "type": "object",
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check", "reason"],
+            "properties": {
+              "check": { "type": "string", "minLength": 1 },
+              "detail": { "type": "string" },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "profile-gated",
+                  "adapter-not-applicable",
+                  "version-gated",
+                  "empty-input",
+                  "cap-exceeded",
+                  "single-doc-fallback"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "repro": {
+      "type": "object",
+      "required": [
+        "adapter",
+        "cli_version",
+        "detection",
+        "platform",
+        "profile",
+        "schema_versions"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "cli_version": { "type": "string" },
+        "detection": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "confidence": { "type": ["number", "null"] },
+            "method": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "platform": {
+          "type": "object",
+          "required": ["architecture", "os", "python"],
+          "properties": {
+            "architecture": { "type": "string" },
+            "os": { "type": "string" },
+            "python": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "profile": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "schema_versions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "content_warning": {
+      "type": "boolean"
+    },
+    "included_content": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

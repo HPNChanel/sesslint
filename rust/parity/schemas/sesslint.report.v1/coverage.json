@@ -1,0 +1,51 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.report",
+  "not_applicable_count": 7,
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "note": "The test builds one finding with make_finding, calls build_report and render_json, then checks the schema plus allowlists, content flags, counts, coverage, and fingerprint length. validate_report_json checks one instance. A synthetic render is not that make_finding call.",
+      "status": "not_applicable",
+      "test": "tests/report/test_json_schema.py::test_default_report_validates_against_schema",
+      "vector_id": null
+    },
+    {
+      "note": "The test renders include_content and asserts content_warning, included_content, and the finding allowlist. validate_report_json does not perform those extra asserts.",
+      "status": "not_applicable",
+      "test": "tests/report/test_json_schema.py::test_include_content_report_validates_against_schema",
+      "vector_id": null
+    },
+    {
+      "note": "load_report_schema opens the schema file and checks that repro, content flags, coverage, span, and remediation exist. validate_report_json does not open a path. Recording those names in facts is not that loader call.",
+      "status": "not_applicable",
+      "test": "tests/report/test_json_schema.py::test_load_report_schema_contains_updated_properties",
+      "vector_id": null
+    },
+    {
+      "note": "The test opens the schema file and compares it with the Report model. validate_report_json checks one instance.",
+      "status": "not_applicable",
+      "test": "tests/test_report.py::test_report_schema_anti_drift",
+      "vector_id": null
+    },
+    {
+      "note": "load_report_schema raises FileNotFoundError when the schema path is missing. validate_report_json does not open a path.",
+      "status": "not_applicable",
+      "test": "tests/test_report.py::test_schema_loader_file_not_found",
+      "vector_id": null
+    },
+    {
+      "note": "get_report_schema_path follows the prefix share directory when the repo schema is hidden. No vector resolves a schema path.",
+      "status": "not_applicable",
+      "test": "tests/test_report.py::test_get_report_schema_path_prefix_resolution",
+      "vector_id": null
+    },
+    {
+      "note": "get_report_schema_path and get_manifest_schema_path return the development-path fallback. No vector resolves a schema path.",
+      "status": "not_applicable",
+      "test": "tests/test_report.py::test_get_schema_paths_fallback_when_neither_exists",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.report.v1.json"
+}

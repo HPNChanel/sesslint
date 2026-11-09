@@ -1,0 +1,12 @@
+{
+  "generator": "rust/parity/schemas/sesslint.report.v1/generate",
+  "mcp_server_py_sha256": "6fe904b833fcf6529a9645dd67594a16f9dac58a28e553e8d895189704f2300c",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "report_py_sha256": "ac5cfc7f9d3f177faf3d9bc0f0cdc6c988b5d3c9fa5b354c81bf36469b97bac0",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "schema_file": "schemas/sesslint.report.v1.json",
+  "schema_sha256": "3817d660c95f94c1919acc9cd2b58851897e23698178391af9586d7523a6f168",
+  "vector_count": 149,
+  "vectors_sha256": "f472f6e6b7e0b546ed60c9799532fabe519fc88792a99d19b6d23f9d91a1492e",
+  "version_py_sha256": "ae2c3cf49b52002187f1770b6c34b70afd9da4fd4c4f3434371aa0e9b4571d16"
+}

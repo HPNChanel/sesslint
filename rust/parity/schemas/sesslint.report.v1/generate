@@ -1,0 +1,1212 @@
+#!/usr/bin/env python3
+"""Generate sesslint.report.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` and ``git archive`` of PYTHON_COMMIT.
+The report package is imported from that archive, not from the checkout.
+"""
+
+from __future__ import annotations
+
+import ast
+import copy
+import hashlib
+import importlib
+import io
+import json
+import math
+import re
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+GENERATOR = "rust/parity/schemas/sesslint.report.v1/generate"
+FINGERPRINT_PATTERN = "^[0-9a-f]{16}$"
+SCHEMA_TESTS = (
+    "tests/report/test_json_schema.py::test_default_report_validates_against_schema",
+    "tests/report/test_json_schema.py::test_include_content_report_validates_against_schema",
+    "tests/report/test_json_schema.py::test_load_report_schema_contains_updated_properties",
+    "tests/test_report.py::test_report_schema_anti_drift",
+    "tests/test_report.py::test_schema_loader_file_not_found",
+    "tests/test_report.py::test_get_report_schema_path_prefix_resolution",
+    "tests/test_report.py::test_get_schema_paths_fallback_when_neither_exists",
+)
+NOTES = {
+    "tests/report/test_json_schema.py::test_default_report_validates_against_schema": (
+        "The test builds one finding with make_finding, calls build_report and render_json, "
+        "then checks the schema plus allowlists, content flags, counts, coverage, and "
+        "fingerprint length. validate_report_json checks one instance. A synthetic render "
+        "is not that make_finding call."
+    ),
+    "tests/report/test_json_schema.py::test_include_content_report_validates_against_schema": (
+        "The test renders include_content and asserts content_warning, included_content, "
+        "and the finding allowlist. validate_report_json does not perform those extra asserts."
+    ),
+    "tests/report/test_json_schema.py::test_load_report_schema_contains_updated_properties": (
+        "load_report_schema opens the schema file and checks that repro, content flags, "
+        "coverage, span, and remediation exist. validate_report_json does not open a path. "
+        "Recording those names in facts is not that loader call."
+    ),
+    "tests/test_report.py::test_report_schema_anti_drift": (
+        "The test opens the schema file and compares it with the Report model. "
+        "validate_report_json checks one instance."
+    ),
+    "tests/test_report.py::test_schema_loader_file_not_found": (
+        "load_report_schema raises FileNotFoundError when the schema path is missing. "
+        "validate_report_json does not open a path."
+    ),
+    "tests/test_report.py::test_get_report_schema_path_prefix_resolution": (
+        "get_report_schema_path follows the prefix share directory when the repo schema "
+        "is hidden. No vector resolves a schema path."
+    ),
+    "tests/test_report.py::test_get_schema_paths_fallback_when_neither_exists": (
+        "get_report_schema_path and get_manifest_schema_path return the development-path "
+        "fallback. No vector resolves a schema path."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "uniqueItems",
+}
+
+
+class Unproven(Exception):
+    """A comparison or keyword cannot be proven."""
+
+
+def git_bytes(rev_path: str) -> bytes:
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def schema_test_names(path: str) -> list[str]:
+    source = git_bytes(f"{PYTHON_COMMIT}:{path}").decode("utf-8")
+    tree = ast.parse(source)
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_") and "schema" in node.name
+    ]
+
+
+def assert_test_list() -> None:
+    by_file: dict[str, list[str]] = {}
+    for test_id in SCHEMA_TESTS:
+        path, name = test_id.split("::", 1)
+        by_file.setdefault(path, []).append(name)
+    for path, names in by_file.items():
+        actual = schema_test_names(path)
+        if actual != names:
+            raise SystemExit(f"schema test list mismatch for {path}: {actual}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is not None and right_int is not None:
+            return left_int == right_int
+        if left_int is None and right_int is None:
+            if left == right:
+                return True
+            raise Unproven()
+        return False
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def check(schema: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_string(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path)
+    if failure is not None:
+        return failure
+    return check_array(schema, value, path)
+
+
+def check_string(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, str):
+        return None
+    if "minLength" in schema:
+        limit = length_bound(schema["minLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) < limit:
+            return ("minLength", path, "")
+    if "maxLength" in schema:
+        limit = length_bound(schema["maxLength"])
+        if limit is None:
+            return ("unsupported", path, "length")
+        if len(value) > limit:
+            return ("maxLength", path, "")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            return ("unsupported", path, "pattern")
+        try:
+            matched = pattern_match(pattern, value)
+        except Unproven:
+            return ("unsupported", path, "pattern")
+        if not matched:
+            return ("pattern", path, "")
+    return None
+
+
+def length_bound(bound: object) -> int | None:
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound < 0:
+        return None
+    return bound
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    props = schema.get("properties", {})
+    if "additionalProperties" in schema:
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        flag = schema["additionalProperties"]
+        if flag is False:
+            unknown = sorted(key for key in value if key not in props)
+            if unknown:
+                return ("additionalProperties", path, str(unknown[0]))
+        elif flag is True:
+            pass
+        elif isinstance(flag, dict):
+            for key in sorted(value):
+                if key not in props:
+                    failure = check(flag, value[key], pointer(path, str(key)))
+                    if failure is not None:
+                        return failure
+        else:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)))
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_array(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}")
+            if failure is not None:
+                return failure
+    if schema.get("uniqueItems") is True:
+        for right in range(1, len(value)):
+            for left in range(right):
+                compared = equal_result(value[left], value[right])
+                if compared is None:
+                    return ("unsupported", path, "uniqueItems")
+                if compared:
+                    return ("uniqueItems", path, "")
+    elif "uniqueItems" in schema and schema["uniqueItems"] is not False:
+        return ("unsupported", path, "uniqueItems")
+    return None
+
+
+def pattern_match(pattern: str, text: str) -> bool:
+    if pattern != FINGERPRINT_PATTERN:
+        raise Unproven()
+    if text.endswith("\n"):
+        body = text[:-1]
+        if body.endswith("\n"):
+            return False
+    else:
+        body = text
+    return len(body) == 16 and all(ch in "0123456789abcdef" for ch in body)
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "")
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword == "unsupported":
+        raise SystemExit(f"oracle unsupported at {path} ({detail})")
+    return {"ok": False, "detail": detail, "keyword": keyword, "path": path}
+
+
+def dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if (
+        "\r" in text
+        or "FOR_WORK" in text
+        or "sesslint-wt-" in text
+        or "C:" in text
+        or "/Users/" in text
+    ):
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def assert_integer_bounds(node: object) -> None:
+    if isinstance(node, dict):
+        for key in ("minimum", "minLength", "maxLength"):
+            if key in node and (isinstance(node[key], bool) or not isinstance(node[key], int)):
+                raise SystemExit(f"{key} is not an int")
+        for value in node.values():
+            assert_integer_bounds(value)
+    elif isinstance(node, list):
+        for value in node:
+            assert_integer_bounds(value)
+
+
+def load_package() -> tuple[Any, Any]:
+    sys.dont_write_bytecode = True
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=ROOT,
+    )
+    temporary = tempfile.TemporaryDirectory(prefix="sesslint-report-schema-")
+    root = Path(temporary.name)
+    with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+        zipped.extractall(root)
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked]
+    sys.path.insert(0, str(root / "src"))
+    report = importlib.import_module("sesslint.report")
+    finding = importlib.import_module("sesslint.finding")
+    report_file = Path(report.__file__).resolve()
+    if not report_file.is_relative_to(root.resolve()):
+        raise SystemExit("report loaded from outside the pin archive")
+    if finding.Finding.__module__ != "sesslint.finding":
+        raise SystemExit("Finding is not the pin blob")
+    load_package.keep = temporary  # type: ignore[attr-defined]
+    return report, finding
+
+
+def canonical_text(text: str, pretty: bool) -> None:
+    loaded = json.loads(text)
+    if pretty:
+        again = json.dumps(loaded, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False)
+    else:
+        again = json.dumps(loaded, sort_keys=True, ensure_ascii=True, allow_nan=False)
+    if again != text:
+        raise SystemExit("pinned emitter text is not json.dumps form")
+
+
+def make_item(
+    finding: Any,
+    *,
+    code: str,
+    path: str,
+    fingerprint: str,
+    message: str = "m",
+    repairability: Any,
+    severity: Any,
+    line: int | None = 1,
+    record_id: str | None = None,
+    evidence: dict[str, Any] | None = None,
+    template: str | None = None,
+    related: tuple[str, ...] = (),
+) -> Any:
+    return finding.Finding(
+        code=code,
+        severity=severity,
+        repairability=repairability,
+        message=message,
+        source=finding.SourceRef(path=path, line=line, record_id=record_id),
+        related_ids=related,
+        fingerprint=fingerprint,
+        message_template=template,
+        evidence=evidence,
+    )
+
+
+def make_coverage(
+    report: Any,
+    *,
+    performed: list[str],
+    adapter: dict[str, str],
+    profile: dict[str, str],
+    skipped: list[Any] | None = None,
+) -> Any:
+    return report.Coverage(
+        performed=performed,
+        skipped=tuple(skipped or ()),
+        adapter=adapter,
+        profile=profile,
+    )
+
+
+def make_report(
+    report: Any,
+    findings: list[Any],
+    coverage: Any,
+    *,
+    limitation: str = "synthetic limitation",
+    session_id: str = "s1",
+) -> Any:
+    return report.build_report(
+        session_id=session_id,
+        source_fingerprint="fp",
+        tool_version="0.0.0",
+        findings=findings,
+        assurance="A0",
+        limitation=limitation,
+        coverage=coverage,
+    )
+
+
+def make_repro(report: Any, confidence: float | None) -> Any:
+    return report.ReproMetadata(
+        cli_version="0.0.0",
+        schema_versions={
+            "manifest": report.MANIFEST_SCHEMA_VERSION,
+            "report": report.REPORT_SCHEMA_VERSION,
+            "session": "sesslint.session/v1",
+        },
+        adapter={"name": "synthetic", "version": "1"},
+        profile={"name": "neutral", "version": "1"},
+        detection={"confidence": confidence, "method": "explicit"},
+        platform={"architecture": "synthetic", "os": "synthetic", "python": "3.11.9"},
+    )
+
+
+def render(report: Any, built: Any, *, include_content: bool = False, repro: Any = None) -> str:
+    first = report.render_json(built, include_content=include_content, repro=repro)
+    second = report.render_json(built, include_content=include_content, repro=repro)
+    if first != second or "\r" in first:
+        raise SystemExit("render_json is not stable")
+    canonical_text(first, True)
+    return first
+
+
+def compact_dict(built: Any) -> str:
+    payload = built.to_dict()
+    first = json.dumps(payload, sort_keys=True, ensure_ascii=True, allow_nan=False)
+    second = json.dumps(payload, sort_keys=True, ensure_ascii=True, allow_nan=False)
+    if first != second or "\r" in first:
+        raise SystemExit("to_dict dumps are not stable")
+    canonical_text(first, False)
+    return first
+
+
+def clone(value: dict[str, Any]) -> dict[str, Any]:
+    copied = copy.deepcopy(value)
+    if not isinstance(copied, dict):
+        raise SystemExit("clone is not an object")
+    return copied
+
+
+def main() -> None:
+    assert_test_list()
+    schema_bytes = git_bytes(f"{PYTHON_COMMIT}:schemas/sesslint.report.v1.json")
+    if b"\r" in schema_bytes:
+        raise SystemExit("pin schema contains CR")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    pattern = schema["properties"]["findings"]["items"]["properties"]["fingerprint"]["pattern"]
+    if pattern != FINGERPRINT_PATTERN:
+        raise SystemExit("pinned fingerprint pattern changed")
+    assert_integer_bounds(schema)
+    report, finding = load_package()
+    schema_reasons = set(
+        schema["properties"]["coverage"]["properties"]["skipped"]["items"]["properties"]["reason"][
+            "enum"
+        ]
+    )
+    extra_reasons = sorted(set(report.VALID_COVERAGE_SKIP_REASONS) - schema_reasons)
+    basic = make_coverage(
+        report,
+        performed=["SL001"],
+        adapter={"id": "synthetic", "version": "1"},
+        profile={"id": "neutral", "version": "1"},
+    )
+    named = make_coverage(
+        report,
+        performed=["SL001", "SL002"],
+        adapter={"id": "synthetic", "name": "Synthetic", "version": "1"},
+        profile={"id": "neutral", "name": "Neutral", "version": "1"},
+        skipped=[report.CoverageSkip(check="SL003", reason="profile-gated", detail="gated")],
+    )
+    deterministic = finding.Repairability.DETERMINISTIC
+    manual = finding.Repairability.MANUAL
+    lossy = finding.Repairability.LOSSY_EXPLICIT
+    unsupported = finding.Repairability.UNSUPPORTED
+    error = finding.Severity.ERROR
+    one = make_item(
+        finding,
+        code="SL001",
+        path="a.jsonl",
+        fingerprint="0123456789abcdef",
+        repairability=deterministic,
+        severity=error,
+    )
+    built_one = make_report(report, [one], basic)
+    empty = make_report(report, [], basic)
+    severities = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=deterministic,
+                severity=finding.Severity.FATAL,
+                message="m",
+            ),
+            make_item(
+                finding,
+                code="SL002",
+                path="b.jsonl",
+                fingerprint="fedcba9876543210",
+                repairability=deterministic,
+                severity=error,
+                message="n",
+            ),
+            make_item(
+                finding,
+                code="SL003",
+                path="c.jsonl",
+                fingerprint="0011223344556677",
+                repairability=deterministic,
+                severity=finding.Severity.WARNING,
+                message="p",
+            ),
+            make_item(
+                finding,
+                code="SL004",
+                path="d.jsonl",
+                fingerprint="8899aabbccddeeff",
+                repairability=deterministic,
+                severity=finding.Severity.INFO,
+                message="q",
+            ),
+        ],
+        basic,
+    )
+    manual_report = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=manual,
+                severity=error,
+            )
+        ],
+        basic,
+    )
+    lossy_report = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=lossy,
+                severity=error,
+            )
+        ],
+        basic,
+    )
+    unsupported_report = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=unsupported,
+                severity=error,
+            )
+        ],
+        basic,
+    )
+    byte_report = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=deterministic,
+                severity=error,
+                evidence={"byte_offset": 0},
+            )
+        ],
+        basic,
+    )
+    rich = make_report(
+        report,
+        [
+            make_item(
+                finding,
+                code="SL001",
+                path="a.jsonl",
+                fingerprint="0123456789abcdef",
+                repairability=deterministic,
+                severity=error,
+                record_id="r1",
+                evidence={"n": 1},
+                template="t",
+                related=("r1",),
+            )
+        ],
+        basic,
+    )
+    emissions = {
+        "render_empty": render(report, empty),
+        "render_one": render(report, built_one),
+        "render_severities": render(report, severities),
+        "render_manual": render(report, manual_report),
+        "render_lossy": render(report, lossy_report),
+        "render_unsupported": render(report, unsupported_report),
+        "render_repro_null": render(report, built_one, repro=make_repro(report, None)),
+        "render_repro_half": render(report, built_one, repro=make_repro(report, 0.5)),
+        "render_include_content": render(report, built_one, include_content=True),
+        "render_skip_and_names": render(report, make_report(report, [], named)),
+        "render_byte_zero": render(report, byte_report),
+        "render_unicode": render(
+            report, make_report(report, [], basic, limitation="caf\u00e9")
+        ),
+        "render_quote": render(report, make_report(report, [], basic, limitation='say "hi"')),
+        "render_tab": render(report, make_report(report, [], basic, limitation="a\tb")),
+        "render_full": render(
+            report,
+            make_report(report, [one], named),
+            include_content=True,
+            repro=make_repro(report, 0.5),
+        ),
+    }
+    included = json.loads(emissions["render_include_content"])
+    included["findings"][0]["raw_content"] = "m"
+    raw_mapping = report.render_json(included, include_content=True)
+    if report.render_json(included, include_content=True) != raw_mapping:
+        raise SystemExit("mapping render is not stable")
+    canonical_text(raw_mapping, True)
+    emissions["render_mapping_raw"] = raw_mapping
+    compact = {
+        "to_dict_compact": compact_dict(built_one),
+        "to_dict_compact_rich": compact_dict(rich),
+    }
+    full_keys = list(json.loads(emissions["render_full"]))
+    if full_keys != sorted(schema["properties"]):
+        raise SystemExit(f"root order {full_keys} != sorted properties")
+    vectors: list[dict[str, Any]] = []
+
+    def add_emit(vector_id: str, text: str, layout: str) -> None:
+        loaded = json.loads(text)
+        expected = expect(schema, loaded)
+        if expected != {"ok": True}:
+            raise SystemExit(f"{vector_id} rejected {expected}")
+        vectors.append(
+            {"expected": expected, "id": vector_id, "layout": layout, "python_json": text}
+        )
+
+    def add(vector_id: str, instance: object) -> None:
+        vectors.append({"expected": expect(schema, instance), "id": vector_id, "instance": instance})
+
+    def add_raw(vector_id: str, raw: str) -> None:
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    for name, text in emissions.items():
+        add_emit(name, text, "pretty")
+    for name, text in compact.items():
+        add_emit(name, text, "compact")
+
+    empty_doc = json.loads(emissions["render_empty"])
+    one_doc = json.loads(emissions["render_one"])
+    repro_doc = json.loads(emissions["render_repro_half"])
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_bool", True)
+    add("root_number", 1)
+    for name in schema["required"]:
+        document = clone(empty_doc)
+        document.pop(name)
+        add(f"missing_{name}", document)
+    extra = clone(empty_doc)
+    extra["extra"] = 1
+    add("root_additional_property", extra)
+    mutated = clone(empty_doc)
+    mutated["schema_version"] = "nope"
+    add("schema_version_const", mutated)
+    mutated = clone(empty_doc)
+    mutated["schema_version"] = 1
+    add("schema_version_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["assurance"] = "A9"
+    add("assurance_enum", mutated)
+    mutated = clone(empty_doc)
+    mutated["assurance"] = 1
+    add("assurance_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["session_id"] = ""
+    add("session_id_min_length", mutated)
+    mutated = clone(empty_doc)
+    mutated["session_id"] = 1
+    add("session_id_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["source_fingerprint"] = ""
+    add("source_fingerprint_min_length", mutated)
+    mutated = clone(empty_doc)
+    mutated["tool_version"] = ""
+    add("tool_version_min_length", mutated)
+    mutated = clone(empty_doc)
+    mutated["limitation"] = ""
+    add("limitation_min_length", mutated)
+    mutated = clone(empty_doc)
+    mutated["limitation"] = 1
+    add("limitation_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["findings"] = {}
+    add("findings_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"] = []
+    add("counts_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"] = []
+    add("coverage_type", mutated)
+    for name in ("by_code", "by_severity", "total"):
+        document = clone(empty_doc)
+        document["counts"].pop(name)
+        add(f"counts_missing_{name}", document)
+    mutated = clone(empty_doc)
+    mutated["counts"]["extra"] = 1
+    add("counts_additional", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"].pop("fatal")
+    add("severity_missing_fatal", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"]["extra"] = 0
+    add("severity_additional", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"]["error"] = -1
+    add("severity_negative", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"]["error"] = True
+    add("severity_bool", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"]["error"] = 1.5
+    add("severity_fraction", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_severity"]["error"] = 1.0
+    add("severity_one_point_zero", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_code"]["SL001"] = -1
+    add("by_code_negative", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_code"]["SL001"] = "x"
+    add("by_code_string", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_code"]["SL001"] = True
+    add("by_code_bool", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["by_code"]["SL001"] = 0
+    add("by_code_zero", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["total"] = -1
+    add("total_negative", mutated)
+    mutated = clone(empty_doc)
+    mutated["counts"]["total"] = True
+    add("total_bool", mutated)
+    for name in ("adapter", "performed", "profile", "skipped"):
+        document = clone(empty_doc)
+        document["coverage"].pop(name)
+        add(f"coverage_missing_{name}", document)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["adapter"].pop("id")
+    add("adapter_missing_id", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["adapter"].pop("version")
+    add("adapter_missing_version", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["adapter"]["z"] = 1
+    add("adapter_additional", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["adapter"]["id"] = ""
+    add("adapter_id_empty", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["adapter"]["name"] = ""
+    add("adapter_name_empty", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["performed"] = [""]
+    add("performed_item_empty", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["performed"] = [1]
+    add("performed_item_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["performed"] = "SL001"
+    add("performed_type", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0].pop("check")
+    add("skip_missing_check", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0].pop("reason")
+    add("skip_missing_reason", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0]["reason"] = "nope"
+    add("skip_reason_enum", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0]["z"] = 1
+    add("skip_additional", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0]["detail"] = 1
+    add("skip_detail_type", mutated)
+    mutated = clone(json.loads(emissions["render_skip_and_names"]))
+    mutated["coverage"]["skipped"][0]["check"] = ""
+    add("skip_check_empty", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["profile"].pop("version")
+    add("profile_missing_version", mutated)
+    mutated = clone(empty_doc)
+    mutated["coverage"]["profile"]["z"] = 1
+    add("profile_additional", mutated)
+    mutated = clone(empty_doc)
+    mutated["content_warning"] = "x"
+    add("content_warning_type", mutated)
+    mutated = clone(empty_doc)
+    mutated["included_content"] = False
+    add("included_content_false", mutated)
+    mutated = clone(empty_doc)
+    mutated["included_content"] = "x"
+    add("included_content_type", mutated)
+    for name in ("code", "fingerprint", "repairability", "severity"):
+        document = clone(one_doc)
+        document["findings"][0].pop(name)
+        add(f"finding_missing_{name}", document)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["z"] = 1
+    add("finding_additional", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["code"] = "SL999"
+    add("code_enum", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["code"] = 1
+    add("code_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["severity"] = "nope"
+    add("finding_severity_enum", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["repairability"] = "nope"
+    add("repairability_enum", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["fingerprint"] = "0123456789abcdeg"
+    add("fingerprint_pattern", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["fingerprint"] = "0123456789ABCDEF"
+    add("fingerprint_uppercase", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["fingerprint"] = "0123456789abcde"
+    add("fingerprint_short", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["fingerprint"] = "0123456789abcdef\n"
+    add("fingerprint_trailing_lf", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["fingerprint"] = "0123456789abcdef\n\n"
+    add("fingerprint_two_lf", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message"] = ""
+    add("message_empty", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message"] = "m" * 500
+    add("message_at_max", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message"] = "m" * 501
+    add("message_over_max", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message"] = 1
+    add("message_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message"] = "caf\u00e9"
+    add("message_unicode", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["evidence"] = None
+    add("evidence_null", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["evidence"] = []
+    add("evidence_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["evidence"] = {"k": 1}
+    add("evidence_object", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"].pop("path")
+    add("span_missing_path", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["z"] = 1
+    add("span_additional", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["byte"] = -1
+    add("span_byte_negative", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["byte"] = 0
+    add("span_byte_zero", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["line"] = None
+    add("span_line_null", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["line"] = 0
+    add("span_line_zero", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["line"] = True
+    add("span_line_bool", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["span"]["path"] = ""
+    add("span_path_empty", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["related_ids"] = ["b", "a"]
+    add("related_ids_unsorted", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["related_ids"] = ["a", "a"]
+    add("related_ids_unique", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["related_ids"] = ["a", 1]
+    add("related_ids_item_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["related_ids"] = "a"
+    add("related_ids_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["source"] = {"line": 1, "record_id": None}
+    add("source_missing_path", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["source"] = {"path": "a.jsonl", "z": 1}
+    add("source_additional", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["source"] = {"path": "a.jsonl", "line": 1, "record_id": None}
+    add("source_record_null", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["source"] = {"path": ""}
+    add("source_path_empty", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message_template"] = None
+    add("message_template_null", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["message_template"] = 1
+    add("message_template_type", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["raw_content"] = 1
+    add("raw_content_number", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["raw_content"] = None
+    add("raw_content_null", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["raw_content"] = "m"
+    add("raw_content_string", mutated)
+    mutated = clone(one_doc)
+    mutated["findings"][0]["schema_version"] = "nope"
+    add("finding_schema_version_const", mutated)
+    for name in (
+        "adapter",
+        "cli_version",
+        "detection",
+        "platform",
+        "profile",
+        "schema_versions",
+    ):
+        document = clone(repro_doc)
+        document["repro"].pop(name)
+        add(f"repro_missing_{name}", document)
+    mutated = clone(repro_doc)
+    mutated["repro"]["z"] = 1
+    add("repro_additional", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["detection"].pop("method")
+    add("detection_missing_method", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["detection"]["z"] = 1
+    add("detection_additional", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["detection"]["confidence"] = "x"
+    add("confidence_string", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["detection"]["confidence"] = None
+    add("confidence_null", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["platform"].pop("os")
+    add("platform_missing_os", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["platform"]["z"] = 1
+    add("platform_additional", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["schema_versions"]["report"] = 1
+    add("schema_versions_number", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["schema_versions"]["extra"] = "v"
+    add("schema_versions_string", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["adapter"].pop("name")
+    add("repro_adapter_missing_name", mutated)
+    mutated = clone(repro_doc)
+    mutated["repro"]["profile"].pop("version")
+    add("repro_profile_missing_version", mutated)
+    raw_line = emissions["render_one"]
+    needle = '"line": 1'
+    if raw_line.count(needle) != 1:
+        raise SystemExit("line token is not unique")
+    add_raw("line_exponent_integer", raw_line.replace(needle, '"line": 1e1', 1))
+    add_raw("line_exponent_fraction", raw_line.replace(needle, '"line": 1e-1', 1))
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    finding_props = schema["properties"]["findings"]["items"]["properties"]
+    facts = {
+        "additional_properties": schema["additionalProperties"],
+        "assurance_enum": schema["properties"]["assurance"]["enum"],
+        "code_enum": finding_props["code"]["enum"],
+        "emitted_root_order": full_keys,
+        "finding_properties_sorted": sorted(finding_props),
+        "fingerprint_pattern": finding_props["fingerprint"]["pattern"],
+        "id": schema["$id"],
+        "property_names": list(schema["properties"]),
+        "repairability_enum": finding_props["repairability"]["enum"],
+        "required": schema["required"],
+        "schema_version_const": schema["properties"]["schema_version"]["const"],
+        "severity_enum": finding_props["severity"]["enum"],
+        "skip_reason_enum": schema["properties"]["coverage"]["properties"]["skipped"]["items"][
+            "properties"
+        ]["reason"]["enum"],
+    }
+    document = {
+        "facts": facts,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "generator": GENERATOR,
+        "mcp_server_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/mcp_server.py")
+        ).hexdigest(),
+        "python_commit": PYTHON_COMMIT,
+        "report_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/report.py")
+        ).hexdigest(),
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.report.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+        "version_py_sha256": hashlib.sha256(
+            git_bytes(f"{PYTHON_COMMIT}:src/sesslint/_version.py")
+        ).hexdigest(),
+    }
+    gaps = [
+        "Schema path resolution and the missing-file loader are not this validator.",
+        "The report anti-drift comparison and the json-schema test allowlist asserts are not one accepted instance.",
+        "Regular expressions other than the pinned fingerprint pattern are not proven.",
+    ]
+    if extra_reasons:
+        listed = ", ".join(extra_reasons)
+        gaps.append(
+            "CoverageSkip reasons accepted by the Python class and absent from the pinned "
+            f"schema are not emitted: {listed}."
+        )
+    gaps.append(
+        "The report crate and mcp_server.rs are outside this card and were not modified. "
+        "This module emits render_json and compact Report.to_dict bytes."
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.report.v1 schema parity. Constraints come from the pinned "
+            "schema. Report JSON bytes come from render_json and from json.dumps of "
+            "Report.to_dict on the pinned emitters. No session payload is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": gaps,
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    rows = [
+        {"note": NOTES[test_id], "status": "not_applicable", "test": test_id, "vector_id": None}
+        for test_id in SCHEMA_TESTS
+    ]
+    coverage = {
+        "covered_count": 0,
+        "module": "sesslint.report",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.report.v1.json",
+    }
+    (OUT / "schema.json").write_bytes(schema_bytes)
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    print(f"vector_count={len(vectors)}")
+    print(f"covered=0")
+    print(f"not_applicable={len(rows)}")
+    print(f"vectors_sha256={vectors_sha}")
+
+
+if __name__ == "__main__":
+    main()

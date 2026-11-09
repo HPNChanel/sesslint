@@ -1281,10 +1281,10 @@ mod tests {
     #[test]
     fn fingerprint_pattern_matches_the_pinned_expression() {
         let pattern = "^[0-9a-f]{16}$";
-        assert_eq!(pattern_match(pattern, "0123456789abcdef").unwrap(), true);
-        assert_eq!(pattern_match(pattern, "0123456789ABCDEF").unwrap(), false);
-        assert_eq!(pattern_match(pattern, "0123456789abcde").unwrap(), false);
-        assert_eq!(pattern_match(pattern, "0123456789abcdef0").unwrap(), false);
+        assert!(pattern_match(pattern, "0123456789abcdef").unwrap());
+        assert!(!pattern_match(pattern, "0123456789ABCDEF").unwrap());
+        assert!(!pattern_match(pattern, "0123456789abcde").unwrap());
+        assert!(!pattern_match(pattern, "0123456789abcdef0").unwrap());
         assert!(pattern_match("(", "a").is_err());
     }
 

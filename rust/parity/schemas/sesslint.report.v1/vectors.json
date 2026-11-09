@@ -1,0 +1,6987 @@
+{
+  "facts": {
+    "additional_properties": false,
+    "assurance_enum": [
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "code_enum": [
+      "SL001",
+      "SL002",
+      "SL003",
+      "SL004",
+      "SL005",
+      "SL006",
+      "SL007",
+      "SL008",
+      "SL009",
+      "SL010",
+      "SL011",
+      "SL101",
+      "SL102",
+      "SL103",
+      "SL104",
+      "SL105",
+      "SL106",
+      "SL107",
+      "SL108",
+      "SL201",
+      "SL202",
+      "SL203",
+      "SL204",
+      "SL205",
+      "SL206",
+      "SL207",
+      "SL208",
+      "SL301",
+      "SL302",
+      "SL303",
+      "SL304",
+      "SL305",
+      "SL306",
+      "SL401",
+      "SL402"
+    ],
+    "emitted_root_order": [
+      "assurance",
+      "content_warning",
+      "counts",
+      "coverage",
+      "findings",
+      "included_content",
+      "limitation",
+      "repro",
+      "schema_version",
+      "session_id",
+      "source_fingerprint",
+      "tool_version"
+    ],
+    "finding_properties_sorted": [
+      "code",
+      "evidence",
+      "fingerprint",
+      "message",
+      "message_template",
+      "raw_content",
+      "related_ids",
+      "remediation",
+      "repairability",
+      "schema_version",
+      "severity",
+      "source",
+      "span"
+    ],
+    "fingerprint_pattern": "^[0-9a-f]{16}$",
+    "id": "https://sesslint.dev/schemas/sesslint.report/v1",
+    "property_names": [
+      "schema_version",
+      "session_id",
+      "source_fingerprint",
+      "tool_version",
+      "findings",
+      "counts",
+      "assurance",
+      "limitation",
+      "coverage",
+      "repro",
+      "content_warning",
+      "included_content"
+    ],
+    "repairability_enum": [
+      "deterministic",
+      "lossy-explicit",
+      "manual",
+      "unsupported"
+    ],
+    "required": [
+      "schema_version",
+      "session_id",
+      "source_fingerprint",
+      "tool_version",
+      "findings",
+      "counts",
+      "assurance",
+      "limitation",
+      "coverage"
+    ],
+    "schema_version_const": "sesslint.report/v1",
+    "severity_enum": [
+      "fatal",
+      "error",
+      "warning",
+      "info"
+    ],
+    "skip_reason_enum": [
+      "profile-gated",
+      "adapter-not-applicable",
+      "version-gated",
+      "empty-input",
+      "cap-exceeded",
+      "single-doc-fallback"
+    ]
+  },
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_empty",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {},\n    \"by_severity\": {\n      \"error\": 0,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 0\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_one",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_severities",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1,\n      \"SL002\": 1,\n      \"SL003\": 1,\n      \"SL004\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 1,\n      \"info\": 1,\n      \"warning\": 1\n    },\n    \"total\": 4\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"fatal\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    },\n    {\n      \"code\": \"SL002\",\n      \"evidence\": {\n        \"ordinal\": 2\n      },\n      \"fingerprint\": \"fedcba9876543210\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair b.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"b.jsonl\"\n      }\n    },\n    {\n      \"code\": \"SL003\",\n      \"evidence\": {\n        \"ordinal\": 3\n      },\n      \"fingerprint\": \"0011223344556677\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair c.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"warning\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"c.jsonl\"\n      }\n    },\n    {\n      \"code\": \"SL004\",\n      \"evidence\": {\n        \"ordinal\": 4\n      },\n      \"fingerprint\": \"8899aabbccddeeff\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair d.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"info\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"d.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_manual",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"manual inspection required; automated repair refused: malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content (DEMAND: AC-004); salvage path: run 'sesslint repair a.jsonl --policy salvage --acknowledge-side-effects' (recipe torn-record-excision; per-line malformed records only)\",\n      \"repairability\": \"manual\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_lossy",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"lossy-explicit recipe available: run 'sesslint repair a.jsonl --policy salvage'\",\n      \"repairability\": \"lossy-explicit\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_unsupported",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"unsupported defect or structure; automated repair refused: malformed nonterminal data cannot be safely interpreted; repair would require guessing record structure and content (DEMAND: AC-004); salvage path: run 'sesslint repair a.jsonl --policy salvage --acknowledge-side-effects' (recipe torn-record-excision; per-line malformed records only)\",\n      \"repairability\": \"unsupported\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_repro_null",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"repro\": {\n    \"adapter\": {\n      \"name\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"cli_version\": \"0.0.0\",\n    \"detection\": {\n      \"confidence\": null,\n      \"method\": \"explicit\"\n    },\n    \"platform\": {\n      \"architecture\": \"synthetic\",\n      \"os\": \"synthetic\",\n      \"python\": \"3.11.9\"\n    },\n    \"profile\": {\n      \"name\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"schema_versions\": {\n      \"manifest\": \"sesslint.repair-manifest/v1\",\n      \"report\": \"sesslint.report/v1\",\n      \"session\": \"sesslint.session/v1\"\n    }\n  },\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_repro_half",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"repro\": {\n    \"adapter\": {\n      \"name\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"cli_version\": \"0.0.0\",\n    \"detection\": {\n      \"confidence\": 0.5,\n      \"method\": \"explicit\"\n    },\n    \"platform\": {\n      \"architecture\": \"synthetic\",\n      \"os\": \"synthetic\",\n      \"python\": \"3.11.9\"\n    },\n    \"profile\": {\n      \"name\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"schema_versions\": {\n      \"manifest\": \"sesslint.repair-manifest/v1\",\n      \"report\": \"sesslint.report/v1\",\n      \"session\": \"sesslint.session/v1\"\n    }\n  },\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_include_content",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"content_warning\": true,\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"message\": \"m\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"included_content\": true,\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_skip_and_names",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {},\n    \"by_severity\": {\n      \"error\": 0,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 0\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"name\": \"Synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\",\n      \"SL002\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"name\": \"Neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": [\n      {\n        \"check\": \"SL003\",\n        \"detail\": \"gated\",\n        \"reason\": \"profile-gated\"\n      }\n    ]\n  },\n  \"findings\": [],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_byte_zero",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"byte_offset\": 0,\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": 0,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_unicode",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {},\n    \"by_severity\": {\n      \"error\": 0,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 0\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [],\n  \"limitation\": \"caf\\u00e9\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_quote",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {},\n    \"by_severity\": {\n      \"error\": 0,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 0\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [],\n  \"limitation\": \"say \\\"hi\\\"\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_tab",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {},\n    \"by_severity\": {\n      \"error\": 0,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 0\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [],\n  \"limitation\": \"a\\tb\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_full",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"content_warning\": true,\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"name\": \"Synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\",\n      \"SL002\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"name\": \"Neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": [\n      {\n        \"check\": \"SL003\",\n        \"detail\": \"gated\",\n        \"reason\": \"profile-gated\"\n      }\n    ]\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"message\": \"m\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"included_content\": true,\n  \"limitation\": \"synthetic limitation\",\n  \"repro\": {\n    \"adapter\": {\n      \"name\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"cli_version\": \"0.0.0\",\n    \"detection\": {\n      \"confidence\": 0.5,\n      \"method\": \"explicit\"\n    },\n    \"platform\": {\n      \"architecture\": \"synthetic\",\n      \"os\": \"synthetic\",\n      \"python\": \"3.11.9\"\n    },\n    \"profile\": {\n      \"name\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"schema_versions\": {\n      \"manifest\": \"sesslint.repair-manifest/v1\",\n      \"report\": \"sesslint.report/v1\",\n      \"session\": \"sesslint.session/v1\"\n    }\n  },\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "render_mapping_raw",
+      "layout": "pretty",
+      "python_json": "{\n  \"assurance\": \"A0\",\n  \"content_warning\": true,\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"message\": \"m\",\n      \"raw_content\": \"m\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"included_content\": true,\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "to_dict_compact",
+      "layout": "compact",
+      "python_json": "{\"assurance\": \"A0\", \"counts\": {\"by_code\": {\"SL001\": 1}, \"by_severity\": {\"error\": 1, \"fatal\": 0, \"info\": 0, \"warning\": 0}, \"total\": 1}, \"coverage\": {\"adapter\": {\"id\": \"synthetic\", \"version\": \"1\"}, \"performed\": [\"SL001\"], \"profile\": {\"id\": \"neutral\", \"version\": \"1\"}, \"skipped\": []}, \"findings\": [{\"code\": \"SL001\", \"fingerprint\": \"0123456789abcdef\", \"message\": \"m\", \"related_ids\": [], \"repairability\": \"deterministic\", \"schema_version\": \"sesslint.finding/v1\", \"severity\": \"error\", \"source\": {\"line\": 1, \"path\": \"a.jsonl\", \"record_id\": null}}], \"limitation\": \"synthetic limitation\", \"schema_version\": \"sesslint.report/v1\", \"session_id\": \"s1\", \"source_fingerprint\": \"fp\", \"tool_version\": \"0.0.0\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "to_dict_compact_rich",
+      "layout": "compact",
+      "python_json": "{\"assurance\": \"A0\", \"counts\": {\"by_code\": {\"SL001\": 1}, \"by_severity\": {\"error\": 1, \"fatal\": 0, \"info\": 0, \"warning\": 0}, \"total\": 1}, \"coverage\": {\"adapter\": {\"id\": \"synthetic\", \"version\": \"1\"}, \"performed\": [\"SL001\"], \"profile\": {\"id\": \"neutral\", \"version\": \"1\"}, \"skipped\": []}, \"findings\": [{\"code\": \"SL001\", \"evidence\": {\"n\": 1}, \"fingerprint\": \"0123456789abcdef\", \"message\": \"m\", \"message_template\": \"t\", \"related_ids\": [\"r1\"], \"repairability\": \"deterministic\", \"schema_version\": \"sesslint.finding/v1\", \"severity\": \"error\", \"source\": {\"line\": 1, \"path\": \"a.jsonl\", \"record_id\": \"r1\"}}], \"limitation\": \"synthetic limitation\", \"schema_version\": \"sesslint.report/v1\", \"session_id\": \"s1\", \"source_fingerprint\": \"fp\", \"tool_version\": \"0.0.0\"}"
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "schema_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_schema_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "session_id",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_session_id",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "source_fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_source_fingerprint",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "tool_version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_tool_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp"
+      }
+    },
+    {
+      "expected": {
+        "detail": "findings",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_findings",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "counts",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_counts",
+      "instance": {
+        "assurance": "A0",
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "assurance",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_assurance",
+      "instance": {
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "limitation",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_limitation",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "coverage",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_coverage",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional_property",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "extra": 1,
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_const",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "nope",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/schema_version"
+      },
+      "id": "schema_version_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": 1,
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/assurance"
+      },
+      "id": "assurance_enum",
+      "instance": {
+        "assurance": "A9",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/assurance"
+      },
+      "id": "assurance_type",
+      "instance": {
+        "assurance": 1,
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/session_id"
+      },
+      "id": "session_id_min_length",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/session_id"
+      },
+      "id": "session_id_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": 1,
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/source_fingerprint"
+      },
+      "id": "source_fingerprint_min_length",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/tool_version"
+      },
+      "id": "tool_version_min_length",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": ""
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/limitation"
+      },
+      "id": "limitation_min_length",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/limitation"
+      },
+      "id": "limitation_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": 1,
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings"
+      },
+      "id": "findings_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": {},
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": [],
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/coverage"
+      },
+      "id": "coverage_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": [],
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_code",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_by_code",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "by_severity",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_by_severity",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "total",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_missing_total",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          }
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "extra": 1,
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "fatal",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts/by_severity"
+      },
+      "id": "severity_missing_fatal",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/counts/by_severity"
+      },
+      "id": "severity_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "extra": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/by_severity/error"
+      },
+      "id": "severity_negative",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": -1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/by_severity/error"
+      },
+      "id": "severity_bool",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": true,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/by_severity/error"
+      },
+      "id": "severity_fraction",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 1.5,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "severity_one_point_zero",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 1.0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/by_code/SL001"
+      },
+      "id": "by_code_negative",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": -1
+          },
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/by_code/SL001"
+      },
+      "id": "by_code_string",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": "x"
+          },
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/by_code/SL001"
+      },
+      "id": "by_code_bool",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": true
+          },
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "by_code_zero",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 0
+          },
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/total"
+      },
+      "id": "total_negative",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": -1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/total"
+      },
+      "id": "total_bool",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": true
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "adapter",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage"
+      },
+      "id": "coverage_missing_adapter",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "performed",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage"
+      },
+      "id": "coverage_missing_performed",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "profile",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage"
+      },
+      "id": "coverage_missing_profile",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "skipped",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage"
+      },
+      "id": "coverage_missing_skipped",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          }
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "id",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage/adapter"
+      },
+      "id": "adapter_missing_id",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage/adapter"
+      },
+      "id": "adapter_missing_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/coverage/adapter"
+      },
+      "id": "adapter_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1",
+            "z": 1
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/coverage/adapter/id"
+      },
+      "id": "adapter_id_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/coverage/adapter/name"
+      },
+      "id": "adapter_name_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/coverage/performed/0"
+      },
+      "id": "performed_item_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            ""
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/coverage/performed/0"
+      },
+      "id": "performed_item_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            1
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/coverage/performed"
+      },
+      "id": "performed_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": "SL001",
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "check",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage/skipped/0"
+      },
+      "id": "skip_missing_check",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "detail": "gated",
+              "reason": "profile-gated"
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "reason",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage/skipped/0"
+      },
+      "id": "skip_missing_reason",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "check": "SL003",
+              "detail": "gated"
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/coverage/skipped/0/reason"
+      },
+      "id": "skip_reason_enum",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "check": "SL003",
+              "detail": "gated",
+              "reason": "nope"
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/coverage/skipped/0"
+      },
+      "id": "skip_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "check": "SL003",
+              "detail": "gated",
+              "reason": "profile-gated",
+              "z": 1
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/coverage/skipped/0/detail"
+      },
+      "id": "skip_detail_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "check": "SL003",
+              "detail": 1,
+              "reason": "profile-gated"
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/coverage/skipped/0/check"
+      },
+      "id": "skip_check_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "name": "Synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001",
+            "SL002"
+          ],
+          "profile": {
+            "id": "neutral",
+            "name": "Neutral",
+            "version": "1"
+          },
+          "skipped": [
+            {
+              "check": "",
+              "detail": "gated",
+              "reason": "profile-gated"
+            }
+          ]
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": "/coverage/profile"
+      },
+      "id": "profile_missing_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/coverage/profile"
+      },
+      "id": "profile_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1",
+            "z": 1
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/content_warning"
+      },
+      "id": "content_warning_type",
+      "instance": {
+        "assurance": "A0",
+        "content_warning": "x",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "included_content_false",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "included_content": false,
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/included_content"
+      },
+      "id": "included_content_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {},
+          "by_severity": {
+            "error": 0,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 0
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [],
+        "included_content": "x",
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "code",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0"
+      },
+      "id": "finding_missing_code",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "fingerprint",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0"
+      },
+      "id": "finding_missing_fingerprint",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "repairability",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0"
+      },
+      "id": "finding_missing_repairability",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "severity",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0"
+      },
+      "id": "finding_missing_severity",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/findings/0"
+      },
+      "id": "finding_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            },
+            "z": 1
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/findings/0/code"
+      },
+      "id": "code_enum",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL999",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/code"
+      },
+      "id": "code_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": 1,
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/findings/0/severity"
+      },
+      "id": "finding_severity_enum",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "nope",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/findings/0/repairability"
+      },
+      "id": "repairability_enum",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "nope",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/findings/0/fingerprint"
+      },
+      "id": "fingerprint_pattern",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdeg",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/findings/0/fingerprint"
+      },
+      "id": "fingerprint_uppercase",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789ABCDEF",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/findings/0/fingerprint"
+      },
+      "id": "fingerprint_short",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcde",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "fingerprint_trailing_lf",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef\n",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "pattern",
+        "ok": false,
+        "path": "/findings/0/fingerprint"
+      },
+      "id": "fingerprint_two_lf",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef\n\n",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message": "",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_at_max",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "maxLength",
+        "ok": false,
+        "path": "/findings/0/message"
+      },
+      "id": "message_over_max",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/message"
+      },
+      "id": "message_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message": 1,
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_unicode",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message": "caf\u00e9",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "evidence_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": null,
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/evidence"
+      },
+      "id": "evidence_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": [],
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "evidence_object",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "k": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0/span"
+      },
+      "id": "span_missing_path",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/findings/0/span"
+      },
+      "id": "span_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl",
+              "z": 1
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/findings/0/span/byte"
+      },
+      "id": "span_byte_negative",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": -1,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "span_byte_zero",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": 0,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "span_line_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": null,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/findings/0/span/line"
+      },
+      "id": "span_line_zero",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 0,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/span/line"
+      },
+      "id": "span_line_bool",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": true,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/findings/0/span/path"
+      },
+      "id": "span_path_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": ""
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "related_ids_unsorted",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "related_ids": [
+              "b",
+              "a"
+            ],
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": "/findings/0/related_ids"
+      },
+      "id": "related_ids_unique",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "related_ids": [
+              "a",
+              "a"
+            ],
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/related_ids/1"
+      },
+      "id": "related_ids_item_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "related_ids": [
+              "a",
+              1
+            ],
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/related_ids"
+      },
+      "id": "related_ids_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "related_ids": "a",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/findings/0/source"
+      },
+      "id": "source_missing_path",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "source": {
+              "line": 1,
+              "record_id": null
+            },
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/findings/0/source"
+      },
+      "id": "source_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "source": {
+              "path": "a.jsonl",
+              "z": 1
+            },
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "source_record_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "source": {
+              "line": 1,
+              "path": "a.jsonl",
+              "record_id": null
+            },
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minLength",
+        "ok": false,
+        "path": "/findings/0/source/path"
+      },
+      "id": "source_path_empty",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "source": {
+              "path": ""
+            },
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "message_template_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message_template": null,
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/message_template"
+      },
+      "id": "message_template_type",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "message_template": 1,
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/raw_content"
+      },
+      "id": "raw_content_number",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "raw_content": 1,
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_content_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "raw_content": null,
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_content_string",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "raw_content": "m",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/findings/0/schema_version"
+      },
+      "id": "finding_schema_version_const",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "schema_version": "nope",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "adapter",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_adapter",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "cli_version",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_cli_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "detection",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_detection",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "platform",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_platform",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "profile",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_profile",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "schema_versions",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_missing_schema_versions",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/repro"
+      },
+      "id": "repro_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          },
+          "z": 1
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "method",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro/detection"
+      },
+      "id": "detection_missing_method",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/repro/detection"
+      },
+      "id": "detection_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit",
+            "z": 1
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/repro/detection/confidence"
+      },
+      "id": "confidence_string",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": "x",
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "confidence_null",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": null,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "os",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro/platform"
+      },
+      "id": "platform_missing_os",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "z",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/repro/platform"
+      },
+      "id": "platform_additional",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9",
+            "z": 1
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/repro/schema_versions/report"
+      },
+      "id": "schema_versions_number",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": 1,
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "schema_versions_string",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "extra": "v",
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "name",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro/adapter"
+      },
+      "id": "repro_adapter_missing_name",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral",
+            "version": "1"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": "/repro/profile"
+      },
+      "id": "repro_profile_missing_version",
+      "instance": {
+        "assurance": "A0",
+        "counts": {
+          "by_code": {
+            "SL001": 1
+          },
+          "by_severity": {
+            "error": 1,
+            "fatal": 0,
+            "info": 0,
+            "warning": 0
+          },
+          "total": 1
+        },
+        "coverage": {
+          "adapter": {
+            "id": "synthetic",
+            "version": "1"
+          },
+          "performed": [
+            "SL001"
+          ],
+          "profile": {
+            "id": "neutral",
+            "version": "1"
+          },
+          "skipped": []
+        },
+        "findings": [
+          {
+            "code": "SL001",
+            "evidence": {
+              "ordinal": 1
+            },
+            "fingerprint": "0123456789abcdef",
+            "remediation": "deterministic recipe available: run 'sesslint repair a.jsonl'",
+            "repairability": "deterministic",
+            "severity": "error",
+            "span": {
+              "byte": null,
+              "line": 1,
+              "path": "a.jsonl"
+            }
+          }
+        ],
+        "limitation": "synthetic limitation",
+        "repro": {
+          "adapter": {
+            "name": "synthetic",
+            "version": "1"
+          },
+          "cli_version": "0.0.0",
+          "detection": {
+            "confidence": 0.5,
+            "method": "explicit"
+          },
+          "platform": {
+            "architecture": "synthetic",
+            "os": "synthetic",
+            "python": "3.11.9"
+          },
+          "profile": {
+            "name": "neutral"
+          },
+          "schema_versions": {
+            "manifest": "sesslint.repair-manifest/v1",
+            "report": "sesslint.report/v1",
+            "session": "sesslint.session/v1"
+          }
+        },
+        "schema_version": "sesslint.report/v1",
+        "session_id": "s1",
+        "source_fingerprint": "fp",
+        "tool_version": "0.0.0"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "line_exponent_integer",
+      "raw": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1e1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/findings/0/span/line"
+      },
+      "id": "line_exponent_fraction",
+      "raw": "{\n  \"assurance\": \"A0\",\n  \"counts\": {\n    \"by_code\": {\n      \"SL001\": 1\n    },\n    \"by_severity\": {\n      \"error\": 1,\n      \"fatal\": 0,\n      \"info\": 0,\n      \"warning\": 0\n    },\n    \"total\": 1\n  },\n  \"coverage\": {\n    \"adapter\": {\n      \"id\": \"synthetic\",\n      \"version\": \"1\"\n    },\n    \"performed\": [\n      \"SL001\"\n    ],\n    \"profile\": {\n      \"id\": \"neutral\",\n      \"version\": \"1\"\n    },\n    \"skipped\": []\n  },\n  \"findings\": [\n    {\n      \"code\": \"SL001\",\n      \"evidence\": {\n        \"ordinal\": 1\n      },\n      \"fingerprint\": \"0123456789abcdef\",\n      \"remediation\": \"deterministic recipe available: run 'sesslint repair a.jsonl'\",\n      \"repairability\": \"deterministic\",\n      \"severity\": \"error\",\n      \"span\": {\n        \"byte\": null,\n        \"line\": 1e-1,\n        \"path\": \"a.jsonl\"\n      }\n    }\n  ],\n  \"limitation\": \"synthetic limitation\",\n  \"schema_version\": \"sesslint.report/v1\",\n  \"session_id\": \"s1\",\n  \"source_fingerprint\": \"fp\",\n  \"tool_version\": \"0.0.0\"\n}"
+    }
+  ]
+}
