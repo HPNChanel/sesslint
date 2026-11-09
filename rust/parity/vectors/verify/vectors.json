@@ -1,0 +1,180 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.verify",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "verify_py_sha256": "2ca1ba2373a560df0065144932d72ec7ecc0399d60a4c764eaa318f8c8fa964a",
+  "verify_rs_sha256": "ac04154d260f614b38239bbab4cfbb311fd15e1af53afdf485eb7b6e94354c3d",
+  "known_parity_gaps": [
+    "GAP-verify-invalid-utf8: Python _parse_session_events surfaces CPython UnicodeDecodeError text; Rust reports invalid UTF-8 (not byte-compared here).",
+    "GAP-verify-end-to-end: verify() on committed fixture bundles calls sesslint.report.parse_manifest in Python; Rust returns sesslint.report.parse_manifest is not available (fixture directories are not vector-compared here).",
+    "GAP-verify-cli: CLI argv, capsys, exit codes, and main() integration are not byte-compared here.",
+    "GAP-verify-api-entry: tests/test_api_surface.py::test_verify_contract calls sesslint.api.verify rather than sesslint.verify.verify.",
+    "GAP-verify-fs-hostile: symlink, chmod, missing-path, and directory-as-file tests depend on host filesystem semantics.",
+    "GAP-verify-repair-bootstrap: no-plan and executor-emitted manifest paths require sesslint.repair and live replanning.",
+    "GAP-verify-runner-integration: checks.runner parity and profile gating in tests/checks/test_runner.py are outside isolated verify symbols.",
+    "GAP-verify-adversarial-matrix: parametrized corrupt_file/empty_target/bad_root cells are not one-vector-per-pytest.",
+    "GAP-verify-wave1: tests/test_wave1_correctness.py does not exercise sesslint.verify.",
+    "GAP-verify-dataclass-to-dict: test_verdict_and_check_dataclasses also calls Check.to_dict and Verdict.to_dict. The dataclass vector compares Verdict.to_json only, so that row is not the whole test."
+  ],
+  "vectors": [
+    {
+      "id": "module_all",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "exports": [
+          "Check",
+          "Verdict",
+          "render_verify_human",
+          "verify"
+        ]
+      }
+    },
+    {
+      "id": "dataclass_serialization",
+      "construct": {
+        "type": "dataclass_serialization"
+      },
+      "expected": {
+        "check_dict": {
+          "detail": "matched",
+          "name": "source_hash",
+          "ok": true
+        },
+        "verdict_dict": {
+          "assurance": "clean",
+          "checks": [
+            {
+              "detail": "matched",
+              "name": "source_hash",
+              "ok": true
+            }
+          ],
+          "ok": true
+        },
+        "verdict_json": "{\n  \"assurance\": \"clean\",\n  \"checks\": [\n    {\n      \"detail\": \"matched\",\n      \"name\": \"source_hash\",\n      \"ok\": true\n    }\n  ],\n  \"ok\": true\n}"
+      }
+    },
+    {
+      "id": "render_verify_human_formatting",
+      "construct": {
+        "type": "render_verify_human"
+      },
+      "expected": {
+        "pass_color_false": "Verification: PASSED\nAssurance: repaired-lossless\nChecks:\n  [PASS] source_hash: matched",
+        "fail_color_true": "Verification: \u001b[1m\u001b[31mFAILED\u001b[0m\nAssurance: unrepairable\nChecks:\n  \u001b[31m[FAIL]\u001b[0m idempotence: non-idempotent"
+      }
+    },
+    {
+      "id": "parse_rejects_nan",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOS0wNVQxMjowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3MifQp7ImFjdG9yIjoidXNlciIsImlkIjoibXNnLTAiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJ0ZXh0IjpOYU59LCJzZXEiOjAsInRzIjoiMjAyNi0wOS0wNVQxMjowMDowMFoifQo="
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Out-of-range or non-standard numeric constant: NaN"
+      }
+    },
+    {
+      "id": "parse_rejects_infinity",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOS0wNVQxMjowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3MifQp7ImFjdG9yIjoidXNlciIsImlkIjoibXNnLTAiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJ0ZXh0IjpJbmZpbml0eX0sInNlcSI6MCwidHMiOiIyMDI2LTA5LTA1VDEyOjAwOjAwWiJ9Cg=="
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Out-of-range or non-standard numeric constant: Infinity"
+      }
+    },
+    {
+      "id": "parse_rejects_out_of_range_float",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOS0wNVQxMjowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3MifQp7ImFjdG9yIjoidXNlciIsImlkIjoibXNnLTAiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJ0ZXh0IjoxZTk5OX0sInNlcSI6MCwidHMiOiIyMDI2LTA5LTA1VDEyOjAwOjAwWiJ9Cg=="
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Out-of-range float: 1e999"
+      }
+    },
+    {
+      "id": "parse_rejects_deep_nesting",
+      "construct": {
+        "type": "parse_session_events",
+        "recipe": "deep_nesting"
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Nesting depth exceeds maximum limit"
+      }
+    },
+    {
+      "id": "parse_rejects_oversized_line",
+      "construct": {
+        "type": "parse_session_events",
+        "recipe": "oversized_line"
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Event record line exceeds maximum line byte limit"
+      }
+    },
+    {
+      "id": "parse_rejects_nul_byte",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOS0wNVQxMjowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3MifQp7ImFjdG9yIjoidXNlciIsImlkIjoibXNnLTAiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJ0ZXh0IjoiYQBiIn0sInNlcSI6MCwidHMiOiIyMDI2LTA5LTA1VDEyOjAwOjAwWiJ9Cg=="
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "Forbidden NUL byte in event record line"
+      }
+    },
+    {
+      "id": "parse_rejects_oversized_file",
+      "construct": {
+        "type": "parse_session_events",
+        "recipe": "oversized_file"
+      },
+      "expected": {
+        "kind": "error",
+        "exc_type": "ValueError",
+        "message": "File size 104857601 bytes exceeds maximum limit (104857600 bytes)"
+      }
+    },
+    {
+      "id": "parse_tolerates_headerless",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJhY3RvciI6InVzZXIiLCJpZCI6Im1zZy0wIiwia2luZCI6Im1lc3NhZ2UiLCJwYXJlbnRfaWQiOm51bGwsInBheWxvYWQiOnsidGV4dCI6ImhpIn0sInNlcSI6MCwidHMiOiIyMDI2LTA5LTA1VDEyOjAwOjAwWiJ9Cg=="
+      },
+      "expected": {
+        "kind": "ok",
+        "header_session_id": null,
+        "event_count": 1,
+        "first_event_id": "msg-0"
+      }
+    },
+    {
+      "id": "parse_accepts_valid_jsonl",
+      "construct": {
+        "type": "parse_session_events",
+        "raw_b64": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOS0wNVQxMjowMDowMFoiLCJzY2hlbWFfdmVyc2lvbiI6InNlc3NsaW50LnNlc3Npb24vdjEiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3MifQp7ImFjdG9yIjoidXNlciIsImlkIjoibXNnLTAiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJ0ZXh0IjoiaGkifSwic2VxIjowLCJ0cyI6IjIwMjYtMDktMDVUMTI6MDA6MDBaIn0K"
+      },
+      "expected": {
+        "kind": "ok",
+        "header_session_id": "parity-sess",
+        "event_count": 1,
+        "first_event_id": "msg-0"
+      }
+    }
+  ]
+}

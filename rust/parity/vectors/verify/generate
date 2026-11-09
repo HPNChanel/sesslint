@@ -1,0 +1,435 @@
+#!/usr/bin/env python3
+"""Generate sesslint.verify parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import base64
+import hashlib
+import io
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+VERIFY_PY_SHA256 = (
+    "2ca1ba2373a560df0065144932d72ec7ecc0399d60a4c764eaa318f8c8fa964a"
+)
+VERIFY_RS_SHA256 = (
+    "ac04154d260f614b38239bbab4cfbb311fd15e1af53afdf485eb7b6e94354c3d"
+)
+MODULE = "sesslint.verify"
+
+HEADER_LINE = (
+    '{"created_at":"2026-09-05T12:00:00Z","schema_version":"sesslint.session/v1",'
+    '"session_id":"parity-sess"}'
+)
+EVENT_LINE = (
+    '{"actor":"user","id":"msg-0","kind":"message","parent_id":null,'
+    '"payload":{"text":"hi"},"seq":0,"ts":"2026-09-05T12:00:00Z"}'
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/checks/test_runner.py",
+    "tests/test_adversarial_verify.py",
+    "tests/test_api_surface.py",
+    "tests/test_verify.py",
+    "tests/test_verify_challenger.py",
+    "tests/test_verify_parse_parity.py",
+    "tests/test_wave1_correctness.py",
+)
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-verify-invalid-utf8: Python _parse_session_events surfaces CPython "
+    "UnicodeDecodeError text; Rust reports invalid UTF-8 (not byte-compared here).",
+    "GAP-verify-end-to-end: verify() on committed fixture bundles calls "
+    "sesslint.report.parse_manifest in Python; Rust returns "
+    "sesslint.report.parse_manifest is not available (fixture directories are not "
+    "vector-compared here).",
+    "GAP-verify-cli: CLI argv, capsys, exit codes, and main() integration are not "
+    "byte-compared here.",
+    "GAP-verify-api-entry: tests/test_api_surface.py::test_verify_contract calls "
+    "sesslint.api.verify rather than sesslint.verify.verify.",
+    "GAP-verify-fs-hostile: symlink, chmod, missing-path, and directory-as-file tests "
+    "depend on host filesystem semantics.",
+    "GAP-verify-repair-bootstrap: no-plan and executor-emitted manifest paths require "
+    "sesslint.repair and live replanning.",
+    "GAP-verify-runner-integration: checks.runner parity and profile gating in "
+    "tests/checks/test_runner.py are outside isolated verify symbols.",
+    "GAP-verify-adversarial-matrix: parametrized corrupt_file/empty_target/bad_root "
+    "cells are not one-vector-per-pytest.",
+    "GAP-verify-wave1: tests/test_wave1_correctness.py does not exercise "
+    "sesslint.verify.",
+    "GAP-verify-dataclass-to-dict: test_verdict_and_check_dataclasses also calls "
+    "Check.to_dict and Verdict.to_dict. The dataclass vector compares "
+    "Verdict.to_json only, so that row is not the whole test.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/test_verify.py::test_render_verify_human_formatting": (
+        "render_verify_human_formatting",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_nan": (
+        "parse_rejects_nan",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_infinity": (
+        "parse_rejects_infinity",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_out_of_range_float": (
+        "parse_rejects_out_of_range_float",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_deep_nesting": (
+        "parse_rejects_deep_nesting",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_oversized_line": (
+        "parse_rejects_oversized_line",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_nul_byte": (
+        "parse_rejects_nul_byte",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_rejects_oversized_file": (
+        "parse_rejects_oversized_file",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_tolerates_headerless_jsonl": (
+        "parse_tolerates_headerless",
+    ),
+    "tests/test_verify_parse_parity.py::test_parse_events_accepts_valid_jsonl": (
+        "parse_accepts_valid_jsonl",
+    ),
+}
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/verify.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != VERIFY_PY_SHA256:
+        raise SystemExit(
+            f"verify.py pin sha256 mismatch: expected {VERIFY_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "evidence" / "src" / "verify.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != VERIFY_RS_SHA256:
+        raise SystemExit(
+            f"verify.rs sha256 mismatch: expected {VERIFY_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (
+        b"sesslint-wt-",
+        b"FOR_WORK",
+        b"C:\\",
+        b"D:\\",
+        b"C:/",
+        b"D:/",
+    ):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def load_verify_module() -> Any:
+    verify_pin_hashes()
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=repo_root(),
+    )
+    tmp = tempfile.mkdtemp(prefix="sesslint-pinned-verify-par-")
+    zipfile.ZipFile(io.BytesIO(archive)).extractall(tmp)
+    sys.path.insert(0, str(Path(tmp) / "src"))
+    import importlib
+
+    return importlib.import_module("sesslint.verify")
+
+
+def raw_from_recipe(name: str, limits: Any) -> bytes:
+    if name == "oversized_file":
+        return b"x" * (limits.max_file_bytes + 1)
+    if name == "oversized_line":
+        big = "x" * (limits.max_line_bytes + 1)
+        line = EVENT_LINE.replace('"hi"', '"' + big + '"')
+        return (HEADER_LINE + "\n" + line + "\n").encode()
+    if name == "deep_nesting":
+        depth = limits.max_depth + 10
+        nested = "[" * depth + "]" * depth
+        return (HEADER_LINE + "\n" + nested + "\n").encode()
+    raise SystemExit(f"unknown parse recipe: {name}")
+
+
+def parse_outcome(verify_mod: Any, raw: bytes) -> dict[str, Any]:
+    try:
+        header, events = verify_mod._parse_session_events(raw)
+        return {
+            "kind": "ok",
+            "header_session_id": None if header is None else header.session_id,
+            "event_count": len(events),
+            "first_event_id": events[0].id if events else None,
+        }
+    except Exception as ex:
+        return {
+            "kind": "error",
+            "exc_type": type(ex).__name__,
+            "message": str(ex),
+        }
+
+
+def build_vectors(verify_mod: Any) -> list[dict[str, Any]]:
+    from sesslint.io import DEFAULT_READER_LIMITS
+
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    add(
+        "module_all",
+        {"type": "module_all"},
+        {"exports": list(verify_mod.__all__)},
+    )
+
+    check = verify_mod.Check(name="source_hash", ok=True, detail="matched")
+    verdict = verify_mod.Verdict(ok=True, checks=(check,), assurance="clean")
+    add(
+        "dataclass_serialization",
+        {"type": "dataclass_serialization"},
+        {
+            "check_dict": check.to_dict(),
+            "verdict_dict": verdict.to_dict(),
+            "verdict_json": verdict.to_json(indent=2),
+        },
+    )
+
+    c_pass = verify_mod.Check(name="source_hash", ok=True, detail="matched")
+    c_fail = verify_mod.Check(name="idempotence", ok=False, detail="non-idempotent")
+    v_pass = verify_mod.Verdict(ok=True, checks=(c_pass,), assurance="repaired-lossless")
+    v_fail = verify_mod.Verdict(ok=False, checks=(c_fail,), assurance="unrepairable")
+    add(
+        "render_verify_human_formatting",
+        {"type": "render_verify_human"},
+        {
+            "pass_color_false": verify_mod.render_verify_human(v_pass, color=False),
+            "fail_color_true": verify_mod.render_verify_human(v_fail, color=True),
+        },
+    )
+
+    parse_rows: list[tuple[str, dict[str, Any]]] = [
+        (
+            "parse_rejects_nan",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64(
+                    (HEADER_LINE + "\n" + EVENT_LINE.replace('"hi"', "NaN") + "\n").encode()
+                ),
+            },
+        ),
+        (
+            "parse_rejects_infinity",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64(
+                    (
+                        HEADER_LINE + "\n" + EVENT_LINE.replace('"hi"', "Infinity") + "\n"
+                    ).encode()
+                ),
+            },
+        ),
+        (
+            "parse_rejects_out_of_range_float",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64(
+                    (HEADER_LINE + "\n" + EVENT_LINE.replace('"hi"', "1e999") + "\n").encode()
+                ),
+            },
+        ),
+        (
+            "parse_rejects_deep_nesting",
+            {"type": "parse_session_events", "recipe": "deep_nesting"},
+        ),
+        (
+            "parse_rejects_oversized_line",
+            {"type": "parse_session_events", "recipe": "oversized_line"},
+        ),
+        (
+            "parse_rejects_nul_byte",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64(
+                    (
+                        HEADER_LINE + "\n" + EVENT_LINE.replace('"hi"', '"a\x00b"') + "\n"
+                    ).encode("utf-8")
+                ),
+            },
+        ),
+        (
+            "parse_rejects_oversized_file",
+            {"type": "parse_session_events", "recipe": "oversized_file"},
+        ),
+        (
+            "parse_tolerates_headerless",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64((EVENT_LINE + "\n").encode()),
+            },
+        ),
+        (
+            "parse_accepts_valid_jsonl",
+            {
+                "type": "parse_session_events",
+                "raw_b64": b64((HEADER_LINE + "\n" + EVENT_LINE + "\n").encode()),
+            },
+        ),
+    ]
+    for vector_id, construct in parse_rows:
+        if "recipe" in construct:
+            raw = raw_from_recipe(str(construct["recipe"]), DEFAULT_READER_LIMITS)
+        else:
+            raw = base64.b64decode(str(construct["raw_b64"]))
+        add(vector_id, construct, parse_outcome(verify_mod, raw))
+
+    return vectors
+
+
+def list_tests_in_file(rel: str) -> list[str]:
+    source = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+    names: list[str] = []
+    for line in source.splitlines():
+        if line.startswith("def test_"):
+            names.append(line.split("(")[0].replace("def ", ""))
+    return names
+
+
+def coverage_rows(vector_ids: frozenset[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for rel in COVERAGE_TEST_FILES:
+        for name in list_tests_in_file(rel):
+            qualified = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qualified)
+            row: dict[str, Any] = {"test": qualified}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+            else:
+                row["status"] = "not_applicable"
+            rows.append(row)
+    return rows
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "verify_py_sha256": VERIFY_PY_SHA256,
+        "verify_rs_sha256": VERIFY_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "verify_py_sha256": VERIFY_PY_SHA256,
+        "verify_rs_sha256": VERIFY_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/verify/generate",
+    }
+    manifest_text = json.dumps(manifest, indent=2) + "\n"
+    scan_committed_text(manifest_text)
+    (out_dir / "manifest.json").write_text(
+        manifest_text, encoding="utf-8", newline="\n"
+    )
+
+    rows = coverage_rows(frozenset(v["id"] for v in vectors))
+    covered = sum(1 for row in rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in rows if row["status"] == "not_applicable")
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    coverage_text = json.dumps(coverage, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(coverage_text)
+    (out_dir / "coverage.json").write_text(
+        coverage_text, encoding="utf-8", newline="\n"
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.verify parity: module exports, canonical fixture "
+            "bundles, strict parse gates, dataclass serialization, and human "
+            "rendering from pinned Python."
+        ),
+        "generator": "rust/parity/vectors/verify/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(
+        prov_text, encoding="utf-8", newline="\n"
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    verify_mod = load_verify_module()
+    vectors = build_vectors(verify_mod)
+    digest = write_outputs(out_dir, vectors)
+    rows = coverage_rows(frozenset(v["id"] for v in vectors))
+    print(
+        json.dumps(
+            {
+                "vectors": len(vectors),
+                "sha256": digest,
+                "covered": sum(row["status"] == "covered" for row in rows),
+                "not_applicable": sum(row["status"] == "not_applicable" for row in rows),
+            }
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

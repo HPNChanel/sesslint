@@ -1,0 +1,19 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.verify parity: module exports, canonical fixture bundles, strict parse gates, dataclass serialization, and human rendering from pinned Python.",
+  "generator": "rust/parity/vectors/verify/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-verify-invalid-utf8: Python _parse_session_events surfaces CPython UnicodeDecodeError text; Rust reports invalid UTF-8 (not byte-compared here).",
+    "GAP-verify-end-to-end: verify() on committed fixture bundles calls sesslint.report.parse_manifest in Python; Rust returns sesslint.report.parse_manifest is not available (fixture directories are not vector-compared here).",
+    "GAP-verify-cli: CLI argv, capsys, exit codes, and main() integration are not byte-compared here.",
+    "GAP-verify-api-entry: tests/test_api_surface.py::test_verify_contract calls sesslint.api.verify rather than sesslint.verify.verify.",
+    "GAP-verify-fs-hostile: symlink, chmod, missing-path, and directory-as-file tests depend on host filesystem semantics.",
+    "GAP-verify-repair-bootstrap: no-plan and executor-emitted manifest paths require sesslint.repair and live replanning.",
+    "GAP-verify-runner-integration: checks.runner parity and profile gating in tests/checks/test_runner.py are outside isolated verify symbols.",
+    "GAP-verify-adversarial-matrix: parametrized corrupt_file/empty_target/bad_root cells are not one-vector-per-pytest.",
+    "GAP-verify-wave1: tests/test_wave1_correctness.py does not exercise sesslint.verify.",
+    "GAP-verify-dataclass-to-dict: test_verdict_and_check_dataclasses also calls Check.to_dict and Verdict.to_dict. The dataclass vector compares Verdict.to_json only, so that row is not the whole test."
+  ]
+}
