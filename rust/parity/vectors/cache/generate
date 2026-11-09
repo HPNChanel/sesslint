@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Pinned-source, synthetic SQLite cache module vectors; stdlib only."""
+
+from __future__ import annotations
+
+import ast
+import gc
+import hashlib
+import importlib
+import io
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import zipfile
+from contextlib import closing
+from pathlib import Path
+from unittest.mock import patch
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+SOURCE = "src/sesslint/cache.py"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+
+
+def wire(value):
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def dump(name, value):
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def thresholds(data):
+    data = data.copy()
+    for name in ["confidence_min", "margin_min"]:
+        if isinstance(data[name], str):
+            data[name] = {
+                "NaN": float("nan"),
+                "Infinity": float("inf"),
+                "-Infinity": -float("inf"),
+            }[data[name]]
+    return data
+
+
+def cache_case(module, case):
+    with tempfile.TemporaryDirectory(prefix="sesslint-synthetic-cache-") as tmp:
+        root = Path(tmp)
+        db = root / "sub/cache.db"
+        kind = case["initial"]
+        if kind == "corrupt":
+            db.parent.mkdir()
+            db.write_bytes(b"NOT A SQLITE DATABASE")
+        elif kind == "parent-file":
+            db.parent.write_bytes(b"synthetic")
+        elif kind == "directory":
+            db.mkdir(parents=True)
+        cache = module.ScanCache(db)
+        out = [{"healthy": cache.healthy}]
+        for step in case["steps"]:
+            op = step["op"]
+            result = None
+            if op == "put":
+                cache.put(step["path"], step["fp"], step["sha"], step["value"])
+            elif op == "get":
+                result = cache.get(step["path"], step["fp"], step["sha"])
+            elif op == "close":
+                cache.close()
+            elif op == "reopen":
+                cache.close()
+                cache = module.ScanCache(db)
+            elif op == "inject":
+                with closing(sqlite3.connect(db)) as con:
+                    con.execute(
+                        "INSERT OR REPLACE INTO cache_v1(path,analysis_fp,file_sha256,result) "
+                        "VALUES(?,?,?,?)",
+                        (step["path"], step["fp"], step["sha"], step["text"]),
+                    )
+                    con.commit()
+            elif op == "drop":
+                with closing(sqlite3.connect(db)) as con:
+                    con.execute("DROP TABLE cache_v1")
+                    con.commit()
+            else:
+                raise AssertionError(op)
+            out.append({"healthy": cache.healthy, "result": result})
+        cache.close()
+        gc.collect()
+        return out
+
+
+def main():
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT
+    )
+    cases = []
+    with tempfile.TemporaryDirectory(prefix="sesslint-pinned-cache-") as tmp:
+        with zipfile.ZipFile(io.BytesIO(archive)) as z:
+            z.extractall(tmp)
+        sys.path.insert(0, str(Path(tmp) / "src"))
+        module = importlib.import_module("sesslint.cache")
+
+        def add(name, op, inputs, result):
+            cases.append({"id": name, "op": op, "input": inputs, "expected_json": wire(result)})
+
+        base = {
+            "format": None,
+            "profile": "neutral",
+            "select": None,
+            "ignore": None,
+            "confidence_min": None,
+            "margin_min": None,
+            "skip_undetected": False,
+            "baseline": None,
+        }
+        add("fingerprint-default", "fingerprint", base, module.analysis_fingerprint(**base))
+        variants = {
+            "format": ["", "auto", "canonical", "claude-code-jsonl", "Việt"],
+            "profile": ["claude-strict", "openai-strict", ""],
+            "select": [[], ["SL001"], ["SL002", "SL001"], ["SL001", "SL001"]],
+            "ignore": [[], ["SL001"], ["SL004", "SL002"]],
+            "confidence_min": [0.0, -0.0, 0.55, 1.0, 1e-7, "NaN", "Infinity", "-Infinity"],
+            "margin_min": [0.15, 1e16, 1e-6, 5e-324],
+            "skip_undetected": [True],
+            "baseline": [[], ["b", "a"], ["a", "a"], ["é", "😀"]],
+        }
+        for key, values in variants.items():
+            for i, value in enumerate(values):
+                data = dict(base, **{key: value})
+                add(
+                    f"fingerprint-{key}-{i}",
+                    "fingerprint",
+                    data,
+                    module.analysis_fingerprint(**thresholds(data)),
+                )
+        for i, override in enumerate(
+            ["synthetic-cache", "synthetic/cache", "synthetic//cache/./", "", None]
+        ):
+            env = {"LOCALAPPDATA": "synthetic-local", "XDG_CACHE_HOME": "synthetic-xdg"}
+            if override is not None:
+                env["SESSLINT_CACHE_DIR"] = override
+            expected = {}
+            for platform in ["win32", "linux"]:
+                with (
+                    patch.dict(os.environ, env, clear=True),
+                    patch.object(sys, "platform", platform),
+                ):
+                    expected[platform] = module.default_cache_dir().as_posix()
+            add(f"directory-{i}", "directory", env, expected)
+
+        def put(path="p", fp="fp", sha="sha", value=None):
+            return {
+                "op": "put",
+                "path": path,
+                "fp": fp,
+                "sha": sha,
+                "value": value
+                if value is not None
+                else {"path": "p", "verdict": "healthy", "findings": []},
+            }
+
+        def get(path="p", fp="fp", sha="sha"):
+            return {"op": "get", "path": path, "fp": fp, "sha": sha}
+
+        sequences = {
+            "roundtrip": [
+                put("a/b.jsonl", value={"path": "a/b.jsonl", "verdict": "healthy", "findings": []}),
+                get("a/b.jsonl"),
+                get("a/b.jsonl", sha="other-sha"),
+                get("a/b.jsonl", fp="other-fp"),
+                {"op": "close"},
+            ],
+            "replace": [
+                put(sha="sha1", value={"v": 1}),
+                put(sha="sha2", value={"v": 2}),
+                get(sha="sha1"),
+                get(sha="sha2"),
+            ],
+            "miss-close-reopen": [
+                get(),
+                put(),
+                {"op": "close"},
+                get(),
+                put(value={"v": 2}),
+                {"op": "close"},
+                {"op": "reopen"},
+                get(),
+            ],
+            "distinct-keys": [
+                put(),
+                put(fp="other-fp", value={"v": 2}),
+                put(path="other-path", value={"v": 3}),
+                get(),
+                get(fp="other-fp"),
+                get(path="other-path"),
+            ],
+            "unicode-payload": [
+                put(
+                    path="é/😀",
+                    value={
+                        "nested": {"é": "😀", "list": [None, True, 0, -1, 1.5]},
+                        "verdict": "unreadable",
+                    },
+                ),
+                get(path="é/😀"),
+            ],
+            "drop-read": [put(), {"op": "drop"}, get(), put(), get()],
+            "drop-write": [{"op": "drop"}, put(), get()],
+        }
+        for name, steps in sequences.items():
+            data = {"initial": "fresh", "steps": steps}
+            add(name, "cache", data, cache_case(module, data))
+        for kind in ["corrupt", "parent-file", "directory"]:
+            data = {"initial": kind, "steps": [get(), put(), get(), {"op": "close"}]}
+            add("open-" + kind, "cache", data, cache_case(module, data))
+        for i, text in enumerate(
+            ["{", "null", "[]", "42", '"scalar"', '{"v":1,"v":2}', "[" * 2000]
+        ):
+            data = {
+                "initial": "fresh",
+                "steps": [
+                    {"op": "inject", "path": "p", "fp": "fp", "sha": "sha", "text": text},
+                    get(),
+                    put(),
+                    get(),
+                ],
+            }
+            add("row-json-" + str(i), "cache", data, cache_case(module, data))
+    source_hash = hashlib.sha256(show(SOURCE)).hexdigest()
+    rust_hash = hashlib.sha256((ROOT / "rust/crates/scan/src/cache.rs").read_bytes()).hexdigest()
+    gaps = [
+        "Finite scalar-Unicode payload domain, integers within i64/u64 and depth<=128; "
+        "nonfinite/large-int/surrogate cache hits are explicit unsupported misses in Rust.",
+        "No scan/CLI cache policy, engine integration, concurrent lock timing, or native multi-OS "
+        "acceptance is claimed. SQLite file bytes are not an output contract.",
+        "Directory vectors use synthetic override/base environments; home-directory fallback "
+        "remains unit-tested but is not part of these vectors.",
+    ]
+    dump(
+        "vectors.json",
+        {"schema": SCHEMA, "module": "sesslint.cache", "python_commit": PIN, "cases": cases},
+    )
+    vectors_hash = hashlib.sha256((HERE / "vectors.json").read_bytes()).hexdigest()
+    dump(
+        "manifest.json",
+        {
+            "schema": SCHEMA,
+            "module": "sesslint.cache",
+            "python_commit": PIN,
+            "cache_py_sha256": source_hash,
+            "cache_rs_sha256": rust_hash,
+            "vector_count": len(cases),
+            "vectors_sha256": vectors_hash,
+            "generator": "rust/parity/vectors/cache/generate",
+        },
+    )
+    dump(
+        "PROVENANCE.json",
+        {
+            "contains_real_data": False,
+            "origin": "synthetic",
+            "python_commit": PIN,
+            "generator": "rust/parity/vectors/cache/generate",
+            "known_parity_gaps": gaps,
+        },
+    )
+    covered = {
+        "test_fingerprint_covers_engine_and_rules": ["fingerprint-default", "fingerprint-select-1"],
+        "test_scan_cache_get_put_roundtrip": ["roundtrip"],
+        "test_scan_cache_put_replaces_on_content_change": ["replace"],
+        "test_default_cache_dir_env_override": ["directory-0", "directory-1"],
+    }
+    rows = []
+    for path in ["tests/scan/test_incremental.py", "tests/test_wave1_correctness.py"]:
+        for node in ast.parse(show(path)).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
+                "test_"
+            ):
+                covered_ids = (
+                    covered.get(node.name) if path.endswith("test_incremental.py") else None
+                )
+                row = {
+                    "test": path + "::" + node.name,
+                    "status": "covered" if covered_ids else "not_applicable",
+                }
+                if covered_ids:
+                    row["vectors"] = covered_ids
+                else:
+                    row["reason"] = (
+                        "Full source test also requires scan/CLI/API/index or another module; "
+                        "helper/cache-only outcomes do not cover it."
+                    )
+                rows.append(row)
+    dump("coverage.json", {"rows": rows})
+    print(
+        json.dumps(
+            {
+                "vectors": len(cases),
+                "sha256": vectors_hash,
+                "covered": sum(r["status"] == "covered" for r in rows),
+                "not_applicable": sum(r["status"] == "not_applicable" for r in rows),
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

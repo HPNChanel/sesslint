@@ -1,0 +1,10 @@
+{
+  "cache_py_sha256": "ab215f4709f0af58e1d28bcb820f319140c6b871607c50f8c69749f457eb2e3e",
+  "cache_rs_sha256": "6fc3e70027fcc98c11e0c9ad0535718f0e9675fbad26d5010da7deb10bef9e47",
+  "generator": "rust/parity/vectors/cache/generate",
+  "module": "sesslint.cache",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "vector_count": 55,
+  "vectors_sha256": "47bbd9b05bf8fed20af91c67c9ab5c4ade4130d1529f86990900c3100a544087"
+}

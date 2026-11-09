@@ -1,0 +1,11 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/cache/generate",
+  "known_parity_gaps": [
+    "Finite scalar-Unicode payload domain, integers within i64/u64 and depth<=128; nonfinite/large-int/surrogate cache hits are explicit unsupported misses in Rust.",
+    "No scan/CLI cache policy, engine integration, concurrent lock timing, or native multi-OS acceptance is claimed. SQLite file bytes are not an output contract.",
+    "Directory vectors use synthetic override/base environments; home-directory fallback remains unit-tested but is not part of these vectors."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

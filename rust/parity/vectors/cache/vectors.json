@@ -1,0 +1,1269 @@
+{
+  "cases": [
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-default",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-format-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": "",
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-format-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": "auto",
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"334362741d6552483c359aabac282730deb7e03d1ecaf06e1995fd66b7a054df\"",
+      "id": "fingerprint-format-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": "canonical",
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"7ab5c1657191411cb913148f885a59179f059ec275771ffdc638f5e929212ab9\"",
+      "id": "fingerprint-format-3",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": "claude-code-jsonl",
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"0ad1d7f0d0b226efb66f67b644b14a67e6820eb80aace9e6420538215c23b602\"",
+      "id": "fingerprint-format-4",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": "Việt",
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"2c2789d806ff0eb6fce7226fb8943de14f050acd552cff549ba66f4af4ab45dd\"",
+      "id": "fingerprint-profile-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "claude-strict",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"ae58c9829939413fa650ab773e1596df8499235360f5100d4208da9c59dd1650\"",
+      "id": "fingerprint-profile-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "openai-strict",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"ed1ee771db2ef8e79b541967cea9c43a4e0a78836695923048b821ba3044756a\"",
+      "id": "fingerprint-profile-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-select-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": [],
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"d4159fa4eb1eaa7db02ce3b75f6167333991b7db0738bc9a45b7ddd273c8eed9\"",
+      "id": "fingerprint-select-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": [
+          "SL001"
+        ],
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e91b68a6d97f0f47b0c79c88804b07919c83e8011043867291cd4fd8a30f4b61\"",
+      "id": "fingerprint-select-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": [
+          "SL002",
+          "SL001"
+        ],
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"2a86f0f7200fe425700d733a650138de16fa0303d44d7115f26fc6293317ab4f\"",
+      "id": "fingerprint-select-3",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": [
+          "SL001",
+          "SL001"
+        ],
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-ignore-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": [],
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"2473dd27c91b628897762a694efb06073d4345cb274079b170a9f8f71d86d526\"",
+      "id": "fingerprint-ignore-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": [
+          "SL001"
+        ],
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"c2898439b43d91ca6e3cd3ae345d4819390660ce4d7ed17cf28fd85874dcc912\"",
+      "id": "fingerprint-ignore-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": [
+          "SL004",
+          "SL002"
+        ],
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"8e9eebf68a738462c4eedcee3defaea66999348703b79431b5fd0215bdbb5d36\"",
+      "id": "fingerprint-confidence_min-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": 0.0,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"2e7e1512dd545b2c04615d9300818c3d30f40e9248fb0dfe9b74e22ac0a60827\"",
+      "id": "fingerprint-confidence_min-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": -0.0,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"ec237ba800a426eff37ab112d30364d4e65ad220f559a2251b8d6fb9b1fa5c3a\"",
+      "id": "fingerprint-confidence_min-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": 0.55,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"858f0cb113e05f26f0ac28c57286e3b70e6414803e93e43072e4e2ae6d501ea7\"",
+      "id": "fingerprint-confidence_min-3",
+      "input": {
+        "baseline": null,
+        "confidence_min": 1.0,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"8153143733eb649d0f71385cf93eb6019739e7760ce1e8c00bb97ab3de9add21\"",
+      "id": "fingerprint-confidence_min-4",
+      "input": {
+        "baseline": null,
+        "confidence_min": 1e-07,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"957d0d448701f026c29782ca1e2824a74a1280b3c2a623d8195023865823111c\"",
+      "id": "fingerprint-confidence_min-5",
+      "input": {
+        "baseline": null,
+        "confidence_min": "NaN",
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"8d1ba9a092ca608040d65eef581a8ce7daec65a15a1afebe72ade9b24327682f\"",
+      "id": "fingerprint-confidence_min-6",
+      "input": {
+        "baseline": null,
+        "confidence_min": "Infinity",
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"5adeb099c170031842eb7a2b28521f860d4e1dbd24d8bf3a195eb5ede44ab73c\"",
+      "id": "fingerprint-confidence_min-7",
+      "input": {
+        "baseline": null,
+        "confidence_min": "-Infinity",
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"91f2589cc00ed1e7887a859036329369fea010d465c2e3e0301d4cf6e9d10b16\"",
+      "id": "fingerprint-margin_min-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": 0.15,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"05183fd7b5e79d1809105c0f57967944a90492712556a8a3087badff234fecd2\"",
+      "id": "fingerprint-margin_min-1",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": 1e+16,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"a086de7dd11ffa5fe2f378c30ccf41d88d0abe752130dc43ecb461fb96a7f8d3\"",
+      "id": "fingerprint-margin_min-2",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": 1e-06,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"cd6d2b5adf2493e1e35070e5f80e2400d8d43cdd584a46e7c7c0f79fe0474362\"",
+      "id": "fingerprint-margin_min-3",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": 5e-324,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"6a442661276fd7a5b55fc13c3811777997c4e1962d4e85f6f541855e777c27a4\"",
+      "id": "fingerprint-skip_undetected-0",
+      "input": {
+        "baseline": null,
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": true
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"e8098d6612c4a5dfdb4f97000df0b63fe8de051faabde51e45dae0976e217495\"",
+      "id": "fingerprint-baseline-0",
+      "input": {
+        "baseline": [],
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"3b66635f761c4c637c595169186820069264d55a7709d30d80150046a58aff71\"",
+      "id": "fingerprint-baseline-1",
+      "input": {
+        "baseline": [
+          "b",
+          "a"
+        ],
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"fa35543f80af26179beb65805532b6c02dd15073a3eb0d75fec5792c16f65759\"",
+      "id": "fingerprint-baseline-2",
+      "input": {
+        "baseline": [
+          "a",
+          "a"
+        ],
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "\"784b875cc1d5e3f2c9f50747e224bcb33758bae2da299ecf6ec2fa47b19aa919\"",
+      "id": "fingerprint-baseline-3",
+      "input": {
+        "baseline": [
+          "é",
+          "😀"
+        ],
+        "confidence_min": null,
+        "format": null,
+        "ignore": null,
+        "margin_min": null,
+        "profile": "neutral",
+        "select": null,
+        "skip_undetected": false
+      },
+      "op": "fingerprint"
+    },
+    {
+      "expected_json": "{\"linux\":\"synthetic-cache\",\"win32\":\"synthetic-cache\"}",
+      "id": "directory-0",
+      "input": {
+        "LOCALAPPDATA": "synthetic-local",
+        "SESSLINT_CACHE_DIR": "synthetic-cache",
+        "XDG_CACHE_HOME": "synthetic-xdg"
+      },
+      "op": "directory"
+    },
+    {
+      "expected_json": "{\"linux\":\"synthetic/cache\",\"win32\":\"synthetic/cache\"}",
+      "id": "directory-1",
+      "input": {
+        "LOCALAPPDATA": "synthetic-local",
+        "SESSLINT_CACHE_DIR": "synthetic/cache",
+        "XDG_CACHE_HOME": "synthetic-xdg"
+      },
+      "op": "directory"
+    },
+    {
+      "expected_json": "{\"linux\":\"synthetic/cache\",\"win32\":\"synthetic/cache\"}",
+      "id": "directory-2",
+      "input": {
+        "LOCALAPPDATA": "synthetic-local",
+        "SESSLINT_CACHE_DIR": "synthetic//cache/./",
+        "XDG_CACHE_HOME": "synthetic-xdg"
+      },
+      "op": "directory"
+    },
+    {
+      "expected_json": "{\"linux\":\"synthetic-xdg/sesslint\",\"win32\":\"synthetic-local/sesslint\"}",
+      "id": "directory-3",
+      "input": {
+        "LOCALAPPDATA": "synthetic-local",
+        "SESSLINT_CACHE_DIR": "",
+        "XDG_CACHE_HOME": "synthetic-xdg"
+      },
+      "op": "directory"
+    },
+    {
+      "expected_json": "{\"linux\":\"synthetic-xdg/sesslint\",\"win32\":\"synthetic-local/sesslint\"}",
+      "id": "directory-4",
+      "input": {
+        "LOCALAPPDATA": "synthetic-local",
+        "XDG_CACHE_HOME": "synthetic-xdg"
+      },
+      "op": "directory"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"a/b.jsonl\",\"verdict\":\"healthy\"}},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "roundtrip",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "a/b.jsonl",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "a/b.jsonl",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "a/b.jsonl",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "a/b.jsonl",
+            "sha": "other-sha"
+          },
+          {
+            "fp": "other-fp",
+            "op": "get",
+            "path": "a/b.jsonl",
+            "sha": "sha"
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"v\":2}}]",
+      "id": "replace",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha1",
+            "value": {
+              "v": 1
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha2",
+            "value": {
+              "v": 2
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha1"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha2"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "miss-close-reopen",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "op": "close"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "v": 2
+            }
+          },
+          {
+            "op": "close"
+          },
+          {
+            "op": "reopen"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}},{\"healthy\":true,\"result\":{\"v\":2}},{\"healthy\":true,\"result\":{\"v\":3}}]",
+      "id": "distinct-keys",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "other-fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "v": 2
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "other-path",
+            "sha": "sha",
+            "value": {
+              "v": 3
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "other-fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "other-path",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"nested\":{\"list\":[null,true,0,-1,1.5],\"é\":\"😀\"},\"verdict\":\"unreadable\"}}]",
+      "id": "unicode-payload",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "é/😀",
+            "sha": "sha",
+            "value": {
+              "nested": {
+                "list": [
+                  null,
+                  true,
+                  0,
+                  -1,
+                  1.5
+                ],
+                "é": "😀"
+              },
+              "verdict": "unreadable"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "é/😀",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "drop-read",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "op": "drop"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "drop-write",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "op": "drop"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":false},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "open-corrupt",
+      "input": {
+        "initial": "corrupt",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":false},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "open-parent-file",
+      "input": {
+        "initial": "parent-file",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":false},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null},{\"healthy\":false,\"result\":null}]",
+      "id": "open-directory",
+      "input": {
+        "initial": "directory",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-0",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "{"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-1",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "null"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-2",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "[]"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-3",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "42"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-4",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "\"scalar\""
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"v\":2}},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-5",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "{\"v\":1,\"v\":2}"
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    },
+    {
+      "expected_json": "[{\"healthy\":true},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":null},{\"healthy\":true,\"result\":{\"findings\":[],\"path\":\"p\",\"verdict\":\"healthy\"}}]",
+      "id": "row-json-6",
+      "input": {
+        "initial": "fresh",
+        "steps": [
+          {
+            "fp": "fp",
+            "op": "inject",
+            "path": "p",
+            "sha": "sha",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          },
+          {
+            "fp": "fp",
+            "op": "put",
+            "path": "p",
+            "sha": "sha",
+            "value": {
+              "findings": [],
+              "path": "p",
+              "verdict": "healthy"
+            }
+          },
+          {
+            "fp": "fp",
+            "op": "get",
+            "path": "p",
+            "sha": "sha"
+          }
+        ]
+      },
+      "op": "cache"
+    }
+  ],
+  "module": "sesslint.cache",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-module-vectors/v1"
+}

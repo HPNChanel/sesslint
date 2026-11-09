@@ -1,0 +1,199 @@
+{
+  "rows": [
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cold_incremental_byte_identical_to_plain"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_warm_run_marks_hits_and_matches"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_no_incremental_flag_means_no_cache"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_single_file_incremental"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_one_byte_change_invalidates_only_that_file"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_rule_selection_change_invalidates"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_format_change_invalidates"
+    },
+    {
+      "status": "covered",
+      "test": "tests/scan/test_incremental.py::test_fingerprint_covers_engine_and_rules",
+      "vectors": [
+        "fingerprint-default",
+        "fingerprint-select-1"
+      ]
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_corrupt_db_tolerated"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_unwritable_cache_dir_tolerated"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_unreadable_verdicts_never_cached"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cache_dir_inside_scanned_tree_ignored"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cache_db_lives_in_cache_dir"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cached_rows_carry_no_session_data"
+    },
+    {
+      "status": "covered",
+      "test": "tests/scan/test_incremental.py::test_scan_cache_get_put_roundtrip",
+      "vectors": [
+        "roundtrip"
+      ]
+    },
+    {
+      "status": "covered",
+      "test": "tests/scan/test_incremental.py::test_scan_cache_put_replaces_on_content_change",
+      "vectors": [
+        "replace"
+      ]
+    },
+    {
+      "status": "covered",
+      "test": "tests/scan/test_incremental.py::test_default_cache_dir_env_override",
+      "vectors": [
+        "directory-0",
+        "directory-1"
+      ]
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_env_cache_dir_used_by_scan"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_parallel_incremental_combines"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cli_incremental_and_cache_dir"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_cli_incremental_human_marks_hits"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/scan/test_incremental.py::test_check_dir_passthrough"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_secret_shapes_after_real_json_escapes_are_detected"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_escaped_backslash_text_does_not_create_a_secret_boundary"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_escape_run_parity_preserves_secret_boundaries"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_private_key_digest_uses_original_bytes_after_escape_shadow"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_secret_window_keeps_stripped_record_boundaries"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_short_prefix_gate_preserves_reference_boundaries"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_shared_secret_families_are_detected_and_never_echoed"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_azure_and_gcp_service_account_secret_shapes_are_detected"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_dump_session_file_uses_atomic_writer_and_lf"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_jsonl_readers_treat_unicode_separators_as_json_string_content"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_mcp_bounds_oversized_jsonl_and_recursion_failures"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_index_and_cache_recursion_fail_closed"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_bundle_chunk_count_matches_physical_lf_reference"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_sarif_artifact_uri_percent_encodes_path_bytes"
+    },
+    {
+      "reason": "Full source test also requires scan/CLI/API/index or another module; helper/cache-only outcomes do not cover it.",
+      "status": "not_applicable",
+      "test": "tests/test_wave1_correctness.py::test_deterministic_python_codec_wording_and_bytes_are_stable"
+    }
+  ]
+}
