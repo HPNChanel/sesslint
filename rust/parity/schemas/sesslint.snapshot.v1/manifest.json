@@ -1,0 +1,20 @@
+{
+  "boundary_count": 3,
+  "byte_exact_scope": "Embedded pinned schema blob only; no envelope serialization/CLI output claim.",
+  "domain": "Strict JSON parser: binary64 floats including exponent overflow as in Python, exact integers up to 4300 digits, Unicode scalar strings, depth128; duplicate keys and NaN/Infinity literals refused. Schema accepts arbitrary nested record data. Typed from_json callers supply JSON-domain values.",
+  "invalid_count": 279,
+  "jsonschema_version": "4.26.0",
+  "oracle": "Draft202012Validator",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "scope": "Optional input envelope schema; pinned snapshot.py has no envelope producer.",
+  "source_sha256": {
+    "fixtures/outcome/orders/PROVENANCE.json": "c4bb25e65be56e8baa8b8af6f9b0a3ac2b5bb6fe2950c6de0e46a96d8b4e4c85",
+    "fixtures/outcome/orders/target_complete.json": "0db206ca7f9c93d054da4bb3681069bd9a4bfaa5150db83984033aff9412c44f",
+    "schemas/sesslint.snapshot.v1.json": "9c9dce3ce2544ed04f4e43910a58c7e935cb77d17585cd360a704ed57aa8722a",
+    "src/sesslint/outcome/snapshot.py": "2b2848e2ec927a1e2f07be7d3c0eeecdf18a7d8f75e7ed107e221e9950e6a10a",
+    "tests/outcome/test_outcome_snapshot.py": "0de8f3b9577da620b2fde8365ec0c62d6f36263676eef04657da7f6051011c54"
+  },
+  "valid_count": 49,
+  "vector_count": 328,
+  "vectors_sha256": "9192a478d44601d45fa85b3cb81e2844eabee9f2158869925211044f609decf8"
+}

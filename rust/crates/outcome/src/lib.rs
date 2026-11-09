@@ -10,3 +10,6 @@ pub mod contract;
 pub mod engine;
 pub mod snapshot;
 pub mod report {}
+
+#[path = "schema/sesslint.snapshot.v1.rs"]
+pub mod snapshot_schema;

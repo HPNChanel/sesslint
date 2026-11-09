@@ -1,0 +1,62 @@
+{
+  "covered_count": 0,
+  "not_applicable_count": 11,
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_fixture_envelope_matches_schema_and_loads"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_plain_files_default_to_unknown_completeness"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_csv_keeps_text_exact_and_leading_zeros"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_csv_short_row_leaves_fields_absent"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_csv_rejects_ambiguous_shapes"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_json_nested_values_are_marked_not_compared"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_snapshot_rejections"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_flags_fill_gaps_but_never_contradict_the_file"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_size_limit_and_encoding"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_parse_instant_requires_offset"
+    },
+    {
+      "note": "Independent schema validation does not execute entire snapshot loader test; loader parity is covered in snapshot-PAR.",
+      "status": "not_applicable",
+      "test": "tests/outcome/test_outcome_snapshot.py::test_snapshot_metadata_is_content_free"
+    }
+  ]
+}

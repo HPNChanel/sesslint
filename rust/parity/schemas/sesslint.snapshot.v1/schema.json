@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sesslint.dev/schemas/sesslint.snapshot.v1.json",
+  "title": "SessLint OutcomeGuard Snapshot Envelope",
+  "description": "Optional JSON envelope for one source or target observation. Plain CSV, JSON arrays and JSONL are also accepted. Metadata is never inferred: completeness defaults to unknown and origin to user_file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {"const": "sesslint.snapshot/v1"},
+    "observed_at": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "(Z|z|[+-][0-9]{2}:?[0-9]{2})$"}]},
+    "completeness": {"anyOf": [{"type": "null"}, {"enum": ["complete", "partial", "unknown", "unavailable"]}]},
+    "origin": {"anyOf": [{"type": "null"}, {"enum": ["target_system", "workflow_log", "user_file", "manual"]}]},
+    "demo": {"type": "boolean"},
+    "records": {"type": "array", "maxItems": 1000000, "items": {"type": "object"}}
+  }
+}
