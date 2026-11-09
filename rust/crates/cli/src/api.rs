@@ -1,6 +1,7 @@
 //! SessLint public programmatic API providing 1:1 library-CLI parity (TASK-024).
 //!
-//! Port of `src/sesslint/api.py` lines 1–516 and [`check_dir`] lines 519–612
+//! Port of `src/sesslint/api.py` lines 1–516, [`check_dir`] lines 519–612,
+//! [`repair`] lines 615–865, and [`verify`] lines 868–899
 //! @ `02694d537104659df66cdd084354739f3cccc440`.
 //!
 //! This module exposes pure library functions. It performs no terminal
@@ -36,6 +37,29 @@
 //! is not copied into a set. No report or finding is built. Lines 586–612
 //! are not evaluated.
 //!
+//! [`repair`] (lines 615–865) treats `source_path` as `Path(...).is_file()`.
+//! A missing path or a directory, including the empty path (`.` is a
+//! directory), is `FileNotFoundError`: `Source file not found: {shown}`.
+//! `shown` is [`crate::bundle::path_text`]. Any other metadata error is
+//! [`ApiError::Io`]. The file is not opened. `emit` must then be `auto`,
+//! `canonical`, or `vendor`. Supplying both an in-memory plan and `plan_path`
+//! is `ValueError`: `plan and plan_path are mutually exclusive`. The plan is
+//! an [`InMemoryPlan`] marker. `plan_path` is not parsed. Policy is not
+//! validated. The next statement is
+//! `from sesslint.adapters.detect import FORMAT_CANONICAL, detect_format`.
+//! That function is not linked. The call returns [`ApiError::Unsupported`]
+//! with [`DETECT_FORMAT_UNAVAILABLE`]. No format is detected.
+//! `sesslint.repair.writeback` is not imported. `VendorRepairRefused` is not
+//! raised. No output file is written. `progress_cb` is not called. No
+//! `RepairPlan` or `RepairManifest` is built. Lines after that import are
+//! not evaluated.
+//!
+//! [`verify`] (lines 868–899) has no local check. The pin resolves
+//! `sesslint.verify.verify` through `sys.modules` and calls it. That function
+//! is not linked. The call returns [`ApiError::Unsupported`] with
+//! [`VERIFY_UNAVAILABLE`] before any of the three paths is read. No
+//! `VerifyVerdict` is built. No verify helper in another crate is called.
+//!
 //! # Recorded gaps
 //!
 //! * Python `bool` is not an `int` and not a `float`. Thresholds are
@@ -55,6 +79,13 @@
 //!   for `0` and for negative values.
 //! * Line 80 is `VerifyVerdict = Verdict`. `sesslint.verify.Verdict` is not a
 //!   dependency of this crate. This module does not alias another verdict type.
+//!   [`verify`] stops before a verdict would be built.
+//! * [`repair`] `emit` is `&str`. A non-`str` Python `repr` cannot be passed.
+//!   The error uses single quotes around the supplied text (`got 'bad'`).
+//!   Python may switch to double quotes when the text contains `'` and no `"`.
+//! * `plan` is [`Option<InMemoryPlan>`]. The pin's `RepairPlan` is not built.
+//! * `Path.is_file` errors that are not absence keep Rust's [`std::io::Error`]
+//!   text. Python would raise that `OSError`.
 
 use std::convert::Infallible;
 use std::error::Error;
@@ -99,25 +130,47 @@ pub const APPLY_RULE_SELECTION_UNAVAILABLE: &str =
 /// Next call after the `check_dir` threshold screen. `sesslint.scan` is not linked.
 pub const SCAN_PATH_UNAVAILABLE: &str = "sesslint.scan.scan_path is not available";
 
+/// Next import inside [`repair`], after the source, emit, and plan checks.
+///
+/// `sesslint.adapters.detect.detect_format` is not linked. `FORMAT_CANONICAL`
+/// is the other name in that import and is not used.
+pub const DETECT_FORMAT_UNAVAILABLE: &str =
+    "sesslint.adapters.detect.detect_format is not available";
+
+/// `sesslint.verify.verify` is not linked. [`verify`] returns this immediately.
+pub const VERIFY_UNAVAILABLE: &str = "sesslint.verify.verify is not available";
+
+/// Marker that the pin's in-memory `plan` argument is not `None`.
+///
+/// This is not a `RepairPlan`. [`repair`] only tests whether the [`Option`] is
+/// `Some`. The marker is not read, and `plan_path` is not parsed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InMemoryPlan;
+
 /// Python `_capture_events`. Not invoked by this slice.
 type CaptureEvents<'a> = &'a dyn Fn(&str, &[SessionEvent]);
 
-/// Failure from [`check_file`], [`check_bytes`], [`check_dir`], and [`_check_impl`].
+/// Failure from [`check_file`], [`check_bytes`], [`check_dir`], [`_check_impl`],
+/// [`repair`], and [`verify`].
 ///
-/// [`Self::Value`] is a `ValueError` from `max_files`, `max_bytes`, or a
-/// threshold. [`Self::NotFound`] is `FileNotFoundError`. [`Self::Io`] is an
-/// `OSError` from `Path.exists`. [`Self::Unsupported`] is the static seam.
-/// Its text does not include a path or payload bytes.
+/// [`Self::Value`] is a `ValueError` from `max_files`, `max_bytes`, a
+/// threshold, `emit`, or plan mutual exclusion. [`Self::NotFound`] is
+/// `FileNotFoundError`. [`Self::Io`] is an `OSError` from `Path.exists` or
+/// `Path.is_file`. [`Self::Unsupported`] is the static seam. Its text does
+/// not include a path or payload bytes.
 #[derive(Debug)]
 pub enum ApiError {
     /// The next call is not the same function as the pin.
     Unsupported(&'static str),
-    /// Python `ValueError` from `max_files`, `max_bytes`, or
-    /// `validate_detection_thresholds`.
+    /// Python `ValueError` from `max_files`, `max_bytes`,
+    /// `validate_detection_thresholds`, `emit`, or plan mutual exclusion.
     Value(String),
-    /// Python `FileNotFoundError`: `Path not found: {path}`.
+    /// Python `FileNotFoundError`.
+    ///
+    /// [`check_file`] uses `Path not found: {path}`. [`repair`] uses
+    /// `Source file not found: {path}`.
     NotFound(String),
-    /// `Path.exists` failed with an error other than absence.
+    /// `Path.exists` or `Path.is_file` failed with an error other than absence.
     Io(io::Error),
 }
 
@@ -273,6 +326,66 @@ fn is_missing(error: &io::Error) -> bool {
 fn path_not_found(path: &Path) -> ApiError {
     let shown = crate::bundle::path_text(path);
     ApiError::NotFound(format!("Path not found: {shown}"))
+}
+
+/// `Path.is_file` after `Path(source_path)`.
+///
+/// An empty path is `.`, matching `Path("")`. A missing path is `Ok(false)`.
+/// A directory is `Ok(false)`. `fs::metadata` follows symlinks, as `stat`
+/// does. Any other metadata error is returned and is not turned into
+/// `FileNotFoundError`. The file is not opened.
+fn path_is_file(path: &Path) -> io::Result<bool> {
+    let probed = if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    };
+    match fs::metadata(probed) {
+        Ok(metadata) => Ok(metadata.is_file()),
+        Err(error) if is_missing(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Python `FileNotFoundError(f"Source file not found: {src}")`.
+fn source_file_not_found(path: &Path) -> ApiError {
+    let shown = crate::bundle::path_text(path);
+    ApiError::NotFound(format!("Source file not found: {shown}"))
+}
+
+/// Pin `emit not in ("auto", "canonical", "vendor")`.
+fn emit_is_allowed(emit: &str) -> bool {
+    matches!(emit, "auto" | "canonical" | "vendor")
+}
+
+/// Python `repr` of the supplied emit text, with single quotes.
+///
+/// `bad` is `'bad'`. Backslash, apostrophe, and the line breaks Python spells
+/// as `\\`, `\'`, `\n`, `\r`, and `\t` are escaped. Python may switch to
+/// double quotes when the text contains `'` and no `"`; this slice keeps
+/// single quotes.
+fn python_str_repr(text: &str) -> String {
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push('\'');
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn emit_value_error(emit: &str) -> ApiError {
+    ApiError::Value(format!(
+        "emit must be 'auto', 'canonical', or 'vendor', got {}",
+        python_str_repr(emit)
+    ))
 }
 
 /// Evaluate a single session file artifact.
@@ -545,9 +658,123 @@ pub fn check_dir(
     Err(ApiError::Unsupported(SCAN_PATH_UNAVAILABLE))
 }
 
+/// Plan and execute a repair, then stop before `detect_format`.
+///
+/// Python `repair` lines 615–865. Argument order matches the pin. Rust has no
+/// keyword defaults. Pass `None`, `"conservative"`, `None`, [`DEFAULT_PROFILE`],
+/// `None`, `None`, `false`, `false`, `"auto"`, `None`, and `None` for those
+/// Python defaults.
+///
+/// `source_path` is checked with [`path_is_file`] first. A missing path or a
+/// directory is [`ApiError::NotFound`] (`Source file not found: {shown}`).
+/// The empty path is `.`. Another metadata error is [`ApiError::Io`]. The
+/// file is not opened. `emit` is then one of `auto`, `canonical`, or `vendor`.
+/// An in-memory [`InMemoryPlan`] together with `plan_path` is
+/// [`ApiError::Value`] (`plan and plan_path are mutually exclusive`). The
+/// marker is not a `RepairPlan` and `plan_path` is not parsed. Policy is not
+/// validated.
+///
+/// The next pin statement imports `detect_format`. This crate does not link
+/// it. The result is [`ApiError::Unsupported`]
+/// ([`DETECT_FORMAT_UNAVAILABLE`]). The other arguments are bound and are not
+/// applied. This function does not detect a format, import write-back, raise
+/// `VendorRepairRefused`, write `output_path`, call `progress_cb`, or build a
+/// plan or a manifest.
+///
+/// # Errors
+///
+/// [`ApiError::NotFound`] when the source is missing or a directory.
+/// [`ApiError::Io`] when stating the source fails for another reason.
+/// [`ApiError::Value`] when `emit` is rejected or both plan inputs are set.
+/// [`ApiError::Unsupported`] when those checks pass. Success is [`Infallible`].
+#[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
+pub fn repair(
+    source_path: impl AsRef<Path>,
+    output_path: Option<&Path>,
+    policy: &str,
+    format: Option<&str>,
+    profile: &str,
+    plan_path: Option<&Path>,
+    plan: Option<InMemoryPlan>,
+    dry_run: bool,
+    acknowledge_side_effects: bool,
+    emit: &str,
+    progress_cb: Option<&dyn Fn(&ProgressEvent)>,
+    cancel_token: Option<&CancellationToken>,
+) -> Result<Infallible, ApiError> {
+    let source_path = source_path.as_ref();
+    if !path_is_file(source_path)? {
+        return Err(source_file_not_found(source_path));
+    }
+    if !emit_is_allowed(emit) {
+        return Err(emit_value_error(emit));
+    }
+    if plan.is_some() && plan_path.is_some() {
+        return Err(ApiError::Value(
+            "plan and plan_path are mutually exclusive".to_owned(),
+        ));
+    }
+    // Pin: `from sesslint.adapters.detect import FORMAT_CANONICAL, detect_format`.
+    // These are the values later steps would read. They are not applied.
+    // `progress_cb` is not called. `output_path` is not created.
+    let _pending = (
+        source_path,
+        output_path,
+        policy,
+        format,
+        profile,
+        plan_path,
+        plan,
+        dry_run,
+        acknowledge_side_effects,
+        emit,
+        progress_cb,
+        cancel_token,
+    );
+    Err(ApiError::Unsupported(DETECT_FORMAT_UNAVAILABLE))
+}
+
+/// Verify a repaired session, then stop before `sesslint.verify.verify`.
+///
+/// Python `verify` lines 868–899. Argument order matches the pin. Rust has no
+/// keyword defaults. Pass `None` and `false` for `plan_path` and
+/// `acknowledge_side_effects`.
+///
+/// The pin has no local check. It resolves `sesslint.verify.verify` through
+/// `sys.modules` and calls it. This crate does not link that function. The
+/// result is [`ApiError::Unsupported`] ([`VERIFY_UNAVAILABLE`]). The arguments
+/// are bound and are not applied. This function does not stat or read
+/// `source_path`, `output_path`, or `manifest_path`, and it does not build a
+/// `VerifyVerdict`.
+///
+/// # Errors
+///
+/// [`ApiError::Unsupported`]. Success is [`Infallible`].
+pub fn verify(
+    source_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    manifest_path: impl AsRef<Path>,
+    plan_path: Option<&Path>,
+    acknowledge_side_effects: bool,
+) -> Result<Infallible, ApiError> {
+    let source_path = source_path.as_ref();
+    let output_path = output_path.as_ref();
+    let manifest_path = manifest_path.as_ref();
+    // The pin calls `verify_fn(...)` with these arguments. They are not applied.
+    let _pending = (
+        source_path,
+        output_path,
+        manifest_path,
+        plan_path,
+        acknowledge_side_effects,
+    );
+    Err(ApiError::Unsupported(VERIFY_UNAVAILABLE))
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
+    use std::fs;
     use std::io;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -557,9 +784,10 @@ mod tests {
 
     use super::{
         _check_impl, bound_max_file_bytes, check_bytes, check_dir, check_file, display_path,
-        is_missing, path_exists, python_float_text, ApiError, APPLY_RULE_SELECTION_UNAVAILABLE,
-        DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE,
-        DEFAULT_VIRTUAL_PATH, SCAN_PATH_UNAVAILABLE,
+        is_missing, path_exists, python_float_text, python_str_repr, repair, verify, ApiError,
+        InMemoryPlan, APPLY_RULE_SELECTION_UNAVAILABLE, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES,
+        DEFAULT_MAX_FILE_BYTES, DEFAULT_PROFILE, DEFAULT_VIRTUAL_PATH, DETECT_FORMAT_UNAVAILABLE,
+        SCAN_PATH_UNAVAILABLE, VERIFY_UNAVAILABLE,
     };
     use crate::bundle::path_text;
 
@@ -1495,5 +1723,373 @@ mod tests {
         require_scan_stop(&from_dot);
         assert!(!called.load(Ordering::Relaxed));
         assert!(Path::new(".").is_dir());
+    }
+
+    fn source_file() -> &'static Path {
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+    }
+
+    fn source_dir() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn absent_output() -> &'static Path {
+        Path::new("synthetic/sesslint-rx-cli-api-04-output.json")
+    }
+
+    fn absent_plan() -> &'static Path {
+        Path::new("synthetic/sesslint-rx-cli-api-04-plan.json")
+    }
+
+    fn repair_err(
+        source: &Path,
+        emit: &str,
+        plan_path: Option<&Path>,
+        plan: Option<InMemoryPlan>,
+        progress: Option<&dyn Fn(&ProgressEvent)>,
+        token: Option<&CancellationToken>,
+    ) -> ApiError {
+        match repair(
+            source,
+            Some(absent_output()),
+            "not-a-policy",
+            Some("not-a-format"),
+            "not-a-profile",
+            plan_path,
+            plan,
+            false,
+            true,
+            emit,
+            progress,
+            token,
+        ) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        }
+    }
+
+    fn require_source_missing(error: &ApiError, path: &Path) {
+        let expected = format!("Source file not found: {}", path_text(path));
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error, &ApiError::NotFound(expected));
+        assert!(error.unsupported_message().is_none());
+        assert!(Error::source(error).is_none());
+        let text = error.to_string();
+        assert!(text.starts_with("Source file not found: "));
+        assert!(!text.contains("emit must"));
+        assert!(!text.contains("mutually exclusive"));
+        assert!(!text.contains("detect_format"));
+        assert!(!text.contains("not-a-policy"));
+        assert!(!text.contains("not-a-format"));
+        assert!(!text.contains("not-a-profile"));
+        assert!(!text.contains("VendorRepairRefused"));
+        assert!(!text.contains("writeback"));
+        assert!(!text.contains('\r'));
+        assert!(!text.contains('\n'));
+    }
+
+    fn require_detect_stop(error: &ApiError) {
+        assert_eq!(error, &ApiError::Unsupported(DETECT_FORMAT_UNAVAILABLE));
+        assert_eq!(error.unsupported_message(), Some(DETECT_FORMAT_UNAVAILABLE));
+        assert_eq!(
+            error.to_string(),
+            "sesslint.adapters.detect.detect_format is not available"
+        );
+        assert!(Error::source(error).is_none());
+        let text = error.to_string();
+        for absent in [
+            "Source file not found",
+            "emit must",
+            "mutually exclusive",
+            "not-a-policy",
+            "not-a-format",
+            "not-a-profile",
+            "VendorRepairRefused",
+            "writeback",
+            "RepairPlan",
+            "RepairManifest",
+            "package",
+            "Cargo",
+            "synthetic",
+            "\n",
+            "\r",
+        ] {
+            assert!(!text.contains(absent), "{absent}");
+        }
+    }
+
+    #[test]
+    fn missing_source_is_rejected_before_emit_is_considered() {
+        let missing = Path::new("synthetic/sesslint-rx-cli-api-04-missing.json");
+        assert!(!missing.exists());
+        assert!(!absent_output().exists());
+        let called = AtomicBool::new(false);
+        let progress = |_event: &ProgressEvent| {
+            called.store(true, Ordering::Relaxed);
+        };
+        let token = CancellationToken::new();
+        token.cancel();
+        let error = repair_err(
+            missing,
+            "bad",
+            Some(absent_plan()),
+            Some(InMemoryPlan),
+            Some(&progress),
+            Some(&token),
+        );
+        require_source_missing(&error, missing);
+        assert_ne!(
+            error.to_string(),
+            "emit must be 'auto', 'canonical', or 'vendor', got 'bad'"
+        );
+        assert!(!called.load(Ordering::Relaxed));
+        assert!(token.is_cancelled());
+        assert_ne!(error.to_string(), OperationCancelled::MESSAGE);
+        assert!(!absent_output().exists());
+        assert!(!absent_plan().exists());
+        assert!(!Path::new("synthetic").exists());
+    }
+
+    #[test]
+    fn directory_source_is_source_file_not_found() {
+        let dir = source_dir();
+        assert!(dir.is_dir());
+        assert!(!dir.is_file());
+        let error = repair_err(dir, "bad", None, None, None, None);
+        require_source_missing(&error, dir);
+        assert!(error.to_string().contains(path_text(dir).as_str()));
+
+        assert!(Path::new(".").is_dir());
+        let dotted = repair_err(Path::new("."), "auto", None, None, None, None);
+        require_source_missing(&dotted, Path::new("."));
+        assert_eq!(dotted.to_string(), "Source file not found: .");
+
+        let empty = repair_err(
+            Path::new(""),
+            "vendor",
+            Some(absent_plan()),
+            None,
+            None,
+            None,
+        );
+        require_source_missing(&empty, Path::new(""));
+        assert_eq!(empty.to_string(), "Source file not found: .");
+        assert!(!absent_output().exists());
+    }
+
+    #[test]
+    fn emit_repr_uses_single_quotes() {
+        assert_eq!(python_str_repr("bad"), "'bad'");
+        let source = source_file();
+        assert!(source.is_file());
+        let error = repair_err(source, "bad", None, None, None, None);
+        let expected = "emit must be 'auto', 'canonical', or 'vendor', got 'bad'";
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error, ApiError::Value(expected.to_owned()));
+        assert!(error.unsupported_message().is_none());
+        assert!(Error::source(&error).is_none());
+        assert!(error.to_string().contains("'bad'"));
+        assert!(!error.to_string().contains("\"bad\""));
+        assert!(!error.to_string().contains("detect_format"));
+        assert!(!error.to_string().contains("mutually exclusive"));
+        assert!(!error.to_string().contains("Cargo"));
+        assert!(!error.to_string().contains("package"));
+        assert!(!error.to_string().contains('\r'));
+
+        let both = repair_err(
+            source,
+            "bad",
+            Some(absent_plan()),
+            Some(InMemoryPlan),
+            None,
+            None,
+        );
+        assert_eq!(both.to_string(), expected);
+        assert!(!both.to_string().contains("mutually exclusive"));
+
+        for rejected in ["", "Auto", "AUTO", "canonical ", " vendor", "json"] {
+            let rejected_error = repair_err(source, rejected, None, None, None, None);
+            let rendered = format!(
+                "emit must be 'auto', 'canonical', or 'vendor', got {}",
+                python_str_repr(rejected)
+            );
+            assert_eq!(rejected_error.to_string(), rendered);
+            assert!(rendered.contains('\''));
+            assert!(!rendered.contains("detect_format"));
+        }
+        assert!(!absent_output().exists());
+    }
+
+    #[test]
+    fn plan_and_plan_path_are_exclusive_before_detect_format() {
+        let source = source_file();
+        assert!(source.is_file());
+        let called = AtomicBool::new(false);
+        let progress = |_event: &ProgressEvent| {
+            called.store(true, Ordering::Relaxed);
+        };
+        let token = CancellationToken::new();
+        token.cancel();
+        let error = repair_err(
+            source,
+            "auto",
+            Some(absent_plan()),
+            Some(InMemoryPlan),
+            Some(&progress),
+            Some(&token),
+        );
+        let expected = "plan and plan_path are mutually exclusive";
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error, ApiError::Value(expected.to_owned()));
+        assert!(error.unsupported_message().is_none());
+        assert!(Error::source(&error).is_none());
+        assert_ne!(error.to_string(), DETECT_FORMAT_UNAVAILABLE);
+        assert!(!error.to_string().contains("emit must"));
+        assert!(!error.to_string().contains("Source file not found"));
+        assert!(!error.to_string().contains("not-a-policy"));
+        assert!(!error.to_string().contains("detect_format"));
+        assert!(!called.load(Ordering::Relaxed));
+        assert_ne!(error.to_string(), OperationCancelled::MESSAGE);
+        assert!(!absent_output().exists());
+        assert!(!absent_plan().exists());
+
+        for emit in ["canonical", "vendor"] {
+            let again = repair_err(
+                source,
+                emit,
+                Some(absent_plan()),
+                Some(InMemoryPlan),
+                Some(&progress),
+                Some(&token),
+            );
+            assert_eq!(again.to_string(), expected);
+        }
+        assert!(!called.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn other_metadata_errors_stay_io_before_emit() {
+        let path = Path::new("synthetic/\0sesslint-rx-cli-api-04-missing");
+        let error = repair_err(
+            path,
+            "bad",
+            Some(absent_plan()),
+            Some(InMemoryPlan),
+            None,
+            None,
+        );
+        match &error {
+            ApiError::Io(io_error) => {
+                assert!(!is_missing(io_error));
+                assert!(Error::source(&error).is_some());
+            }
+            ApiError::NotFound(message) => {
+                assert!(message.starts_with("Source file not found: "));
+            }
+            ApiError::Value(_) | ApiError::Unsupported(_) => {
+                panic!("metadata failure must precede emit and detect_format");
+            }
+        }
+        assert!(error.unsupported_message().is_none());
+        assert!(!error.to_string().contains("emit must"));
+        assert!(!error.to_string().contains("detect_format"));
+        assert!(!error.to_string().contains("mutually exclusive"));
+        assert!(!absent_output().exists());
+    }
+
+    #[test]
+    fn valid_repair_stops_at_detect_format_without_creating_a_file() {
+        let source = source_file();
+        assert!(source.is_file());
+        let before = fs::metadata(source).expect("source metadata").len();
+        assert!(!absent_output().exists());
+        let called = AtomicBool::new(false);
+        let progress = |_event: &ProgressEvent| {
+            called.store(true, Ordering::Relaxed);
+        };
+        let token = CancellationToken::new();
+        token.cancel();
+        let cases = [
+            ("auto", None, None),
+            ("canonical", Some(absent_plan()), None),
+            ("vendor", None, Some(InMemoryPlan)),
+        ];
+        for (emit, plan_path, plan) in cases {
+            let error = repair_err(source, emit, plan_path, plan, Some(&progress), Some(&token));
+            require_detect_stop(&error);
+            assert_ne!(error.to_string(), OperationCancelled::MESSAGE);
+        }
+        assert!(!called.load(Ordering::Relaxed));
+        assert!(token.is_cancelled());
+        assert!(!absent_output().exists());
+        assert!(!absent_plan().exists());
+        assert!(!Path::new("synthetic").exists());
+        let after = fs::metadata(source).expect("source metadata").len();
+        assert_eq!(before, after);
+
+        let dry = match repair(
+            source,
+            None,
+            "conservative",
+            None,
+            DEFAULT_PROFILE,
+            None,
+            None,
+            true,
+            false,
+            "auto",
+            Some(&progress),
+            Some(&token),
+        ) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        require_detect_stop(&dry);
+        assert!(!called.load(Ordering::Relaxed));
+        assert!(!absent_output().exists());
+    }
+
+    #[test]
+    fn verify_stops_before_any_path_read() {
+        let source = Path::new("synthetic/\0sesslint-rx-cli-api-04-source");
+        let output = Path::new("synthetic/\0sesslint-rx-cli-api-04-output");
+        let manifest = Path::new("synthetic/\0sesslint-rx-cli-api-04-manifest");
+        let plan = Path::new("synthetic/\0sesslint-rx-cli-api-04-plan.json");
+        let nul_error = match verify(source, output, manifest, Some(plan), true) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(nul_error, ApiError::Unsupported(VERIFY_UNAVAILABLE));
+        assert_eq!(nul_error.unsupported_message(), Some(VERIFY_UNAVAILABLE));
+        assert_eq!(
+            nul_error.to_string(),
+            "sesslint.verify.verify is not available"
+        );
+        assert!(Error::source(&nul_error).is_none());
+        assert!(!matches!(nul_error, ApiError::Io(_)));
+        assert!(!nul_error.to_string().contains("synthetic"));
+        assert!(!nul_error.to_string().contains("Source file not found"));
+        assert!(!nul_error.to_string().contains('\0'));
+        assert!(!nul_error.to_string().contains('\r'));
+
+        let existing = source_file();
+        assert!(existing.is_file());
+        let from_file = match verify(existing, existing, existing, Some(existing), false) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(from_file, nul_error);
+        assert!(!from_file.to_string().contains("package"));
+        assert!(!from_file.to_string().contains("Cargo"));
+
+        let missing = Path::new("synthetic/sesslint-rx-cli-api-04-missing.json");
+        assert!(!missing.exists());
+        let from_missing = match verify(missing, absent_output(), absent_plan(), None, false) {
+            Ok(never) => match never {},
+            Err(error) => error,
+        };
+        assert_eq!(from_missing, nul_error);
+        assert!(!absent_output().exists());
+        assert!(!Path::new("synthetic").exists());
     }
 }
