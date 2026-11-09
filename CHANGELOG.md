@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rust scan library implements an optional SQLite cache with persistent entries,
+  content/config invalidation, soft storage failures, and pinned Python-compatible
+  analysis fingerprints. Unsupported JSON values conservatively miss the cache;
+  the cache is not yet connected to the unfinished Rust scan CLI.
+
 - Rust parity tooling validates a reviewed divergence registry and classifies
   exact approved capture pairs. Pending or malformed entries fail closed;
   strict byte-parity checks still fail for approved differences. Harness

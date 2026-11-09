@@ -7,4 +7,7 @@ publish = false
 [dependencies]
 model = { path = "../model" }
 checks = { path = "../checks" }
+codec = { path = "../codec" }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }
+serde_json = { version = "=1.0.151", features = ["raw_value", "float_roundtrip"] }
 sha2 = "=0.10.9"
