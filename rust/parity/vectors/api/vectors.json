@@ -1,0 +1,1679 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.api",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "api_py_sha256": "7fd6a761bf73e57c3e5310a43a34e80f90dc7036f35edb50694cdf1ae6fdcfd5",
+  "api_rs_sha256": "63c3aa37353b211bfc602e86b9d0712e91a9ec8cbe0778b9f4892eb3abd435a2",
+  "known_parity_gaps": [
+    "GAP-api-apply_rule_selection: after threshold and path guards, check_file and check_bytes call sesslint.profiles.apply_rule_selection in Python; Rust stops with sesslint.profiles.apply_rule_selection is not available.",
+    "GAP-api-scan_path: check_dir and directory-mode check call sesslint.scan.scan_path in Python after limit and threshold guards; Rust stops with sesslint.scan.scan_path is not available.",
+    "GAP-api-detect_format: repair and plan call sesslint.adapters.detect.detect_format after source, emit, and plan exclusivity checks; Rust stops with sesslint.adapters.detect.detect_format is not available.",
+    "GAP-api-verify: verify() imports sesslint.verify.verify in Python; Rust stops with sesslint.verify.verify is not available.",
+    "GAP-api-load_plan: apply_plan loads plans through sesslint.repair.load_plan in Python; Rust stops with sesslint.repair.load_plan is not available.",
+    "GAP-api-repair_preview: repair_preview imports sesslint.preview.repair_preview in Python; Rust stops with sesslint.preview.repair_preview is not available.",
+    "GAP-api-repair_many: repair_many imports sesslint.batch.repair_many in Python; Rust stops with sesslint.batch.repair_many is not available.",
+    "GAP-api-doctor_report: doctor_report imports sesslint.doctor.doctor_report in Python; Rust stops with sesslint.doctor.doctor_report is not available.",
+    "GAP-api-stats_paths: stats_paths imports sesslint.stats.stats_paths in Python; Rust stops with sesslint.stats.stats_paths is not available.",
+    "GAP-api-diff_sessions: diff_sessions imports sesslint.diff.diff_sessions in Python; Rust stops with sesslint.diff.diff_sessions is not available.",
+    "GAP-api-export_to_canonical: export_file imports sesslint.exporter.export_to_canonical in Python; Rust stops with sesslint.exporter.export_to_canonical is not available.",
+    "GAP-api-minimize_path: DiscoveredRoot.to_dict imports sesslint.report.minimize_path in Python; Rust stops with sesslint.report.minimize_path is not available.",
+    "GAP-api-secrets-token-hex: build_internal_error_envelope with error_id omitted calls secrets.token_hex in Python; Rust stops with secrets.token_hex is not available."
+  ],
+  "vectors": [
+    {
+      "id": "build_internal_error_envelope_empty_id",
+      "construct": {
+        "type": "call",
+        "target": "build_internal_error_envelope",
+        "args": {
+          "error_id": ""
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "envelope": {
+          "code": "INTERNAL_ERROR",
+          "error_id": "",
+          "message": "Something unexpected broke",
+          "verdict": "error"
+        }
+      }
+    },
+    {
+      "id": "build_internal_error_envelope_spaced_id",
+      "construct": {
+        "type": "call",
+        "target": "build_internal_error_envelope",
+        "args": {
+          "error_id": "  ERR-1  "
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "envelope": {
+          "code": "INTERNAL_ERROR",
+          "error_id": "  ERR-1  ",
+          "message": "Something unexpected broke",
+          "verdict": "error"
+        }
+      }
+    },
+    {
+      "id": "build_internal_error_envelope_supplied",
+      "construct": {
+        "type": "call",
+        "target": "build_internal_error_envelope",
+        "args": {
+          "error_id": "ERR-12345678"
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "envelope": {
+          "code": "INTERNAL_ERROR",
+          "error_id": "ERR-12345678",
+          "message": "Something unexpected broke",
+          "verdict": "error"
+        }
+      }
+    },
+    {
+      "id": "check_dir_confidence_zero",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 1,
+          "max_bytes": 1073741824,
+          "confidence_min": 0.0,
+          "margin_min": null
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "check_dir_max_bytes_-1",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 1,
+          "max_bytes": -1,
+          "confidence_min": 0.0,
+          "margin_min": null
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_bytes must be a positive integer (> 0), got -1"
+      }
+    },
+    {
+      "id": "check_dir_max_bytes_-500",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 1,
+          "max_bytes": -500,
+          "confidence_min": 0.0,
+          "margin_min": null
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_bytes must be a positive integer (> 0), got -500"
+      }
+    },
+    {
+      "id": "check_dir_max_bytes_-9223372036854775808",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 1,
+          "max_bytes": -9223372036854775808,
+          "confidence_min": 0.0,
+          "margin_min": null
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_bytes must be a positive integer (> 0), got -9223372036854775808"
+      }
+    },
+    {
+      "id": "check_dir_max_bytes_0",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 1,
+          "max_bytes": 0,
+          "confidence_min": 0.0,
+          "margin_min": null
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_bytes must be a positive integer (> 0), got 0"
+      }
+    },
+    {
+      "id": "check_dir_max_bytes_i64_max_pair",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 9223372036854775807,
+          "max_bytes": -4
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_bytes must be a positive integer (> 0), got -4"
+      }
+    },
+    {
+      "id": "check_dir_max_files_-1",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": -1,
+          "max_bytes": 0,
+          "confidence_min": NaN,
+          "margin_min": 1.0
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_files must be a positive integer (> 0), got -1"
+      }
+    },
+    {
+      "id": "check_dir_max_files_-500",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": -500,
+          "max_bytes": 0,
+          "confidence_min": NaN,
+          "margin_min": 1.0
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_files must be a positive integer (> 0), got -500"
+      }
+    },
+    {
+      "id": "check_dir_max_files_-9223372036854775808",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": -9223372036854775808,
+          "max_bytes": 0,
+          "confidence_min": NaN,
+          "margin_min": 1.0
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_files must be a positive integer (> 0), got -9223372036854775808"
+      }
+    },
+    {
+      "id": "check_dir_max_files_0",
+      "construct": {
+        "type": "call",
+        "target": "check_dir",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-03-missing",
+          "max_files": 0,
+          "max_bytes": 0,
+          "confidence_min": NaN,
+          "margin_min": 1.0
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "max_files must be a positive integer (> 0), got 0"
+      }
+    },
+    {
+      "id": "check_file_equal_thresholds_missing",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": 0.5,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Path not found: synthetic/sesslint-rx-cli-api-02-missing.json"
+      }
+    },
+    {
+      "id": "check_file_missing_default",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json"
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Path not found: synthetic/sesslint-rx-cli-api-02-missing.json"
+      }
+    },
+    {
+      "id": "check_file_missing_dotted",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/./sesslint-rx-cli-api-02-missing.json"
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Path not found: synthetic/sesslint-rx-cli-api-02-missing.json"
+      }
+    },
+    {
+      "id": "check_missing_file_before_limits",
+      "construct": {
+        "type": "call",
+        "target": "check",
+        "args": {
+          "path": "synthetic/./sesslint-rx-cli-api-05-missing.json",
+          "max_files": 0,
+          "max_bytes": 0,
+          "confidence_min": NaN,
+          "margin_min": 1.0
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Path not found: synthetic/sesslint-rx-cli-api-05-missing.json"
+      }
+    },
+    {
+      "id": "discover_agents_empty",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-archived/home",
+          "agents": [],
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": []
+      }
+    },
+    {
+      "id": "discover_agents_reordered",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-default/home",
+          "agents": [
+            "codex",
+            "claude"
+          ],
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "codex",
+            "path": "discover-default/home/.codex/sessions",
+            "exists": true,
+            "source": "default"
+          },
+          {
+            "agent": "claude",
+            "path": "discover-default/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_archived_false",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-archived/home",
+          "agents": null,
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-archived/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-archived/home/.codex/sessions",
+            "exists": false,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_archived_true",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-archived/home",
+          "agents": null,
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-archived/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-archived/home/.codex/sessions",
+            "exists": false,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-archived/home/.codex/archived_sessions",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_classify_nondir_codex_sessions",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-classify/home",
+          "agents": null,
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-classify/home/.claude/projects",
+            "exists": false,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-classify/home/.codex/sessions",
+            "exists": false,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_claude_only_archived",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-archived/home",
+          "agents": [
+            "claude"
+          ],
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-archived/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_claude_symlink",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-classify/home",
+          "agents": [
+            "claude"
+          ],
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-classify/home/.claude/projects",
+            "exists": false,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_codex_env_archived",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-env-archived/home",
+          "agents": [
+            "codex"
+          ],
+          "env": [
+            [
+              "CODEX_HOME",
+              "discover-env-archived/cx"
+            ]
+          ],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "codex",
+            "path": "discover-env-archived/cx/sessions",
+            "exists": false,
+            "source": "env"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-env-archived/cx/archived_sessions",
+            "exists": true,
+            "source": "env"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_defaults",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-default/home",
+          "agents": null,
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-default/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-default/home/.codex/sessions",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_env_both_agents",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-env/home",
+          "agents": [
+            "claude",
+            "codex"
+          ],
+          "env": [
+            [
+              "CLAUDE_CONFIG_DIR",
+              "discover-env/ccfg"
+            ],
+            [
+              "CODEX_HOME",
+              "discover-env/cx"
+            ]
+          ],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-env/ccfg/projects",
+            "exists": true,
+            "source": "env"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-env/cx/sessions",
+            "exists": true,
+            "source": "env"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_env_override_mixed",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-env/home",
+          "agents": null,
+          "env": [
+            [
+              "claude_config_dir",
+              "synthetic-ignored"
+            ],
+            [
+              "CLAUDE_CONFIG_DIR",
+              "  discover-env/ccfg  "
+            ],
+            [
+              "CODEX_HOME",
+              ""
+            ]
+          ],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-env/ccfg/projects",
+            "exists": true,
+            "source": "env"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-env/home/.codex/sessions",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_env_separator_defaults",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-default/home",
+          "agents": null,
+          "env": [
+            [
+              "CLAUDE_CONFIG_DIR",
+              "\u001c"
+            ],
+            [
+              "CODEX_HOME",
+              " \t"
+            ]
+          ],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-default/home/.claude/projects",
+            "exists": true,
+            "source": "default"
+          },
+          {
+            "agent": "codex",
+            "path": "discover-default/home/.codex/sessions",
+            "exists": true,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_missing_home_include_archived",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-absent/home",
+          "agents": [
+            "claude"
+          ],
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "ok",
+        "roots": [
+          {
+            "agent": "claude",
+            "path": "discover-absent/home/.claude/projects",
+            "exists": false,
+            "source": "default"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover_unknown_after_claude",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-archived/home",
+          "agents": [
+            "claude",
+            "cursor"
+          ],
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "Unknown agent 'cursor': expected 'claude' or 'codex'"
+      }
+    },
+    {
+      "id": "discover_unknown_cursor",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-absent/home",
+          "agents": [
+            "cursor"
+          ],
+          "env": [],
+          "include_archived": false
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "Unknown agent 'cursor': expected 'claude' or 'codex'"
+      }
+    },
+    {
+      "id": "discover_unknown_quoted_agent",
+      "construct": {
+        "type": "call",
+        "target": "discover_session_roots",
+        "args": {
+          "home": "discover-absent/home",
+          "agents": [
+            "bad'agent"
+          ],
+          "env": [],
+          "include_archived": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "Unknown agent \"bad'agent\": expected 'claude' or 'codex'"
+      }
+    },
+    {
+      "id": "module_all",
+      "construct": {
+        "type": "module_all"
+      },
+      "expected": {
+        "kind": "ok",
+        "exports": [
+          "TriageReport",
+          "triage",
+          "BatchRepairReport",
+          "Bundle",
+          "CancellationToken",
+          "DiscoveredRoot",
+          "ExportSummary",
+          "OperationCancelled",
+          "PrecheckReason",
+          "PreviewDoc",
+          "PrecheckResult",
+          "ProgressEvent",
+          "ScanReport",
+          "SessionDiff",
+          "DoctorReport",
+          "SessionStats",
+          "VerifyVerdict",
+          "build_bundle",
+          "build_internal_error_envelope",
+          "check",
+          "check_bytes",
+          "check_dir",
+          "check_file",
+          "diff_sessions",
+          "stats_paths",
+          "discover_session_roots",
+          "doctor_report",
+          "export_file",
+          "plan",
+          "plan_repair",
+          "apply_plan",
+          "repair_many",
+          "repair_preview",
+          "precheck",
+          "repair",
+          "scan_bytes",
+          "validate_session",
+          "verify"
+        ]
+      }
+    },
+    {
+      "id": "module_constants",
+      "construct": {
+        "type": "module_constants"
+      },
+      "expected": {
+        "kind": "ok",
+        "default_max_file_bytes": 104857600,
+        "default_max_files": 10000,
+        "default_max_bytes": 1073741824,
+        "default_profile": "neutral"
+      }
+    },
+    {
+      "id": "plan_missing_source",
+      "construct": {
+        "type": "call",
+        "target": "plan",
+        "args": {
+          "path": "synthetic/./sesslint-rx-cli-api-05-missing.json",
+          "policy": "not-a-policy",
+          "format": "not-a-format",
+          "profile": "not-a-profile",
+          "acknowledge_side_effects": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Source file not found: synthetic/sesslint-rx-cli-api-05-missing.json"
+      }
+    },
+    {
+      "id": "repair_emit_invalid",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "bad",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got 'bad'"
+      }
+    },
+    {
+      "id": "repair_emit_reject_auto_capital",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "Auto",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got 'Auto'"
+      }
+    },
+    {
+      "id": "repair_emit_reject_auto_upper",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "AUTO",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got 'AUTO'"
+      }
+    },
+    {
+      "id": "repair_emit_reject_canonical_space",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "canonical ",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got 'canonical '"
+      }
+    },
+    {
+      "id": "repair_emit_reject_empty",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got ''"
+      }
+    },
+    {
+      "id": "repair_emit_reject_json",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "json",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got 'json'"
+      }
+    },
+    {
+      "id": "repair_emit_reject_vendor_space",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": " vendor",
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "emit must be 'auto', 'canonical', or 'vendor', got ' vendor'"
+      }
+    },
+    {
+      "id": "repair_missing_source",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "synthetic/sesslint-rx-cli-api-04-missing.json",
+          "output": "synthetic/sesslint-rx-cli-api-04-output.json",
+          "emit": "bad"
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Source file not found: synthetic/sesslint-rx-cli-api-04-missing.json"
+      }
+    },
+    {
+      "id": "repair_plan_path_exclusive",
+      "construct": {
+        "type": "call",
+        "target": "repair",
+        "args": {
+          "source": "fixture_homes/synthetic_existing/session.jsonl",
+          "emit": "auto",
+          "plan_path": "synthetic/sesslint-rx-cli-api-04-plan.json",
+          "with_plan": true,
+          "dry_run": true
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "plan and plan_path are mutually exclusive"
+      }
+    },
+    {
+      "id": "threshold_confidence_above_one_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 1.5,
+          "margin_min": 0.2,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.5"
+      }
+    },
+    {
+      "id": "threshold_confidence_above_one_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 1.5,
+          "margin_min": 0.2,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.5"
+      }
+    },
+    {
+      "id": "threshold_confidence_inf_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": Infinity,
+          "margin_min": null,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got inf"
+      }
+    },
+    {
+      "id": "threshold_confidence_inf_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": Infinity,
+          "margin_min": null,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got inf"
+      }
+    },
+    {
+      "id": "threshold_confidence_nan_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": NaN,
+          "margin_min": NaN,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got nan"
+      }
+    },
+    {
+      "id": "threshold_confidence_nan_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": NaN,
+          "margin_min": NaN,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got nan"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_inf_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -Infinity,
+          "margin_min": null,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -inf"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_inf_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -Infinity,
+          "margin_min": null,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -inf"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_one_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -1.0,
+          "margin_min": 0.2,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -1.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_one_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -1.0,
+          "margin_min": 0.2,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -1.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_zero_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -0.0,
+          "margin_min": null,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -0.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_neg_zero_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": -0.0,
+          "margin_min": null,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -0.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_one_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 1.0,
+          "margin_min": null,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_one_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 1.0,
+          "margin_min": null,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_zero_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.0,
+          "margin_min": null,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "threshold_confidence_zero_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.0,
+          "margin_min": null,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "threshold_margin_exceeds_confidence_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.2,
+          "margin_min": 0.3,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min (0.3) cannot exceed confidence_min (0.2)"
+      }
+    },
+    {
+      "id": "threshold_margin_exceeds_confidence_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.2,
+          "margin_min": 0.3,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min (0.3) cannot exceed confidence_min (0.2)"
+      }
+    },
+    {
+      "id": "threshold_margin_inf_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": Infinity,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got inf"
+      }
+    },
+    {
+      "id": "threshold_margin_inf_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": Infinity,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got inf"
+      }
+    },
+    {
+      "id": "threshold_margin_nan_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": NaN,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got nan"
+      }
+    },
+    {
+      "id": "threshold_margin_nan_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": NaN,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got nan"
+      }
+    },
+    {
+      "id": "threshold_margin_neg_inf_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": -Infinity,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got -inf"
+      }
+    },
+    {
+      "id": "threshold_margin_neg_inf_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": -Infinity,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got -inf"
+      }
+    },
+    {
+      "id": "threshold_margin_neg_zero_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": -0.0,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got -0.0"
+      }
+    },
+    {
+      "id": "threshold_margin_neg_zero_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": -0.0,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got -0.0"
+      }
+    },
+    {
+      "id": "threshold_margin_one_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": 1.0,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_margin_one_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": 1.0,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 1.0"
+      }
+    },
+    {
+      "id": "threshold_margin_zero_bytes",
+      "construct": {
+        "type": "call",
+        "target": "check_bytes",
+        "args": {
+          "data_b64": "VU5JUVVFX1BBWUxPQURfTUFSS0VS",
+          "virtual_path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": 0.0,
+          "max_input_bytes": 1,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "threshold_margin_zero_file",
+      "construct": {
+        "type": "call",
+        "target": "check_file",
+        "args": {
+          "path": "synthetic/sesslint-rx-cli-api-02-missing.json",
+          "confidence_min": 0.5,
+          "margin_min": 0.0,
+          "max_file_bytes": 0,
+          "timestamp_skew_ms": -1
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "ValueError",
+        "message": "margin_min must be strictly between 0.0 and 1.0 exclusive, got 0.0"
+      }
+    },
+    {
+      "id": "validate_session_invalid_schema",
+      "construct": {
+        "type": "call",
+        "target": "validate_session",
+        "args": {
+          "path": "fixture_homes/invalid-session/invalid.jsonl"
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "SchemaError",
+        "message": "Malformed JSON on header line (line 1): Expecting value: line 1 column 1 (char 0)"
+      }
+    },
+    {
+      "id": "validate_session_missing",
+      "construct": {
+        "type": "call",
+        "target": "validate_session",
+        "args": {
+          "path": "synthetic/./sesslint-rx-cli-api-05-missing.json"
+        }
+      },
+      "expected": {
+        "kind": "raises",
+        "exc_type": "FileNotFoundError",
+        "message": "Session file not found: synthetic/sesslint-rx-cli-api-05-missing.json"
+      }
+    }
+  ]
+}

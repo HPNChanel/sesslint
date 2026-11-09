@@ -1,0 +1,1147 @@
+#!/usr/bin/env python3
+"""Generate sesslint.api parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import base64
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+API_PY_SHA256 = (
+    "7fd6a761bf73e57c3e5310a43a34e80f90dc7036f35edb50694cdf1ae6fdcfd5"
+)
+API_RS_SHA256 = (
+    "63c3aa37353b211bfc602e86b9d0712e91a9ec8cbe0778b9f4892eb3abd435a2"
+)
+MODULE = "sesslint.api"
+
+MISSING_FILE = "synthetic/sesslint-rx-cli-api-02-missing.json"
+MISSING_FILE_DOTTED = "synthetic/./sesslint-rx-cli-api-02-missing.json"
+MISSING_DIR = "synthetic/sesslint-rx-cli-api-03-missing"
+REPAIR_MISSING = "synthetic/sesslint-rx-cli-api-04-missing.json"
+PLAN_MISSING = "synthetic/./sesslint-rx-cli-api-05-missing.json"
+SYNTHETIC_EXISTING = "fixture_homes/synthetic_existing/session.jsonl"
+ABSENT_PLAN = "synthetic/sesslint-rx-cli-api-04-plan.json"
+INVALID_SESSION = "fixture_homes/invalid-session/invalid.jsonl"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-api-apply_rule_selection: after threshold and path guards, check_file and "
+    "check_bytes call sesslint.profiles.apply_rule_selection in Python; Rust stops "
+    "with sesslint.profiles.apply_rule_selection is not available.",
+    "GAP-api-scan_path: check_dir and directory-mode check call sesslint.scan.scan_path "
+    "in Python after limit and threshold guards; Rust stops with "
+    "sesslint.scan.scan_path is not available.",
+    "GAP-api-detect_format: repair and plan call sesslint.adapters.detect.detect_format "
+    "after source, emit, and plan exclusivity checks; Rust stops with "
+    "sesslint.adapters.detect.detect_format is not available.",
+    "GAP-api-verify: verify() imports sesslint.verify.verify in Python; Rust stops "
+    "with sesslint.verify.verify is not available.",
+    "GAP-api-load_plan: apply_plan loads plans through sesslint.repair.load_plan in "
+    "Python; Rust stops with sesslint.repair.load_plan is not available.",
+    "GAP-api-repair_preview: repair_preview imports sesslint.preview.repair_preview "
+    "in Python; Rust stops with sesslint.preview.repair_preview is not available.",
+    "GAP-api-repair_many: repair_many imports sesslint.batch.repair_many in Python; "
+    "Rust stops with sesslint.batch.repair_many is not available.",
+    "GAP-api-doctor_report: doctor_report imports sesslint.doctor.doctor_report in "
+    "Python; Rust stops with sesslint.doctor.doctor_report is not available.",
+    "GAP-api-stats_paths: stats_paths imports sesslint.stats.stats_paths in Python; "
+    "Rust stops with sesslint.stats.stats_paths is not available.",
+    "GAP-api-diff_sessions: diff_sessions imports sesslint.diff.diff_sessions in "
+    "Python; Rust stops with sesslint.diff.diff_sessions is not available.",
+    "GAP-api-export_to_canonical: export_file imports sesslint.exporter.export_to_canonical "
+    "in Python; Rust stops with sesslint.exporter.export_to_canonical is not available.",
+    "GAP-api-minimize_path: DiscoveredRoot.to_dict imports sesslint.report.minimize_path "
+    "in Python; Rust stops with sesslint.report.minimize_path is not available.",
+    "GAP-api-secrets-token-hex: build_internal_error_envelope with error_id omitted "
+    "calls secrets.token_hex in Python; Rust stops with secrets.token_hex is not "
+    "available.",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {}
+
+THRESHOLD_CASES: Final[tuple[tuple[str, float | None, float | None, str], ...]] = (
+    (
+        "confidence_nan",
+        float("nan"),
+        float("nan"),
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got nan",
+    ),
+    (
+        "confidence_inf",
+        float("inf"),
+        None,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got inf",
+    ),
+    (
+        "confidence_neg_inf",
+        float("-inf"),
+        None,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -inf",
+    ),
+    (
+        "confidence_zero",
+        0.0,
+        None,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 0.0",
+    ),
+    (
+        "confidence_neg_zero",
+        -0.0,
+        None,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -0.0",
+    ),
+    (
+        "confidence_one",
+        1.0,
+        None,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.0",
+    ),
+    (
+        "confidence_neg_one",
+        -1.0,
+        0.2,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got -1.0",
+    ),
+    (
+        "confidence_above_one",
+        1.5,
+        0.2,
+        "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 1.5",
+    ),
+    (
+        "margin_nan",
+        0.5,
+        float("nan"),
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got nan",
+    ),
+    (
+        "margin_inf",
+        0.5,
+        float("inf"),
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got inf",
+    ),
+    (
+        "margin_neg_inf",
+        0.5,
+        float("-inf"),
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got -inf",
+    ),
+    (
+        "margin_zero",
+        0.5,
+        0.0,
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got 0.0",
+    ),
+    (
+        "margin_neg_zero",
+        0.5,
+        -0.0,
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got -0.0",
+    ),
+    (
+        "margin_one",
+        0.5,
+        1.0,
+        "margin_min must be strictly between 0.0 and 1.0 exclusive, got 1.0",
+    ),
+    (
+        "margin_exceeds_confidence",
+        0.2,
+        0.3,
+        "margin_min (0.3) cannot exceed confidence_min (0.2)",
+    ),
+)
+
+_BANNED_LIVE_TEST = re.compile(
+    rb"(?:^|[^A-Za-z])(sk|rk)_(?:live|test)_[A-Za-z0-9]{16}"
+)
+_BANNED_SUPABASE_PAT = re.compile(rb"sbp_[0-9a-f]{40}")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/api.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != API_PY_SHA256:
+        raise SystemExit(
+            f"api.py pin sha256 mismatch: expected {API_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust" / "crates" / "cli" / "src" / "api.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != API_RS_SHA256:
+        raise SystemExit(
+            f"api.rs sha256 mismatch: expected {API_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def scan_committed_text(text: str) -> None:
+    raw = text.encode("utf-8")
+    if _BANNED_LIVE_TEST.search(raw):
+        raise SystemExit("committed output matches banned live/test secret shape")
+    if _BANNED_SUPABASE_PAT.search(raw):
+        raise SystemExit("committed output contains a contiguous supabase token shape")
+    for needle in (
+        b"sesslint-wt-",
+        b"FOR_WORK",
+        b"C:\\",
+        b"D:\\",
+        b"C:/",
+        b"D:/",
+    ):
+        if needle in raw:
+            raise SystemExit(f"committed output contains banned marker {needle!r}")
+    if b"\r" in raw:
+        raise SystemExit("committed output must be LF only")
+
+
+def load_api_module() -> Any:
+    verify_pin_hashes()
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=repo_root(),
+    )
+    tmp = tempfile.mkdtemp(prefix="sesslint-pinned-api-par-")
+    zipfile.ZipFile(io.BytesIO(archive)).extractall(tmp)
+    sys.path.insert(0, str(Path(tmp) / "src"))
+    import importlib
+
+    return importlib.import_module("sesslint.api")
+
+
+def normalize_message(message: str) -> str:
+    return message.replace("\\", "/")
+
+
+def raises_payload(exc: BaseException) -> dict[str, Any]:
+    return {
+        "kind": "raises",
+        "exc_type": type(exc).__name__,
+        "message": normalize_message(str(exc)),
+    }
+
+
+def ok_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {"kind": "ok", **payload}
+
+
+def resolve_path(out_dir: Path, rel: str) -> Path:
+    text = rel.replace("\\", "/")
+    if text.startswith("fixture_homes/"):
+        return out_dir / text
+    return Path(text)
+
+
+def minimal_repair_plan(api_mod: Any) -> Any:
+    from sesslint.repair.planner import Loss
+
+    return api_mod.RepairPlan(
+        source_hash="0" * 64,
+        profile="neutral",
+        steps=(),
+        blocked=(),
+        loss_accounting=Loss(preview={}),
+        fingerprint="f" * 64,
+    )
+
+
+def resolve_env_path(out_dir: Path, value: str) -> str:
+    stripped = value.strip()
+    if not stripped or stripped == "\u001c":
+        return value
+    if stripped.startswith("fixture_homes/"):
+        return str(out_dir / stripped)
+    candidate = out_dir / "fixture_homes" / stripped
+    if candidate.exists():
+        return str(candidate)
+    return value
+
+
+def root_item(root: Any, homes_root: Path) -> dict[str, Any]:
+    path = root.path
+    try:
+        path_text = path.relative_to(homes_root).as_posix()
+    except ValueError:
+        path_text = path.as_posix().replace("\\", "/")
+    return {
+        "agent": root.agent,
+        "path": path_text,
+        "exists": bool(root.exists),
+        "source": root.source,
+    }
+
+
+def execute_call(api_mod: Any, out_dir: Path, target: str, args: dict[str, Any]) -> dict[str, Any]:
+    if target == "check_file":
+        path = resolve_path(out_dir, str(args["path"]))
+        try:
+            api_mod.check_file(
+                path,
+                confidence_min=args.get("confidence_min"),
+                margin_min=args.get("margin_min"),
+                max_file_bytes=int(args.get("max_file_bytes", 104_857_600)),
+                timestamp_skew_ms=args.get("timestamp_skew_ms"),
+                profile=args.get("profile", "neutral"),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "check_bytes":
+        data = base64.b64decode(str(args["data_b64"]))
+        try:
+            api_mod.check_bytes(
+                data,
+                virtual_path=str(args.get("virtual_path", MISSING_FILE)),
+                confidence_min=args.get("confidence_min"),
+                margin_min=args.get("margin_min"),
+                max_input_bytes=args.get("max_input_bytes"),
+                max_file_bytes=int(args.get("max_file_bytes", 104_857_600)),
+                timestamp_skew_ms=args.get("timestamp_skew_ms"),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "check_dir":
+        path = resolve_path(out_dir, str(args["path"]))
+        try:
+            api_mod.check_dir(
+                path,
+                max_files=int(args["max_files"]),
+                max_bytes=int(args["max_bytes"]),
+                confidence_min=args.get("confidence_min"),
+                margin_min=args.get("margin_min"),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "check":
+        path = resolve_path(out_dir, str(args["path"]))
+        try:
+            api_mod.check(
+                path,
+                max_files=int(args.get("max_files", 10_000)),
+                max_bytes=int(args.get("max_bytes", 1_073_741_824)),
+                max_file_bytes=int(args.get("max_file_bytes", 104_857_600)),
+                confidence_min=args.get("confidence_min"),
+                margin_min=args.get("margin_min"),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "repair":
+        source = resolve_path(out_dir, str(args["source"]))
+        plan_path = args.get("plan_path")
+        plan_path_resolved = (
+            resolve_path(out_dir, str(plan_path)) if plan_path is not None else None
+        )
+        plan = minimal_repair_plan(api_mod) if args.get("with_plan") else None
+        try:
+            api_mod.repair(
+                source,
+                resolve_path(out_dir, str(args["output"]))
+                if args.get("output")
+                else None,
+                policy=args.get("policy", "conservative"),
+                format=args.get("format"),
+                profile=args.get("profile", "neutral"),
+                plan_path=plan_path_resolved,
+                plan=plan,
+                dry_run=bool(args.get("dry_run", True)),
+                emit=str(args.get("emit", "auto")),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "plan":
+        path = resolve_path(out_dir, str(args["path"]))
+        try:
+            api_mod.plan(
+                path,
+                policy=str(args.get("policy", "conservative")),
+                format=args.get("format"),
+                profile=str(args.get("profile", "neutral")),
+                acknowledge_side_effects=bool(args.get("acknowledge_side_effects", False)),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "validate_session":
+        path = resolve_path(out_dir, str(args["path"]))
+        try:
+            api_mod.validate_session(path)
+        except Exception as exc:
+            return raises_payload(exc)
+        raise SystemExit(f"{target} expected raise, got success for {args}")
+
+    if target == "build_internal_error_envelope":
+        class SyntheticInternal(Exception):
+            def __str__(self) -> str:
+                return "Something unexpected broke"
+
+        err = SyntheticInternal()
+        error_id = args.get("error_id")
+        if error_id is None and "omit_error_id" in args:
+            try:
+                api_mod.build_internal_error_envelope(err, None)
+            except Exception as exc:
+                return raises_payload(exc)
+            raise SystemExit("expected omitted error_id to mint id")
+        try:
+            envelope = api_mod.build_internal_error_envelope(err, error_id)
+        except Exception as exc:
+            return raises_payload(exc)
+        return ok_payload({"envelope": envelope})
+
+    if target == "discover_session_roots":
+        home = out_dir / "fixture_homes" / str(args["home"])
+        env_items = args.get("env") or []
+        env: dict[str, str] = {}
+        for key, value in env_items:
+            env[str(key)] = resolve_env_path(out_dir, str(value))
+        agents = args.get("agents")
+        if agents is not None:
+            agents = [str(item) for item in agents]
+        try:
+            roots = api_mod.discover_session_roots(
+                agents,
+                env=env,
+                home=home,
+                include_archived=bool(args.get("include_archived", False)),
+            )
+        except Exception as exc:
+            return raises_payload(exc)
+        homes_root = out_dir / "fixture_homes"
+        return ok_payload({"roots": [root_item(item, homes_root) for item in roots]})
+
+    raise SystemExit(f"unknown call target: {target}")
+
+
+def ensure_fixture_homes(out_dir: Path) -> bool:
+    """Return False if symlink vectors must be skipped."""
+    homes = out_dir / "fixture_homes"
+    if homes.exists():
+        shutil.rmtree(homes)
+    homes.mkdir(parents=True, exist_ok=True)
+
+    existing = homes / "synthetic_existing" / "session.jsonl"
+    existing.parent.mkdir(parents=True, exist_ok=True)
+    existing.write_text("not-valid-session\n", encoding="utf-8", newline="\n")
+
+    invalid = homes / "invalid-session" / "invalid.jsonl"
+    invalid.parent.mkdir(parents=True, exist_ok=True)
+    invalid.write_text("not-valid-jsonl\n", encoding="utf-8", newline="\n")
+
+    default_home = homes / "discover-default" / "home"
+    (default_home / ".claude" / "projects").mkdir(parents=True)
+    (default_home / ".codex" / "sessions").mkdir(parents=True)
+    (default_home / ".claude" / "projects" / "child.txt").write_bytes(b"")
+
+    env_home = homes / "discover-env" / "home"
+    (env_home / ".claude" / "projects").mkdir(parents=True)
+    (env_home / ".codex" / "sessions").mkdir(parents=True)
+    ccfg = homes / "discover-env" / "ccfg" / "projects"
+    ccfg.mkdir(parents=True)
+    cx = homes / "discover-env" / "cx" / "sessions"
+    cx.mkdir(parents=True)
+
+    classify_home = homes / "discover-classify" / "home"
+    classify_home.mkdir(parents=True)
+    (classify_home / ".codex").mkdir(parents=True)
+    (classify_home / ".codex" / "sessions").write_bytes(b"")
+    real_projects = homes / "discover-classify" / "real-projects"
+    real_projects.mkdir(parents=True)
+    (classify_home / ".claude").mkdir(parents=True)
+    link = classify_home / ".claude" / "projects"
+    symlink_ok = True
+    try:
+        if os.name == "nt":
+            os.symlink(real_projects, link, target_is_directory=True)
+        else:
+            os.symlink(real_projects, link)
+    except OSError:
+        symlink_ok = False
+
+    archived_home = homes / "discover-archived" / "home"
+    (archived_home / ".codex" / "archived_sessions").mkdir(parents=True)
+    (archived_home / ".claude" / "projects").mkdir(parents=True)
+    (archived_home / ".claude" / "archived_sessions").mkdir(parents=True)
+
+    env_archived = homes / "discover-env-archived" / "home"
+    (env_archived / ".codex" / "sessions").mkdir(parents=True)
+    cx_arch = homes / "discover-env-archived" / "cx"
+    (cx_arch / "archived_sessions").mkdir(parents=True)
+
+    absent_home = homes / "discover-absent" / "home"
+    absent_home.mkdir(parents=True)
+
+    return symlink_ok
+
+
+def add_call(
+    vectors: list[dict[str, Any]],
+    api_mod: Any,
+    out_dir: Path,
+    vector_id: str,
+    target: str,
+    args: dict[str, Any],
+) -> None:
+    expected = execute_call(api_mod, out_dir, target, args)
+    vectors.append(
+        {
+            "id": vector_id,
+            "construct": {"type": "call", "target": target, "args": args},
+            "expected": expected,
+        }
+    )
+
+
+def build_vectors(api_mod: Any, out_dir: Path, symlink_ok: bool) -> list[dict[str, Any]]:
+    from sesslint.io import DEFAULT_MAX_FILE_BYTES
+    from sesslint.scan import DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES
+
+    vectors: list[dict[str, Any]] = []
+
+    vectors.append(
+        {
+            "id": "module_all",
+            "construct": {"type": "module_all"},
+            "expected": ok_payload({"exports": list(api_mod.__all__)}),
+        }
+    )
+    vectors.append(
+        {
+            "id": "module_constants",
+            "construct": {"type": "module_constants"},
+            "expected": ok_payload(
+                {
+                    "default_max_file_bytes": DEFAULT_MAX_FILE_BYTES,
+                    "default_max_files": DEFAULT_MAX_FILES,
+                    "default_max_bytes": DEFAULT_MAX_BYTES,
+                    "default_profile": "neutral",
+                }
+            ),
+        }
+    )
+
+    payload = base64.b64encode(b"UNIQUE_PAYLOAD_MARKER").decode("ascii")
+    for name, confidence, margin, message in THRESHOLD_CASES:
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            f"threshold_{name}_bytes",
+            "check_bytes",
+            {
+                "data_b64": payload,
+                "virtual_path": MISSING_FILE,
+                "confidence_min": confidence,
+                "margin_min": margin,
+                "max_input_bytes": 1,
+                "max_file_bytes": 0,
+                "timestamp_skew_ms": -1,
+            },
+        )
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            f"threshold_{name}_file",
+            "check_file",
+            {
+                "path": MISSING_FILE,
+                "confidence_min": confidence,
+                "margin_min": margin,
+                "max_file_bytes": 0,
+                "timestamp_skew_ms": -1,
+            },
+        )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_file_missing_default",
+        "check_file",
+        {"path": MISSING_FILE},
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_file_missing_dotted",
+        "check_file",
+        {"path": MISSING_FILE_DOTTED},
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_file_equal_thresholds_missing",
+        "check_file",
+        {
+            "path": MISSING_FILE,
+            "confidence_min": 0.5,
+            "margin_min": 0.5,
+            "max_file_bytes": 0,
+            "timestamp_skew_ms": -1,
+        },
+    )
+
+    for value, message in (
+        (0, "max_files must be a positive integer (> 0), got 0"),
+        (-1, "max_files must be a positive integer (> 0), got -1"),
+        (-500, "max_files must be a positive integer (> 0), got -500"),
+        (
+            -9223372036854775808,
+            "max_files must be a positive integer (> 0), got -9223372036854775808",
+        ),
+    ):
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            f"check_dir_max_files_{value}",
+            "check_dir",
+            {
+                "path": MISSING_DIR,
+                "max_files": value,
+                "max_bytes": 0,
+                "confidence_min": float("nan"),
+                "margin_min": 1.0,
+            },
+        )
+
+    for value, _ in (
+        (0, "max_bytes must be a positive integer (> 0), got 0"),
+        (-1, "max_bytes must be a positive integer (> 0), got -1"),
+        (-500, "max_bytes must be a positive integer (> 0), got -500"),
+        (
+            -9223372036854775808,
+            "max_bytes must be a positive integer (> 0), got -9223372036854775808",
+        ),
+    ):
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            f"check_dir_max_bytes_{value}",
+            "check_dir",
+            {
+                "path": MISSING_DIR,
+                "max_files": 1,
+                "max_bytes": value,
+                "confidence_min": 0.0,
+                "margin_min": None,
+            },
+        )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_dir_max_bytes_i64_max_pair",
+        "check_dir",
+        {
+            "path": MISSING_DIR,
+            "max_files": 9223372036854775807,
+            "max_bytes": -4,
+        },
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_dir_confidence_zero",
+        "check_dir",
+        {
+            "path": MISSING_DIR,
+            "max_files": 1,
+            "max_bytes": DEFAULT_MAX_BYTES,
+            "confidence_min": 0.0,
+            "margin_min": None,
+        },
+    )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "check_missing_file_before_limits",
+        "check",
+        {
+            "path": PLAN_MISSING,
+            "max_files": 0,
+            "max_bytes": 0,
+            "confidence_min": float("nan"),
+            "margin_min": 1.0,
+        },
+    )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "repair_missing_source",
+        "repair",
+        {
+            "source": REPAIR_MISSING,
+            "output": "synthetic/sesslint-rx-cli-api-04-output.json",
+            "emit": "bad",
+        },
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "repair_emit_invalid",
+        "repair",
+        {
+            "source": SYNTHETIC_EXISTING,
+            "emit": "bad",
+            "dry_run": True,
+        },
+    )
+    emit_rejects = (
+        ("repair_emit_reject_empty", ""),
+        ("repair_emit_reject_auto_capital", "Auto"),
+        ("repair_emit_reject_auto_upper", "AUTO"),
+        ("repair_emit_reject_canonical_space", "canonical "),
+        ("repair_emit_reject_vendor_space", " vendor"),
+        ("repair_emit_reject_json", "json"),
+    )
+    for vector_id, emit in emit_rejects:
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            vector_id,
+            "repair",
+            {
+                "source": SYNTHETIC_EXISTING,
+                "emit": emit,
+                "dry_run": True,
+            },
+        )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "repair_plan_path_exclusive",
+        "repair",
+        {
+            "source": SYNTHETIC_EXISTING,
+            "emit": "auto",
+            "plan_path": ABSENT_PLAN,
+            "with_plan": True,
+            "dry_run": True,
+        },
+    )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "plan_missing_source",
+        "plan",
+        {
+            "path": PLAN_MISSING,
+            "policy": "not-a-policy",
+            "format": "not-a-format",
+            "profile": "not-a-profile",
+            "acknowledge_side_effects": True,
+        },
+    )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "validate_session_missing",
+        "validate_session",
+        {"path": PLAN_MISSING},
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "validate_session_invalid_schema",
+        "validate_session",
+        {"path": INVALID_SESSION},
+    )
+
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "build_internal_error_envelope_supplied",
+        "build_internal_error_envelope",
+        {"error_id": "ERR-12345678"},
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "build_internal_error_envelope_spaced_id",
+        "build_internal_error_envelope",
+        {"error_id": "  ERR-1  "},
+    )
+    add_call(
+        vectors,
+        api_mod,
+        out_dir,
+        "build_internal_error_envelope_empty_id",
+        "build_internal_error_envelope",
+        {"error_id": ""},
+    )
+
+    discover_rows: list[tuple[str, dict[str, Any]]] = [
+        (
+            "discover_defaults",
+            {
+                "home": "discover-default/home",
+                "agents": None,
+                "env": [],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_agents_reordered",
+            {
+                "home": "discover-default/home",
+                "agents": ["codex", "claude"],
+                "env": [],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_env_override_mixed",
+            {
+                "home": "discover-env/home",
+                "agents": None,
+                "env": [
+                    ("claude_config_dir", "synthetic-ignored"),
+                    ("CLAUDE_CONFIG_DIR", "  discover-env/ccfg  "),
+                    ("CODEX_HOME", ""),
+                ],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_env_separator_defaults",
+            {
+                "home": "discover-default/home",
+                "agents": None,
+                "env": [("CLAUDE_CONFIG_DIR", "\u001c"), ("CODEX_HOME", " \t")],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_env_both_agents",
+            {
+                "home": "discover-env/home",
+                "agents": ["claude", "codex"],
+                "env": [
+                    ("CLAUDE_CONFIG_DIR", "discover-env/ccfg"),
+                    ("CODEX_HOME", "discover-env/cx"),
+                ],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_classify_nondir_codex_sessions",
+            {
+                "home": "discover-classify/home",
+                "agents": None,
+                "env": [],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_missing_home_include_archived",
+            {
+                "home": "discover-absent/home",
+                "agents": ["claude"],
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_archived_false",
+            {
+                "home": "discover-archived/home",
+                "agents": None,
+                "env": [],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_archived_true",
+            {
+                "home": "discover-archived/home",
+                "agents": None,
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_claude_only_archived",
+            {
+                "home": "discover-archived/home",
+                "agents": ["claude"],
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_codex_env_archived",
+            {
+                "home": "discover-env-archived/home",
+                "agents": ["codex"],
+                "env": [("CODEX_HOME", "discover-env-archived/cx")],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_agents_empty",
+            {
+                "home": "discover-archived/home",
+                "agents": [],
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_unknown_cursor",
+            {
+                "home": "discover-absent/home",
+                "agents": ["cursor"],
+                "env": [],
+                "include_archived": False,
+            },
+        ),
+        (
+            "discover_unknown_quoted_agent",
+            {
+                "home": "discover-absent/home",
+                "agents": ["bad'agent"],
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+        (
+            "discover_unknown_after_claude",
+            {
+                "home": "discover-archived/home",
+                "agents": ["claude", "cursor"],
+                "env": [],
+                "include_archived": True,
+            },
+        ),
+    ]
+    if symlink_ok:
+        discover_rows.append(
+            (
+                "discover_claude_symlink",
+                {
+                    "home": "discover-classify/home",
+                    "agents": ["claude"],
+                    "env": [],
+                    "include_archived": False,
+                },
+            )
+        )
+
+    for vector_id, args in discover_rows:
+        env_list = [[str(k), str(v)] for k, v in (args.get("env") or [])]
+        call_args = {**args, "env": env_list}
+        add_call(
+            vectors,
+            api_mod,
+            out_dir,
+            vector_id,
+            "discover_session_roots",
+            call_args,
+        )
+
+    vectors.sort(key=lambda row: row["id"])
+    return vectors
+
+
+def imports_sesslint_api(source: str) -> bool:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "sesslint.api":
+                    return True
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module == "sesslint.api":
+                return True
+            if node.module == "sesslint" and any(
+                alias.name == "api" for alias in node.names
+            ):
+                return True
+    return False
+
+
+def list_test_names(rel: str) -> list[str]:
+    try:
+        source = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+    except subprocess.CalledProcessError:
+        work = repo_root() / rel
+        source = work.read_text(encoding="utf-8")
+    names: list[str] = []
+    has_column0 = any(line.startswith("def test_") for line in source.splitlines())
+    for line in source.splitlines():
+        if has_column0 and line.startswith("def test_"):
+            names.append(line.split("(")[0].replace("def ", ""))
+        elif not has_column0 and line.startswith("    def test_"):
+            names.append(line.split("(")[0].replace("def ", "").strip())
+    return names
+
+
+def discover_api_test_files() -> list[str]:
+    listing = subprocess.check_output(
+        ["git", "ls-tree", "-r", "--name-only", PYTHON_COMMIT, "tests"],
+        cwd=repo_root(),
+        text=True,
+    )
+    rel_paths = [line for line in listing.splitlines() if line.endswith(".py")]
+    selected: list[str] = []
+    for rel in sorted(rel_paths):
+        try:
+            source = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+        except subprocess.CalledProcessError:
+            continue
+        if imports_sesslint_api(source):
+            selected.append(rel)
+    return selected
+
+
+def coverage_rows(vector_ids: frozenset[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for rel in discover_api_test_files():
+        for name in list_test_names(rel):
+            qualified = f"{rel}::{name}"
+            needed = COVERED_BY_VECTORS.get(qualified)
+            row: dict[str, Any] = {"test": qualified, "status": "not_applicable"}
+            if needed is not None and all(item in vector_ids for item in needed):
+                row["status"] = "covered"
+                row["vector_ids"] = list(needed)
+            rows.append(row)
+    return rows
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "api_py_sha256": API_PY_SHA256,
+        "api_rs_sha256": API_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(payload)
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "api_py_sha256": API_PY_SHA256,
+        "api_rs_sha256": API_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/api/generate",
+    }
+    manifest_text = json.dumps(manifest, indent=2) + "\n"
+    scan_committed_text(manifest_text)
+    (out_dir / "manifest.json").write_text(
+        manifest_text, encoding="utf-8", newline="\n"
+    )
+
+    rows = coverage_rows(frozenset(v["id"] for v in vectors))
+    covered = sum(1 for row in rows if row["status"] == "covered")
+    not_applicable = sum(1 for row in rows if row["status"] == "not_applicable")
+    coverage = {
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "covered_count": covered,
+        "not_applicable_count": not_applicable,
+        "rows": rows,
+    }
+    coverage_text = json.dumps(coverage, indent=2, ensure_ascii=False) + "\n"
+    scan_committed_text(coverage_text)
+    (out_dir / "coverage.json").write_text(
+        coverage_text, encoding="utf-8", newline="\n"
+    )
+
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.api parity: module exports, threshold guards, "
+            "missing-path errors, repair emit/plan exclusivity, internal-error "
+            "envelopes, discover_session_roots with injected home/env, and "
+            "validate_session schema failures from pinned Python."
+        ),
+        "generator": "rust/parity/vectors/api/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    prov_text = json.dumps(provenance, indent=2) + "\n"
+    scan_committed_text(prov_text)
+    (out_dir / "PROVENANCE.json").write_text(
+        prov_text, encoding="utf-8", newline="\n"
+    )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    symlink_ok = ensure_fixture_homes(out_dir)
+    api_mod = load_api_module()
+    vectors = build_vectors(api_mod, out_dir, symlink_ok)
+    digest = write_outputs(out_dir, vectors)
+    rows = coverage_rows(frozenset(v["id"] for v in vectors))
+    summary = {
+        "vectors": len(vectors),
+        "sha256": digest,
+        "covered": sum(row["status"] == "covered" for row in rows),
+        "not_applicable": sum(row["status"] == "not_applicable" for row in rows),
+    }
+    print(json.dumps(summary))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,22 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.api parity: module exports, threshold guards, missing-path errors, repair emit/plan exclusivity, internal-error envelopes, discover_session_roots with injected home/env, and validate_session schema failures from pinned Python.",
+  "generator": "rust/parity/vectors/api/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-api-apply_rule_selection: after threshold and path guards, check_file and check_bytes call sesslint.profiles.apply_rule_selection in Python; Rust stops with sesslint.profiles.apply_rule_selection is not available.",
+    "GAP-api-scan_path: check_dir and directory-mode check call sesslint.scan.scan_path in Python after limit and threshold guards; Rust stops with sesslint.scan.scan_path is not available.",
+    "GAP-api-detect_format: repair and plan call sesslint.adapters.detect.detect_format after source, emit, and plan exclusivity checks; Rust stops with sesslint.adapters.detect.detect_format is not available.",
+    "GAP-api-verify: verify() imports sesslint.verify.verify in Python; Rust stops with sesslint.verify.verify is not available.",
+    "GAP-api-load_plan: apply_plan loads plans through sesslint.repair.load_plan in Python; Rust stops with sesslint.repair.load_plan is not available.",
+    "GAP-api-repair_preview: repair_preview imports sesslint.preview.repair_preview in Python; Rust stops with sesslint.preview.repair_preview is not available.",
+    "GAP-api-repair_many: repair_many imports sesslint.batch.repair_many in Python; Rust stops with sesslint.batch.repair_many is not available.",
+    "GAP-api-doctor_report: doctor_report imports sesslint.doctor.doctor_report in Python; Rust stops with sesslint.doctor.doctor_report is not available.",
+    "GAP-api-stats_paths: stats_paths imports sesslint.stats.stats_paths in Python; Rust stops with sesslint.stats.stats_paths is not available.",
+    "GAP-api-diff_sessions: diff_sessions imports sesslint.diff.diff_sessions in Python; Rust stops with sesslint.diff.diff_sessions is not available.",
+    "GAP-api-export_to_canonical: export_file imports sesslint.exporter.export_to_canonical in Python; Rust stops with sesslint.exporter.export_to_canonical is not available.",
+    "GAP-api-minimize_path: DiscoveredRoot.to_dict imports sesslint.report.minimize_path in Python; Rust stops with sesslint.report.minimize_path is not available.",
+    "GAP-api-secrets-token-hex: build_internal_error_envelope with error_id omitted calls secrets.token_hex in Python; Rust stops with secrets.token_hex is not available."
+  ]
+}
