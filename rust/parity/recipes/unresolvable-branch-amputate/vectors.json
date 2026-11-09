@@ -1,0 +1,2388 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.repair.recipes_salvage",
+  "recipe": "unresolvable-branch-amputate",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
+  "known_parity_gaps": [
+    "GAP-unresolvable-branch-amputate-canonical: planner.plan is not run. execute is not run. A missing canonical codec call is not a successful plan. tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage checks a fingerprint for three fixtures. One fixture inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in compares a plan dict for three recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_fingerprint_differs_by_policy compares fingerprints. No fingerprint is hashed. tests/repair/test_recipes_salvage.py::test_dual_policy_plan_merge_attempt compares fingerprints. No fingerprint is hashed. tests/repair/test_recipes_salvage.py::test_loss_sums checks plan loss totals. tests/repair/test_recipes_salvage.py::test_empty_events_salvage_policy checks a fingerprint length. The empty-session apply refusal is a different test. tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session plans two recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications plans and then applies. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
+    "GAP-unresolvable-branch-amputate-session-copy: a kept SessionEvent copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications uses SessionEvent records from the fixture. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id uses SessionEvent records from the fixture.",
+    "GAP-unresolvable-branch-amputate-payload: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications carries payload on the events. This set does not store payload content. A payload-free result is not that test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in and tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage load the same fixture. tests/repair/test_recipes_salvage.py::test_component_too_large carries payload. tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session carries payload. tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id carries payload.",
+    "GAP-unresolvable-branch-amputate-bool: an in-range bool is an index in the pin. True selects the event at index 1 when the session length is greater than one. The published function returns a different error. This set does not claim that success. A rust seam while the pin succeeds is not coverage. That success is not replayed. False selects index 0. When that component is not the whole session the pin succeeds. When that component is the whole session the pin refuses with a different message. The published function returns a different error. This set does not claim that refusal and does not claim that success.",
+    "GAP-unresolvable-branch-amputate-float: a float past the end and a negative float are rendered with repr in the pin. The published function returns a different error. This set does not claim that refusal. An in-range float raises TypeError before the event is read. That TypeError is an extra vector and is not a whole pinned test. A zero float is in range and raises that same TypeError. It is not a rendered refusal. A float kind is not a checkpoint in the pin and the kept event is copied. The published function returns a different error. This set does not claim that success. A float id is a string id in the pin when the index is in range. The published function returns a different error. This set does not claim that success. A truthy float root_id is a string id in the pin. The published function returns a different error. This set does not claim that success.",
+    "GAP-unresolvable-branch-amputate-sweep: tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications applies three recipes and checks loss. One recipe inside a sweep is not the whole test. A successful amputate that also checks loss, plan, or canonical bytes is not covered by the event list alone. tests/repair/test_recipes_salvage.py::test_amputate_direct_apply_validation is four refusals of one function. The covered vector contains every refusal in that test.",
+    "GAP-unresolvable-branch-amputate-size: tests/repair/test_recipes_salvage.py::test_component_too_large checks planner blocked reason component-too-large. The published function does not plan. A direct refusal for a component larger than 10000 is not that test. The test events carry payload.",
+    "GAP-unresolvable-branch-amputate-root-id: tests/repair/test_recipes_salvage.py::test_amputate_resolves_index_from_root_id plans an int target_index and then applies. The published function does not plan. A params root_id success is not that test. The fixture events carry payload. A kept SessionEvent copies in the pin."
+  ],
+  "vectors": [
+    {
+      "id": "recipe_unresolvable_branch_amputate",
+      "construct": {
+        "type": "recipe_constant",
+        "fn": "RECIPE_UNRESOLVABLE_BRANCH_AMPUTATE",
+        "entire_test": false
+      },
+      "expected": {
+        "mode": "recipe",
+        "name": "unresolvable-branch-amputate",
+        "handles": [
+          "SL005",
+          "SL006"
+        ],
+        "preconditions": [
+          "salvage_policy",
+          "branch_has_no_checkpoint"
+        ],
+        "lossy": true,
+        "salvage_only": true,
+        "min_policy": "salvage",
+        "version": "1.0.0",
+        "excludes_execution_dependence": false,
+        "apply_present": true,
+        "affected_region_present": false
+      }
+    },
+    {
+      "id": "amputate_direct_apply_validation",
+      "construct": {
+        "type": "apply_refusals",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": true,
+        "assert_count": 4,
+        "calls": [
+          {
+            "events": [],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Cannot amputate an empty session"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "m0"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 99
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Invalid target_index 99 for amputation"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "cp1"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "system"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "checkpoint"
+                    }
+                  ]
+                ]
+              },
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "ch1"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "str",
+                      "v": "cp1"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 1
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:01Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 1
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Branch contains a checkpoint; cannot amputate"
+          },
+          {
+            "events": [
+              {
+                "t": "map",
+                "entries": [
+                  [
+                    "id",
+                    {
+                      "t": "str",
+                      "v": "s1"
+                    }
+                  ],
+                  [
+                    "parent_id",
+                    {
+                      "t": "null"
+                    }
+                  ],
+                  [
+                    "seq",
+                    {
+                      "t": "int",
+                      "v": 0
+                    }
+                  ],
+                  [
+                    "ts",
+                    {
+                      "t": "str",
+                      "v": "2026-09-05T12:00:00Z"
+                    }
+                  ],
+                  [
+                    "actor",
+                    {
+                      "t": "str",
+                      "v": "user"
+                    }
+                  ],
+                  [
+                    "kind",
+                    {
+                      "t": "str",
+                      "v": "message"
+                    }
+                  ]
+                ]
+              }
+            ],
+            "step": {
+              "target_index": {
+                "t": "int",
+                "v": 0
+              },
+              "params": {
+                "t": "map",
+                "entries": []
+              }
+            },
+            "error_type": "PreconditionFailed",
+            "message": "Amputating entire session is forbidden"
+          }
+        ]
+      },
+      "expected": {
+        "mode": "refusals",
+        "error_type": "PreconditionFailed",
+        "fn": "apply_unresolvable_branch_amputate"
+      }
+    },
+    {
+      "id": "amputate_refusal_negative_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": -2
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index -2 for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_missing_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index None for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_true_index_len_one",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-only"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "bool",
+            "v": true
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index True for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_marker_param",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "marker",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index None for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_unknown_root",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "str",
+                  "v": "evt-missing"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index None for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_falsy_bool_root",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "bool",
+                  "v": false
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index None for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_null_params",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "null"
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index None for amputation"
+      }
+    },
+    {
+      "id": "amputate_refusal_entire_pair",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Amputating entire session is forbidden"
+      }
+    },
+    {
+      "id": "amputate_refusal_checkpoint_with_keeper",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-child"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Branch contains a checkpoint; cannot amputate"
+      }
+    },
+    {
+      "id": "amputate_refusal_out_of_range_before_float_id",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "float",
+                  "v": 2.5
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 99
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Invalid target_index 99 for amputation"
+      }
+    },
+    {
+      "id": "amputate_type_string_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "str",
+            "v": "not-an-index"
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'str' and 'int'"
+      }
+    },
+    {
+      "id": "amputate_type_list_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "list",
+            "items": [
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'list' and 'int'"
+      }
+    },
+    {
+      "id": "amputate_type_dict_index",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "map",
+            "entries": [
+              [
+                "k",
+                {
+                  "t": "int",
+                  "v": 1
+                }
+              ]
+            ]
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "'<' not supported between instances of 'dict' and 'int'"
+      }
+    },
+    {
+      "id": "amputate_type_in_range_float",
+      "construct": {
+        "type": "apply_refusal",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "float",
+            "v": 1.0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "TypeError",
+        "message": "list indices must be integers or slices, not float"
+      }
+    },
+    {
+      "id": "amputate_refusal_component_too_large",
+      "construct": {
+        "type": "apply_size",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "chain": 10001,
+        "keeper": true,
+        "seed": 0
+      },
+      "expected": {
+        "mode": "refusal",
+        "error_type": "PreconditionFailed",
+        "message": "Component size (10001) exceeds limit of 10000"
+      }
+    },
+    {
+      "id": "amputate_ok_component",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 1
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_root_id",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "record_id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_int_ignores_root_id",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-leaf"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-root"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "checkpoint"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-cp"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_record_id_zero",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "0"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "record_id",
+                {
+                  "t": "int",
+                  "v": 0
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_bool_root_id",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "True"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-other"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "bool",
+                  "v": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-other"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_float_root_falls_through",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "0"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "null"
+          },
+          "params": {
+            "t": "map",
+            "entries": [
+              [
+                "root_id",
+                {
+                  "t": "float",
+                  "v": 0.0
+                }
+              ],
+              [
+                "record_id",
+                {
+                  "t": "str",
+                  "v": "0"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 1
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "amputate_ok_cycle",
+      "construct": {
+        "type": "apply_ok",
+        "fn": "apply_unresolvable_branch_amputate",
+        "entire_test": false,
+        "assert_count": 1,
+        "events": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-b"
+                }
+              ],
+              [
+                "parent_id",
+                {
+                  "t": "str",
+                  "v": "evt-a"
+                }
+              ]
+            ]
+          },
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "step": {
+          "target_index": {
+            "t": "int",
+            "v": 0
+          },
+          "params": {
+            "t": "map",
+            "entries": []
+          }
+        }
+      },
+      "expected": {
+        "mode": "ok",
+        "events_out": [
+          {
+            "t": "map",
+            "entries": [
+              [
+                "kind",
+                {
+                  "t": "str",
+                  "v": "message"
+                }
+              ],
+              [
+                "id",
+                {
+                  "t": "str",
+                  "v": "evt-keep"
+                }
+              ]
+            ]
+          }
+        ],
+        "loss": {
+          "t": "map",
+          "entries": [
+            [
+              "amputated-branch",
+              {
+                "t": "int",
+                "v": 2
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
