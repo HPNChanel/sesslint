@@ -1,0 +1,9 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/cli.mcp/generate",
+  "known_parity_gaps": [
+    "run stops at typed ServeUnavailable in Rust; serve is not implemented. No stdio, exit-code or server protocol parity is claimed."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

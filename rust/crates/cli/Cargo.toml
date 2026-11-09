@@ -7,3 +7,6 @@ publish = false
 [dependencies]
 model = { path = "../model" }
 report = { path = "../report" }
+
+[dev-dependencies]
+serde_json = "=1.0.151"

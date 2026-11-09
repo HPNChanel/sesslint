@@ -1,0 +1,12 @@
+{
+  "cases": [
+    {
+      "expected_json": "{\"description\":\"[read-only] MCP stdio server (protocol 2025-06-18, newline-delimited JSON-RPC): exposes sesslint_check / sesslint_precheck / sesslint_scan tools so agents can call checks natively. Long-running process — EOF or Ctrl+C exits cleanly.\",\"help\":\"[read-only] Run a Model Context Protocol server over stdio.\",\"name\":\"mcp\"}",
+      "id": "configure",
+      "input": {}
+    }
+  ],
+  "module": "sesslint.cli.mcp",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema": "sesslint.parity-module-vectors/v1"
+}

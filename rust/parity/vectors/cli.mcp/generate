@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Actual pinned argparse MCP declaration; does not invoke serve or native streams."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+SCHEMA = "sesslint.parity-module-vectors/v1"
+
+
+def dump(name: str, value: Any) -> None:
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def main() -> None:
+    source = subprocess.check_output(["git", "show", f"{PIN}:src/sesslint/cli/mcp.py"], cwd=ROOT)
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT
+    )
+    with tempfile.TemporaryDirectory(prefix="sesslint-pinned-mcp-") as temporary:
+        with zipfile.ZipFile(io.BytesIO(archive)) as z:
+            z.extractall(temporary)
+        sys.path.insert(0, str(Path(temporary) / "src"))
+        module = importlib.import_module("sesslint.cli.mcp")
+        parser = argparse.ArgumentParser(prog="sesslint")
+        subparsers = parser.add_subparsers(dest="command")
+        result = module.configure(subparsers)
+        expected = {
+            "name": module.NAME,
+            "help": subparsers._choices_actions[0].help,
+            "description": result.description,
+        }
+        # These properties are intentionally absent from Rust's three-field
+        # spec. Any future Python change here must fail generation, not vanish.
+        assert not [a for a in result._actions if not isinstance(a, argparse._HelpAction)]
+        assert not result._mutually_exclusive_groups
+        assert not result._defaults
+        assert list(subparsers.choices) == ["mcp"]
+    dump(
+        "vectors.json",
+        {
+            "schema": SCHEMA,
+            "module": "sesslint.cli.mcp",
+            "python_commit": PIN,
+            "cases": [
+                {
+                    "id": "configure",
+                    "input": {},
+                    "expected_json": json.dumps(
+                        expected, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                    ),
+                }
+            ],
+        },
+    )
+    vector_hash = hashlib.sha256((HERE / "vectors.json").read_bytes()).hexdigest()
+    dump(
+        "manifest.json",
+        {
+            "schema": SCHEMA,
+            "module": "sesslint.cli.mcp",
+            "python_commit": PIN,
+            "python_sha256": hashlib.sha256(source).hexdigest(),
+            "rust_sha256": hashlib.sha256(
+                (ROOT / "rust/crates/cli/src/mcp.rs").read_bytes()
+            ).hexdigest(),
+            "vectors_sha256": vector_hash,
+            "vector_count": 1,
+            "generator": "rust/parity/vectors/cli.mcp/generate",
+        },
+    )
+    dump("coverage.json", {"rows": []})
+    dump(
+        "PROVENANCE.json",
+        {
+            "contains_real_data": False,
+            "origin": "synthetic",
+            "python_commit": PIN,
+            "generator": "rust/parity/vectors/cli.mcp/generate",
+            "known_parity_gaps": [
+                "run stops at typed ServeUnavailable in Rust; serve is not implemented. "
+                "No stdio, exit-code or server protocol parity is claimed."
+            ],
+        },
+    )
+    print(json.dumps({"vectors": 1, "sha256": vector_hash, "covered": 0, "not_applicable": 0}))
+
+
+if __name__ == "__main__":
+    main()
