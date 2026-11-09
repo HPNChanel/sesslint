@@ -1,0 +1,15 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint.batch-repair.v1 schema parity. Constraints and expected rejections come from the pinned schema. Documents are hand-built. BatchRepairReport.to_dict is not executed. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.batch-repair.v1/generate",
+  "known_parity_gaps": [
+    "Schema path resolution and the missing-file loader are not this validator.",
+    "repair_many, CLI exit codes, and human rendering are not one schema result.",
+    "Count totals are derived by the emitter. Counts need not match the rows.",
+    "Duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+    "A JSON number is an integer only when it is a proven i128.",
+    "pattern and length keywords are absent from the pinned schema and fail closed."
+  ],
+  "origin": "synthetic",
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+}

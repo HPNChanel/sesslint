@@ -1,0 +1,93 @@
+{
+  "covered_count": 0,
+  "module": "sesslint.batch",
+  "not_applicable_count": 14,
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "rows": [
+    {
+      "note": "repair_many then asserts repaired == 2, skipped == 2, two output files exist, and the outcome set is repaired plus skipped. validate does not repair a tree.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_dir_repairs_only_eligible",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 1, two repaired files exist, two manifests exist, and each manifest object contains output_fingerprint. File writes are not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_cli_mirrors_structure_and_manifest_dir",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 0 and stdout contains the text 1 repaired. Human text is not the batch-repair JSON document.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_cli_all_eligible_exit_zero",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 0 and three output paths exist. No batch-repair document is checked.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_files_mode_flat",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 1, the output directory is absent, and stdout contains eligible. Exit status and human text are two checks, not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_dry_run_preview_no_writes",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 1 and one repaired file exists. The scan report written by the test is not a batch-repair document.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_from_scan_report",
+      "vector_id": null
+    },
+    {
+      "note": "resolve_scan_report_files returns two paths and one unresolvable display string. That function does not validate a batch-repair object.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_resolve_scan_report_files",
+      "vector_id": null
+    },
+    {
+      "note": "two repair_many calls, row equality after stripping output and manifest, and equal file hashes. Two runs are not one validate result.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_deterministic",
+      "vector_id": null
+    },
+    {
+      "note": "main returns 1, then the version const, an exact counts object, every outcome in repaired or skipped, and the word payload absent from each row. A multi-assert CLI sweep. One valid object is not that sweep.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_json_summary_shape",
+      "vector_id": null
+    },
+    {
+      "note": "parametrized over five argv lists. main returns 2 and stderr contains a fragment. Five usage failures are not one schema result.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_usage_errors",
+      "vector_id": null
+    },
+    {
+      "note": "main of repair with no path returns 2 and stderr contains source path. Usage text is not a schema document.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_repair_no_source_is_usage_error",
+      "vector_id": null
+    },
+    {
+      "note": "main of two paths without --output-dir returns 2 and stderr contains --output-dir. Usage text is not a schema document.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_repair_multi_path_without_output_dir_is_usage_error",
+      "vector_id": null
+    },
+    {
+      "note": "repair_many then skipped == 1, attempted == 0, and to_dict reason == source-missing. Count derivation is the emitter. One object with that reason is not the repair.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_batch_report_counts",
+      "vector_id": null
+    },
+    {
+      "note": "api.repair_many is not None and repair_many plus BatchRepairReport are in api.__all__. No document is validated.",
+      "status": "not_applicable",
+      "test": "tests/cli/test_batch_repair.py::test_api_repair_many_exported",
+      "vector_id": null
+    }
+  ],
+  "schema_file": "schemas/sesslint.batch-repair.v1.json"
+}

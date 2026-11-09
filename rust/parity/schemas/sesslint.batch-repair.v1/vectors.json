@@ -1,0 +1,1393 @@
+{
+  "facts": {
+    "codes_item_type": "string",
+    "codes_unique_items": true,
+    "counter_minimum": 0,
+    "counts_additional_properties": false,
+    "counts_property_names": [
+      "attempted",
+      "repaired",
+      "refused",
+      "skipped"
+    ],
+    "counts_required": [
+      "attempted",
+      "repaired",
+      "refused",
+      "skipped"
+    ],
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "emitter_version": "sesslint.batch-repair/v1",
+    "id": "https://sesslint.dev/schemas/sesslint.batch-repair.v1.json",
+    "keywords": [
+      "additionalProperties",
+      "const",
+      "enum",
+      "items",
+      "minimum",
+      "properties",
+      "required",
+      "type",
+      "uniqueItems"
+    ],
+    "outcome_enum": [
+      "repaired",
+      "refused",
+      "skipped",
+      "eligible"
+    ],
+    "property_names": [
+      "version",
+      "counts",
+      "rows"
+    ],
+    "required": [
+      "version",
+      "counts",
+      "rows"
+    ],
+    "root_additional_properties": false,
+    "row_additional_properties": false,
+    "row_property_names": [
+      "path",
+      "outcome",
+      "codes",
+      "reason",
+      "output",
+      "manifest"
+    ],
+    "row_required": [
+      "path",
+      "outcome"
+    ],
+    "version_const": "sesslint.batch-repair/v1"
+  },
+  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "schema": "sesslint.parity-schema-vectors/v1",
+  "vectors": [
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "minimal_object",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "empty_object",
+      "instance": {}
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_array",
+      "instance": []
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_string",
+      "instance": "x"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_null",
+      "instance": null
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_number",
+      "instance": 1
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_bool",
+      "instance": true
+    },
+    {
+      "expected": {
+        "detail": "version",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_version",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": []
+      }
+    },
+    {
+      "expected": {
+        "detail": "counts",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_counts",
+      "instance": {
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "rows",
+        "keyword": "required",
+        "ok": false,
+        "path": ""
+      },
+      "id": "missing_rows",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "version_const",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "nope"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "const",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "version_blank",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": ""
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/version"
+      },
+      "id": "version_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": 1
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": ""
+      },
+      "id": "root_additional",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "extra": 1,
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "counts_not_tied_to_rows",
+      "instance": {
+        "counts": {
+          "attempted": 9,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_type",
+      "instance": {
+        "counts": [],
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "attempted",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "missing_counts_attempted",
+      "instance": {
+        "counts": {
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "repaired",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "missing_counts_repaired",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "refused",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "missing_counts_refused",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "skipped",
+        "keyword": "required",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "missing_counts_skipped",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/counts"
+      },
+      "id": "counts_additional",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "extra": 1,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/attempted"
+      },
+      "id": "attempted_minimum",
+      "instance": {
+        "counts": {
+          "attempted": -1,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/repaired"
+      },
+      "id": "repaired_minimum",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": -1,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/refused"
+      },
+      "id": "refused_minimum",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": -1,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "minimum",
+        "ok": false,
+        "path": "/counts/skipped"
+      },
+      "id": "skipped_minimum",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": -1
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/attempted"
+      },
+      "id": "attempted_type_string",
+      "instance": {
+        "counts": {
+          "attempted": "0",
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/attempted"
+      },
+      "id": "attempted_type_bool",
+      "instance": {
+        "counts": {
+          "attempted": true,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/attempted"
+      },
+      "id": "attempted_null",
+      "instance": {
+        "counts": {
+          "attempted": null,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows"
+      },
+      "id": "rows_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": {},
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "row_item_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          "x"
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "missing_row_path",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "outcome",
+        "keyword": "required",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "missing_row_outcome",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "extra",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "row_additional",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "extra": 1,
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "a/b",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "row_additional_slash",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "a/b": 1,
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "a~b",
+        "keyword": "additionalProperties",
+        "ok": false,
+        "path": "/rows/0"
+      },
+      "id": "row_additional_tilde",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "a~b": 1,
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/path"
+      },
+      "id": "path_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": 1
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "empty_path",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": ""
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "path_slash",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a/b"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "outcome_repaired",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "outcome_refused",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "refused",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "outcome_skipped",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "skipped",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "outcome_eligible",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "eligible",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "enum",
+        "ok": false,
+        "path": "/rows/0/outcome"
+      },
+      "id": "outcome_enum",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "nope",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/outcome"
+      },
+      "id": "outcome_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": 1,
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "codes_omitted",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "codes_empty",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "codes_one",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              "c"
+            ],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "codes_unique",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              "c",
+              "d"
+            ],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": "/rows/0/codes"
+      },
+      "id": "codes_duplicate",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              "c",
+              "c"
+            ],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/codes/0"
+      },
+      "id": "codes_item_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              1
+            ],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/codes"
+      },
+      "id": "codes_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": {},
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "reason_present",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl",
+            "reason": "n"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "reason_empty",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl",
+            "reason": ""
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/reason"
+      },
+      "id": "reason_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl",
+            "reason": 1
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "output_present",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "output": "out/a.jsonl",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/output"
+      },
+      "id": "output_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "output": 1,
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "manifest_present",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "manifest": "m.json",
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/rows/0/manifest"
+      },
+      "id": "manifest_type",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "manifest": 1,
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "duplicate_paths_allowed",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          },
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "same_code_across_rows_allowed",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              "c"
+            ],
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          },
+          {
+            "codes": [
+              "c"
+            ],
+            "outcome": "repaired",
+            "path": "b.jsonl"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "detail": "path",
+        "keyword": "required",
+        "ok": false,
+        "path": "/rows/1"
+      },
+      "id": "row_index_one_missing_path",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "outcome": "repaired",
+            "path": "a.jsonl"
+          },
+          {
+            "outcome": "repaired"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "full_row",
+      "instance": {
+        "counts": {
+          "attempted": 0,
+          "refused": 0,
+          "repaired": 0,
+          "skipped": 0
+        },
+        "rows": [
+          {
+            "codes": [
+              "c",
+              "d"
+            ],
+            "manifest": "m.json",
+            "outcome": "eligible",
+            "output": "out/a.jsonl",
+            "path": "a.jsonl",
+            "reason": "n"
+          }
+        ],
+        "version": "sesslint.batch-repair/v1"
+      }
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_padded",
+      "raw": "\n{\"counts\": {\"attempted\": 0, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}\n"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_attempted_one_point_zero",
+      "raw": "{\"counts\": {\"attempted\": 1.0, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_attempted_exponent",
+      "raw": "{\"counts\": {\"attempted\": 1e1, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_attempted_scaled",
+      "raw": "{\"counts\": {\"attempted\": 10e-1, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_attempted_negative_zero",
+      "raw": "{\"counts\": {\"attempted\": -0, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "ok": true
+      },
+      "id": "raw_attempted_zero_point_zero",
+      "raw": "{\"counts\": {\"attempted\": 0.0, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "type",
+        "ok": false,
+        "path": "/counts/attempted"
+      },
+      "id": "raw_attempted_fraction",
+      "raw": "{\"counts\": {\"attempted\": 1.5, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [], \"version\": \"sesslint.batch-repair/v1\"}"
+    },
+    {
+      "expected": {
+        "detail": "",
+        "keyword": "uniqueItems",
+        "ok": false,
+        "path": "/rows/0/codes"
+      },
+      "id": "raw_codes_unicode_duplicate",
+      "raw": "{\"counts\": {\"attempted\": 0, \"refused\": 0, \"repaired\": 0, \"skipped\": 0}, \"rows\": [{\"codes\": [\"a\", \"\\u0061\"], \"outcome\": \"skipped\", \"path\": \"a.jsonl\"}], \"version\": \"sesslint.batch-repair/v1\"}"
+    }
+  ]
+}

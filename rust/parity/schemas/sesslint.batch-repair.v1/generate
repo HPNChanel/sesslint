@@ -1,0 +1,936 @@
+#!/usr/bin/env python3
+"""Generate sesslint.batch-repair.v1 schema parity vectors from the pinned blob.
+
+Subprocess is limited to ``git show`` of PYTHON_COMMIT. This script does not
+import the checkout package and does not execute ``sesslint.batch``. An
+optional ``jsonschema`` import is ignored on ``ModuleNotFoundError``; that
+absence is not a pin result. This script does not add a project dependency.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.abc
+import json
+import math
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[4]
+OUT = Path(__file__).resolve().parent
+RS_PATH = ROOT / "rust" / "crates" / "scan" / "src" / "schema" / "sesslint.batch-repair.v1.rs"
+PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+SCHEMA_GIT = f"{PYTHON_COMMIT}:schemas/sesslint.batch-repair.v1.json"
+BATCH_GIT = f"{PYTHON_COMMIT}:src/sesslint/batch.py"
+TEST_GIT = f"{PYTHON_COMMIT}:tests/cli/test_batch_repair.py"
+TEST_FILE = "tests/cli/test_batch_repair.py"
+GENERATOR = "rust/parity/schemas/sesslint.batch-repair.v1/generate"
+SCHEMA_TESTS = (
+    "tests/cli/test_batch_repair.py::test_batch_dir_repairs_only_eligible",
+    "tests/cli/test_batch_repair.py::test_batch_cli_mirrors_structure_and_manifest_dir",
+    "tests/cli/test_batch_repair.py::test_batch_cli_all_eligible_exit_zero",
+    "tests/cli/test_batch_repair.py::test_batch_files_mode_flat",
+    "tests/cli/test_batch_repair.py::test_batch_dry_run_preview_no_writes",
+    "tests/cli/test_batch_repair.py::test_batch_from_scan_report",
+    "tests/cli/test_batch_repair.py::test_resolve_scan_report_files",
+    "tests/cli/test_batch_repair.py::test_batch_deterministic",
+    "tests/cli/test_batch_repair.py::test_batch_json_summary_shape",
+    "tests/cli/test_batch_repair.py::test_batch_usage_errors",
+    "tests/cli/test_batch_repair.py::test_repair_no_source_is_usage_error",
+    "tests/cli/test_batch_repair.py::test_repair_multi_path_without_output_dir_is_usage_error",
+    "tests/cli/test_batch_repair.py::test_batch_report_counts",
+    "tests/cli/test_batch_repair.py::test_api_repair_many_exported",
+)
+NOTES = {
+    "tests/cli/test_batch_repair.py::test_batch_dir_repairs_only_eligible": (
+        "repair_many then asserts repaired == 2, skipped == 2, two output files exist, "
+        "and the outcome set is repaired plus skipped. validate does not repair a tree."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_cli_mirrors_structure_and_manifest_dir": (
+        "main returns 1, two repaired files exist, two manifests exist, and each manifest "
+        "object contains output_fingerprint. File writes are not one schema result."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_cli_all_eligible_exit_zero": (
+        "main returns 0 and stdout contains the text 1 repaired. Human text is not the "
+        "batch-repair JSON document."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_files_mode_flat": (
+        "main returns 0 and three output paths exist. No batch-repair document is checked."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_dry_run_preview_no_writes": (
+        "main returns 1, the output directory is absent, and stdout contains eligible. "
+        "Exit status and human text are two checks, not one schema result."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_from_scan_report": (
+        "main returns 1 and one repaired file exists. The scan report written by the test "
+        "is not a batch-repair document."
+    ),
+    "tests/cli/test_batch_repair.py::test_resolve_scan_report_files": (
+        "resolve_scan_report_files returns two paths and one unresolvable display string. "
+        "That function does not validate a batch-repair object."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_deterministic": (
+        "two repair_many calls, row equality after stripping output and manifest, and equal "
+        "file hashes. Two runs are not one validate result."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_json_summary_shape": (
+        "main returns 1, then the version const, an exact counts object, every outcome in "
+        "repaired or skipped, and the word payload absent from each row. A multi-assert CLI "
+        "sweep. One valid object is not that sweep."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_usage_errors": (
+        "parametrized over five argv lists. main returns 2 and stderr contains a fragment. "
+        "Five usage failures are not one schema result."
+    ),
+    "tests/cli/test_batch_repair.py::test_repair_no_source_is_usage_error": (
+        "main of repair with no path returns 2 and stderr contains source path. Usage text "
+        "is not a schema document."
+    ),
+    "tests/cli/test_batch_repair.py::test_repair_multi_path_without_output_dir_is_usage_error": (
+        "main of two paths without --output-dir returns 2 and stderr contains --output-dir. "
+        "Usage text is not a schema document."
+    ),
+    "tests/cli/test_batch_repair.py::test_batch_report_counts": (
+        "repair_many then skipped == 1, attempted == 0, and to_dict reason == source-missing. "
+        "Count derivation is the emitter. One object with that reason is not the repair."
+    ),
+    "tests/cli/test_batch_repair.py::test_api_repair_many_exported": (
+        "api.repair_many is not None and repair_many plus BatchRepairReport are in api.__all__. "
+        "No document is validated."
+    ),
+}
+_SBP = re.compile(r"sbp_[0-9a-fA-F]{40}")
+ANNOTATIONS = {
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+}
+KNOWN = {
+    "type",
+    "const",
+    "enum",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "uniqueItems",
+}
+STATED = {
+    "type",
+    "const",
+    "enum",
+    "minimum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "uniqueItems",
+}
+SCHEMA_CALLS = {
+    "validate",
+    "assert_schema",
+    "load_batch_schema",
+    "Draft202012Validator",
+    "jsonschema",
+}
+
+
+class CheckoutImportRefused(Exception):
+    """A sesslint import missed the pin and must not fall through to the checkout."""
+
+
+class Unproven(Exception):
+    """A comparison cannot be proven from the token."""
+
+
+class _PinOnly(importlib.abc.MetaPathFinder):
+    def find_spec(
+        self,
+        fullname: str,
+        path: object = None,
+        target: object = None,
+    ) -> None:
+        del path, target
+        if fullname == "sesslint" or fullname.startswith("sesslint."):
+            raise CheckoutImportRefused(fullname)
+        return None
+
+
+def install_pin_guard() -> None:
+    sys.dont_write_bytecode = True
+    blocked = {str(ROOT), str(ROOT / "src"), "", "."}
+    sys.path[:] = [item for item in sys.path if item not in blocked and "02694d5" not in item]
+    sys.meta_path.insert(0, _PinOnly())
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    if "02694d5" in rev_path:
+        raise SystemExit("refusing 02694d5")
+    if not rev_path.startswith(f"{PYTHON_COMMIT}:"):
+        raise SystemExit("git show is limited to the pin")
+    return subprocess.check_output(["git", "show", rev_path], cwd=ROOT)
+
+
+def embedded_schema() -> str:
+    text = RS_PATH.read_text(encoding="utf-8")
+    marker = 'BATCH_REPAIR_SCHEMA_JSON: &str = r#"'
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("schema const missing")
+    start += len(marker)
+    end = text.find('"#;', start)
+    if end < 0:
+        raise SystemExit("schema const end missing")
+    body = text[start:end]
+    if body == "___PIN_SCHEMA___":
+        raise SystemExit("schema placeholder was not spliced")
+    return body
+
+
+def batch_version(source: str) -> str:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name) or target.id != "BATCH_REPORT_VERSION":
+                continue
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                return node.value.value
+    raise SystemExit("BATCH_REPORT_VERSION missing from the pin")
+
+
+def test_functions(source: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(source)
+    functions: list[ast.FunctionDef] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            raise SystemExit(f"unexpected test class {node.name}")
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+            functions.append(node)
+    return functions
+
+
+def called_names(fn: ast.FunctionDef) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name):
+            names.add(func.id)
+        elif isinstance(func, ast.Attribute):
+            names.add(func.attr)
+    return names
+
+
+def assert_test_list(functions: list[ast.FunctionDef]) -> None:
+    actual = [f"{TEST_FILE}::{fn.name}" for fn in functions]
+    if actual != list(SCHEMA_TESTS):
+        raise SystemExit(f"schema test list mismatch: {actual}")
+    for test_id, fn in zip(actual, functions, strict=True):
+        if test_id not in NOTES:
+            raise SystemExit(f"missing note for {test_id}")
+        asserts = [node for node in ast.walk(fn) if isinstance(node, ast.Assert)]
+        names = called_names(fn)
+        entire = len(asserts) == 1 and not fn.decorator_list and bool(names & SCHEMA_CALLS)
+        if entire:
+            raise SystemExit(f"entire schema test has no proven vector: {fn.name}")
+        if len(asserts) < 2 and not fn.decorator_list and not (names & SCHEMA_CALLS):
+            if not names:
+                raise SystemExit(f"unclassified test {fn.name}")
+
+
+def integer_value(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        if -(2**127) <= value < 2**127:
+            return value
+        return None
+    if not math.isfinite(value) or abs(value) > 2**53 or not value.is_integer():
+        return None
+    return int(value)
+
+
+def json_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(json_equal(item, other) for item, other in zip(left, right, strict=True))
+    if isinstance(left, dict) or isinstance(right, dict):
+        if not isinstance(left, dict) or not isinstance(right, dict) or set(left) != set(right):
+            return False
+        return all(json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_int = integer_value(left)
+        right_int = integer_value(right)
+        if left_int is None or right_int is None:
+            raise Unproven()
+        return left_int == right_int
+    raise Unproven()
+
+
+def equal_result(left: object, right: object) -> bool | None:
+    try:
+        return json_equal(left, right)
+    except Unproven:
+        return None
+
+
+def type_ok(spec: object, value: object) -> bool:
+    if isinstance(spec, list):
+        return any(type_ok(item, value) for item in spec)
+    if spec == "object":
+        return isinstance(value, dict)
+    if spec == "array":
+        return isinstance(value, list)
+    if spec == "string":
+        return isinstance(value, str)
+    if spec == "boolean":
+        return isinstance(value, bool)
+    if spec == "null":
+        return value is None
+    if spec == "integer":
+        return integer_value(value) is not None
+    if spec == "number":
+        return not isinstance(value, bool) and isinstance(value, (int, float))
+    raise Unproven()
+
+
+def pointer(parent: str, key: str) -> str:
+    return parent + "/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def check(schema: object, value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(schema, dict):
+        return ("unsupported", path, "schema")
+    for key in schema:
+        if key not in ANNOTATIONS and key not in KNOWN:
+            return ("unsupported", path, str(key))
+    if "type" in schema:
+        try:
+            matched = type_ok(schema["type"], value)
+        except Unproven:
+            return ("unsupported", path, "type")
+        if not matched:
+            return ("type", path, "")
+    if "const" in schema:
+        compared = equal_result(value, schema["const"])
+        if compared is None:
+            return ("unsupported", path, "const")
+        if not compared:
+            return ("const", path, "")
+    if "enum" in schema:
+        choices = schema["enum"]
+        if not isinstance(choices, list):
+            return ("unsupported", path, "enum")
+        matched = False
+        for choice in choices:
+            compared = equal_result(value, choice)
+            if compared is None:
+                return ("unsupported", path, "enum")
+            if compared:
+                matched = True
+                break
+        if not matched:
+            return ("enum", path, "")
+    failure = check_minimum(schema, value, path)
+    if failure is not None:
+        return failure
+    failure = check_object(schema, value, path)
+    if failure is not None:
+        return failure
+    return check_array(schema, value, path)
+
+
+def check_minimum(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if "minimum" not in schema:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = integer_value(value)
+    if number is None:
+        return ("unsupported", path, "minimum")
+    limit = schema["minimum"]
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return ("unsupported", path, "minimum")
+    if number < limit:
+        return ("minimum", path, "")
+    return None
+
+
+def check_object(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list):
+            return ("unsupported", path, "required")
+        for name in required:
+            if not isinstance(name, str):
+                return ("unsupported", path, "required")
+            if name not in value:
+                return ("required", path, name)
+    if "additionalProperties" in schema:
+        if "properties" in schema and not isinstance(schema["properties"], dict):
+            return ("unsupported", path, "properties")
+        props = schema["properties"] if isinstance(schema.get("properties"), dict) else {}
+        flag = schema["additionalProperties"]
+        if flag is False:
+            for key in value:
+                if key not in props:
+                    return ("additionalProperties", path, str(key))
+        elif flag is True:
+            pass
+        elif isinstance(flag, dict):
+            for key, child in value.items():
+                if key not in props:
+                    failure = check(flag, child, pointer(path, str(key)))
+                    if failure is not None:
+                        return failure
+        else:
+            return ("unsupported", path, "additionalProperties")
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            return ("unsupported", path, "properties")
+        for name, sub in props.items():
+            if name in value:
+                failure = check(sub, value[name], pointer(path, str(name)))
+                if failure is not None:
+                    return failure
+    return None
+
+
+def check_array(schema: dict[str, Any], value: object, path: str) -> tuple[str, str, str] | None:
+    if not isinstance(value, list):
+        return None
+    if "items" in schema:
+        item_schema = schema["items"]
+        if not isinstance(item_schema, dict):
+            return ("unsupported", path, "items")
+        for index, item in enumerate(value):
+            failure = check(item_schema, item, f"{path}/{index}")
+            if failure is not None:
+                return failure
+    if "uniqueItems" not in schema:
+        return None
+    flag = schema["uniqueItems"]
+    if flag is False:
+        return None
+    if flag is not True:
+        return ("unsupported", path, "uniqueItems")
+    for right in range(1, len(value)):
+        for left in range(right):
+            compared = equal_result(value[left], value[right])
+            if compared is None:
+                return ("unsupported", path, "uniqueItems")
+            if compared:
+                return ("uniqueItems", path, "")
+    return None
+
+
+def expect(schema: dict[str, Any], value: object) -> dict[str, Any]:
+    failure = check(schema, value, "")
+    if failure is None:
+        return {"ok": True}
+    keyword, path, detail = failure
+    if keyword == "unsupported":
+        raise SystemExit(f"oracle unsupported at {path} ({detail})")
+    return {"detail": detail, "keyword": keyword, "ok": False, "path": path}
+
+
+def collect_keywords(schema: object, found: set[str]) -> None:
+    if not isinstance(schema, dict):
+        return
+    for key, value in schema.items():
+        if key in ANNOTATIONS:
+            continue
+        found.add(str(key))
+        if key == "properties" and isinstance(value, dict):
+            for sub in value.values():
+                collect_keywords(sub, found)
+        elif key == "additionalProperties" and isinstance(value, dict):
+            collect_keywords(value, found)
+        elif key == "items" and isinstance(value, dict):
+            collect_keywords(value, found)
+        elif key == "items" and isinstance(value, list):
+            for sub in value:
+                collect_keywords(sub, found)
+
+
+def dumps(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True, allow_nan=False)
+    return text + "\n"
+
+
+def assert_clean(text: str) -> None:
+    if "\r" in text or "FOR_WORK" in text or "sesslint-wt-" in text or "02694d5" in text:
+        raise SystemExit("refusing banned text in parity output")
+    if _SBP.search(text):
+        raise SystemExit("refusing sbp hash in parity output")
+
+
+def write_text(path: Path, text: str) -> None:
+    assert_clean(text)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def counts(**overrides: object) -> dict[str, Any]:
+    value: dict[str, Any] = {
+        "attempted": 0,
+        "refused": 0,
+        "repaired": 0,
+        "skipped": 0,
+    }
+    value.update(overrides)
+    return value
+
+
+def minimal() -> dict[str, Any]:
+    return {
+        "counts": counts(),
+        "rows": [],
+        "version": "sesslint.batch-repair/v1",
+    }
+
+
+def row(**overrides: object) -> dict[str, Any]:
+    value: dict[str, Any] = {"outcome": "repaired", "path": "a.jsonl"}
+    value.update(overrides)
+    return value
+
+
+def with_rows(items: list[object]) -> dict[str, Any]:
+    document = minimal()
+    document["rows"] = items
+    return document
+
+
+def raw_replace(document: dict[str, Any], old: str, new: str) -> str:
+    text = json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    if text.count(old) != 1:
+        raise SystemExit(f"token not unique: {old}")
+    return text.replace(old, new, 1)
+
+
+def build_vectors(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, instance: object = None, raw: str | None = None) -> None:
+        if raw is None:
+            encoded = json.dumps(instance, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+            loaded = json.loads(encoded)
+            vectors.append(
+                {"expected": expect(schema, loaded), "id": vector_id, "instance": loaded}
+            )
+            return
+        loaded = json.loads(raw)
+        vectors.append({"expected": expect(schema, loaded), "id": vector_id, "raw": raw})
+
+    props = schema["properties"]
+    counts_schema = props["counts"]
+    row_schema = props["rows"]["items"]
+    outcomes = row_schema["properties"]["outcome"]["enum"]
+
+    add("minimal_object", minimal())
+    add("empty_object", {})
+    add("root_array", [])
+    add("root_string", "x")
+    add("root_null", None)
+    add("root_number", 1)
+    add("root_bool", True)
+    for name in schema["required"]:
+        document = minimal()
+        document.pop(name)
+        add(f"missing_{name}", document)
+    const_bad = minimal()
+    const_bad["version"] = "nope"
+    add("version_const", const_bad)
+    blank = minimal()
+    blank["version"] = ""
+    add("version_blank", blank)
+    version_type = minimal()
+    version_type["version"] = 1
+    add("version_type", version_type)
+    extra = minimal()
+    extra["extra"] = 1
+    add("root_additional", extra)
+    uneven = minimal()
+    uneven["counts"]["attempted"] = 9
+    add("counts_not_tied_to_rows", uneven)
+    counts_type = minimal()
+    counts_type["counts"] = []
+    add("counts_type", counts_type)
+    for name in counts_schema["required"]:
+        document = minimal()
+        document["counts"].pop(name)
+        add(f"missing_counts_{name}", document)
+    counts_extra = minimal()
+    counts_extra["counts"]["extra"] = 1
+    add("counts_additional", counts_extra)
+    for name in ("attempted", "repaired", "refused", "skipped"):
+        document = minimal()
+        document["counts"][name] = -1
+        add(f"{name}_minimum", document)
+    attempted_str = minimal()
+    attempted_str["counts"]["attempted"] = "0"
+    add("attempted_type_string", attempted_str)
+    attempted_bool = minimal()
+    attempted_bool["counts"]["attempted"] = True
+    add("attempted_type_bool", attempted_bool)
+    attempted_null = minimal()
+    attempted_null["counts"]["attempted"] = None
+    add("attempted_null", attempted_null)
+    rows_type = minimal()
+    rows_type["rows"] = {}
+    add("rows_type", rows_type)
+    add("row_item_type", with_rows(["x"]))
+    for name in row_schema["required"]:
+        item = row()
+        item.pop(name)
+        add(f"missing_row_{name}", with_rows([item]))
+    extra_row = row()
+    extra_row["extra"] = 1
+    add("row_additional", with_rows([extra_row]))
+    slash_row = row()
+    slash_row["a/b"] = 1
+    add("row_additional_slash", with_rows([slash_row]))
+    tilde_row = row()
+    tilde_row["a~b"] = 1
+    add("row_additional_tilde", with_rows([tilde_row]))
+    add("path_type", with_rows([row(path=1)]))
+    add("empty_path", with_rows([row(path="")]))
+    add("path_slash", with_rows([row(path="a/b")]))
+    for outcome in outcomes:
+        add(f"outcome_{outcome}", with_rows([row(outcome=outcome)]))
+    add("outcome_enum", with_rows([row(outcome="nope")]))
+    add("outcome_type", with_rows([row(outcome=1)]))
+    add("codes_omitted", with_rows([row()]))
+    add("codes_empty", with_rows([row(codes=[])]))
+    add("codes_one", with_rows([row(codes=["c"])]))
+    add("codes_unique", with_rows([row(codes=["c", "d"])]))
+    add("codes_duplicate", with_rows([row(codes=["c", "c"])]))
+    add("codes_item_type", with_rows([row(codes=[1])]))
+    add("codes_type", with_rows([row(codes={})]))
+    add("reason_present", with_rows([row(reason="n")]))
+    add("reason_empty", with_rows([row(reason="")]))
+    add("reason_type", with_rows([row(reason=1)]))
+    add("output_present", with_rows([row(output="out/a.jsonl")]))
+    add("output_type", with_rows([row(output=1)]))
+    add("manifest_present", with_rows([row(manifest="m.json")]))
+    add("manifest_type", with_rows([row(manifest=1)]))
+    add("duplicate_paths_allowed", with_rows([row(), row()]))
+    add(
+        "same_code_across_rows_allowed",
+        with_rows([row(codes=["c"]), row(path="b.jsonl", codes=["c"])]),
+    )
+    second = row()
+    second.pop("path")
+    add("row_index_one_missing_path", with_rows([row(), second]))
+    full = row(
+        codes=["c", "d"],
+        manifest="m.json",
+        outcome="eligible",
+        output="out/a.jsonl",
+        reason="n",
+    )
+    add("full_row", with_rows([full]))
+    padded = json.dumps(minimal(), ensure_ascii=True, sort_keys=True, separators=(", ", ": "))
+    add("raw_padded", raw="\n" + padded + "\n")
+    add(
+        "raw_attempted_one_point_zero",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": 1.0'),
+    )
+    add(
+        "raw_attempted_exponent",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": 1e1'),
+    )
+    add(
+        "raw_attempted_scaled",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": 10e-1'),
+    )
+    add(
+        "raw_attempted_negative_zero",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": -0'),
+    )
+    add(
+        "raw_attempted_zero_point_zero",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": 0.0'),
+    )
+    add(
+        "raw_attempted_fraction",
+        raw=raw_replace(minimal(), '"attempted": 0', '"attempted": 1.5'),
+    )
+    coded = with_rows([row(codes=["a", "b"], outcome="skipped")])
+    add(
+        "raw_codes_unicode_duplicate",
+        raw=raw_replace(coded, '["a", "b"]', '["a", "\\u0061"]'),
+    )
+    ids = [item["id"] for item in vectors]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("duplicate vector id")
+    return vectors
+
+
+def require_expected(
+    vectors: list[dict[str, Any]],
+    vector_id: str,
+    expected: dict[str, Any],
+) -> None:
+    found = next(item for item in vectors if item["id"] == vector_id)
+    if found["expected"] != expected:
+        raise SystemExit(f"{vector_id} oracle drifted: {found['expected']}")
+
+
+def assert_oracle(schema: dict[str, Any], vectors: list[dict[str, Any]]) -> None:
+    if check({"pattern": "^a$"}, "a", "") != ("unsupported", "", "pattern"):
+        raise SystemExit("pattern did not fail closed")
+    if check({"minLength": 1}, "a", "") != ("unsupported", "", "minLength"):
+        raise SystemExit("minLength did not fail closed")
+    if check({"maxLength": 2}, "abcd", "") != ("unsupported", "", "maxLength"):
+        raise SystemExit("maxLength did not fail closed")
+    if check({"format": "date"}, "m", "") != ("unsupported", "", "format"):
+        raise SystemExit("format did not fail closed")
+    if check({"uniqueItems": True}, ["a", "a"], "") != ("uniqueItems", "", ""):
+        raise SystemExit("uniqueItems did not reject duplicates")
+    if check({"uniqueItems": True}, [1.5, 1.5], "") != ("unsupported", "", "uniqueItems"):
+        raise SystemExit("unproven uniqueItems did not fail closed")
+    if expect(schema, minimal()) != {"ok": True}:
+        raise SystemExit("minimal object rejected")
+    require_expected(
+        vectors,
+        "empty_object",
+        {"detail": "version", "keyword": "required", "ok": False, "path": ""},
+    )
+    require_expected(
+        vectors,
+        "version_const",
+        {"detail": "", "keyword": "const", "ok": False, "path": "/version"},
+    )
+    require_expected(
+        vectors,
+        "attempted_minimum",
+        {"detail": "", "keyword": "minimum", "ok": False, "path": "/counts/attempted"},
+    )
+    require_expected(
+        vectors,
+        "root_additional",
+        {"detail": "extra", "keyword": "additionalProperties", "ok": False, "path": ""},
+    )
+    require_expected(
+        vectors,
+        "codes_duplicate",
+        {"detail": "", "keyword": "uniqueItems", "ok": False, "path": "/rows/0/codes"},
+    )
+    require_expected(
+        vectors,
+        "row_index_one_missing_path",
+        {"detail": "path", "keyword": "required", "ok": False, "path": "/rows/1"},
+    )
+    require_expected(
+        vectors,
+        "row_additional_slash",
+        {"detail": "a/b", "keyword": "additionalProperties", "ok": False, "path": "/rows/0"},
+    )
+    require_expected(
+        vectors,
+        "row_additional_tilde",
+        {"detail": "a~b", "keyword": "additionalProperties", "ok": False, "path": "/rows/0"},
+    )
+    require_expected(
+        vectors,
+        "outcome_enum",
+        {"detail": "", "keyword": "enum", "ok": False, "path": "/rows/0/outcome"},
+    )
+    require_expected(
+        vectors,
+        "raw_attempted_fraction",
+        {"detail": "", "keyword": "type", "ok": False, "path": "/counts/attempted"},
+    )
+    require_expected(vectors, "raw_attempted_one_point_zero", {"ok": True})
+    require_expected(vectors, "raw_attempted_negative_zero", {"ok": True})
+    require_expected(
+        vectors,
+        "raw_codes_unicode_duplicate",
+        {
+            "detail": "",
+            "keyword": "uniqueItems",
+            "ok": False,
+            "path": "/rows/0/codes",
+        },
+    )
+    require_expected(vectors, "empty_path", {"ok": True})
+    require_expected(vectors, "reason_empty", {"ok": True})
+    require_expected(vectors, "counts_not_tied_to_rows", {"ok": True})
+    require_expected(vectors, "same_code_across_rows_allowed", {"ok": True})
+
+
+def load_oracle() -> Any | None:
+    try:
+        import jsonschema
+    except ModuleNotFoundError:
+        return None
+    return jsonschema.Draft202012Validator
+
+
+def assert_jsonschema(
+    oracle: Any | None,
+    schema: dict[str, Any],
+    vectors: list[dict[str, Any]],
+) -> None:
+    if oracle is None:
+        return
+    for item in vectors:
+        if "raw" in item:
+            value = json.loads(item["raw"])
+        else:
+            value = item["instance"]
+        valid = bool(oracle(schema).is_valid(value))
+        if valid != item["expected"]["ok"]:
+            raise SystemExit(f"jsonschema mismatch for {item['id']}")
+
+
+def facts_from(schema: dict[str, Any], emitter_version: str) -> dict[str, Any]:
+    props = schema["properties"]
+    counts_schema = props["counts"]
+    row_schema = props["rows"]["items"]
+    found: set[str] = set()
+    collect_keywords(schema, found)
+    if found != STATED:
+        raise SystemExit(f"pinned keyword set drifted: {sorted(found)}")
+    if props["version"]["const"] != emitter_version:
+        raise SystemExit("emitter version disagrees with the pinned const")
+    return {
+        "codes_item_type": row_schema["properties"]["codes"]["items"]["type"],
+        "codes_unique_items": row_schema["properties"]["codes"]["uniqueItems"],
+        "counter_minimum": counts_schema["properties"]["attempted"]["minimum"],
+        "counts_additional_properties": counts_schema["additionalProperties"],
+        "counts_property_names": list(counts_schema["properties"]),
+        "counts_required": counts_schema["required"],
+        "dialect": schema["$schema"],
+        "emitter_version": emitter_version,
+        "id": schema["$id"],
+        "keywords": sorted(found),
+        "outcome_enum": row_schema["properties"]["outcome"]["enum"],
+        "property_names": list(props),
+        "required": schema["required"],
+        "root_additional_properties": schema["additionalProperties"],
+        "row_additional_properties": row_schema["additionalProperties"],
+        "row_property_names": list(row_schema["properties"]),
+        "row_required": row_schema["required"],
+        "version_const": props["version"]["const"],
+    }
+
+
+def coverage_doc() -> dict[str, Any]:
+    rows = [
+        {
+            "note": NOTES[test_id],
+            "status": "not_applicable",
+            "test": test_id,
+            "vector_id": None,
+        }
+        for test_id in SCHEMA_TESTS
+    ]
+    return {
+        "covered_count": 0,
+        "module": "sesslint.batch",
+        "not_applicable_count": len(rows),
+        "python_commit": PYTHON_COMMIT,
+        "rows": rows,
+        "schema_file": "schemas/sesslint.batch-repair.v1.json",
+    }
+
+
+def main() -> None:
+    install_pin_guard()
+    oracle = load_oracle()
+    schema_bytes = git_show_bytes(SCHEMA_GIT)
+    batch_bytes = git_show_bytes(BATCH_GIT)
+    test_bytes = git_show_bytes(TEST_GIT)
+    if b"\r" in schema_bytes or b"\r" in batch_bytes or b"\r" in test_bytes:
+        raise SystemExit("pin blob contains CR")
+    embedded = embedded_schema()
+    if embedded.encode("utf-8") != schema_bytes:
+        raise SystemExit("embedded schema bytes differ from the pin")
+    schema = json.loads(schema_bytes.decode("utf-8"))
+    if not isinstance(schema, dict):
+        raise SystemExit("pinned schema is not an object")
+    emitter_version = batch_version(batch_bytes.decode("utf-8"))
+    functions = test_functions(test_bytes.decode("utf-8"))
+    assert_test_list(functions)
+    vectors = build_vectors(schema)
+    assert_oracle(schema, vectors)
+    assert_jsonschema(oracle, schema, vectors)
+    document = {
+        "facts": facts_from(schema, emitter_version),
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "vectors": vectors,
+    }
+    vectors_text = dumps(document)
+    vectors_sha = hashlib.sha256(vectors_text.encode("utf-8")).hexdigest()
+    manifest = {
+        "batch_py_sha256": hashlib.sha256(batch_bytes).hexdigest(),
+        "generator": GENERATOR,
+        "python_commit": PYTHON_COMMIT,
+        "schema": "sesslint.parity-schema-vectors/v1",
+        "schema_file": "schemas/sesslint.batch-repair.v1.json",
+        "schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "test_py_sha256": hashlib.sha256(test_bytes).hexdigest(),
+        "vector_count": len(vectors),
+        "vectors_sha256": vectors_sha,
+    }
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic sesslint.batch-repair.v1 schema parity. Constraints and expected "
+            "rejections come from the pinned schema. Documents are hand-built. "
+            "BatchRepairReport.to_dict is not executed. No session text is stored."
+        ),
+        "generator": GENERATOR,
+        "known_parity_gaps": [
+            "Schema path resolution and the missing-file loader are not this validator.",
+            "repair_many, CLI exit codes, and human rendering are not one schema result.",
+            "Count totals are derived by the emitter. Counts need not match the rows.",
+            "Duplicate JSON object keys are refused. Python json.loads keeps the last key.",
+            "A JSON number is an integer only when it is a proven i128.",
+            "pattern and length keywords are absent from the pinned schema and fail closed.",
+        ],
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+    }
+    write_text(OUT / "vectors.json", vectors_text)
+    write_text(OUT / "coverage.json", dumps(coverage_doc()))
+    write_text(OUT / "manifest.json", dumps(manifest))
+    write_text(OUT / "PROVENANCE.json", dumps(provenance))
+    payload = vectors_text.encode("utf-8")
+    print(f"vector_count={len(vectors)}")
+    print("covered_count=0")
+    print(f"not_applicable_count={len(SCHEMA_TESTS)}")
+    print(f"vectors_sha256={vectors_sha}")
+    print(f"bytes={len(payload)}")
+    print(f"lf={payload.count(10)}")
+    print(f"cr={payload.count(13)}")
+
+
+if __name__ == "__main__":
+    main()

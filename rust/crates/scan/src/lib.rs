@@ -15,3 +15,5 @@ pub mod scan;
 pub mod batch;
 #[path = "schema/sesslint.scan-report.v1.rs"]
 pub mod scan_report_schema;
+#[path = "schema/sesslint.batch-repair.v1.rs"]
+pub mod batch_repair_schema;
