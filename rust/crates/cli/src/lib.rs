@@ -31,7 +31,7 @@ pub mod doctor;
 pub mod export;
 pub mod hook;
 pub mod mcp;
-pub mod outcome {}
+pub mod outcome;
 pub mod repair;
 pub mod stats;
 pub mod verify;
