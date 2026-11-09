@@ -1,0 +1,622 @@
+#!/usr/bin/env python3
+"""Generate synthetic module cases from actual pinned Python, without runtime stubs."""
+
+import ast
+import copy
+import hashlib
+import importlib
+import io
+import json
+import random
+import struct
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+SCHEMA = "sesslint.parity-module-vectors/v1"
+SOURCE = "src/sesslint/outcome/contract.py"
+TEST_SOURCE = "tests/outcome/test_outcome_contract.py"
+
+
+def wire(value):
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def dump(name, value):
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def tag(x):
+    if x is None:
+        return ["null"]
+    if type(x) is bool:
+        return ["bool", x]
+    if type(x) is int:
+        return ["int", str(x)]
+    if type(x) is float:
+        return ["float", struct.pack(">d", x).hex()]
+    if type(x) is str:
+        return ["str", x]
+    if type(x) is list:
+        return ["array", [tag(v) for v in x]]
+    return ["object", {k: tag(v) for k, v in x.items()}]
+
+
+def pred(p):
+    if p is None:
+        return None
+    return dict(field=p.field, op=p.op, value=tag(p.value), values=[tag(v) for v in p.values])
+
+
+def cond(c):
+    names = [
+        "id",
+        "type",
+        "advisory",
+        "disabled",
+        "description",
+        "field",
+        "source_field",
+        "kind",
+        "allow_null",
+        "allow_empty",
+        "basis",
+    ]
+    out = {k: getattr(c, k) for k in names}
+    out.update(
+        values=[tag(v) for v in c.values],
+        normalize=list(c.normalize),
+        minimum=struct.pack(">d", c.minimum).hex() if c.minimum is not None else None,
+        maximum=struct.pack(">d", c.maximum).hex() if c.maximum is not None else None,
+        when=[pred(p) for p in c.when],
+        conditions=[cond(v) for v in c.conditions],
+    )
+    return out
+
+
+def contract(c):
+    return dict(
+        name=c.name,
+        version=c.version,
+        description=c.description,
+        source_key=list(c.source_key),
+        target_key=list(c.target_key),
+        eligibility=[pred(p) for p in c.eligibility],
+        due=dict(source_time_field=c.due.source_time_field, within_seconds=c.due.within_seconds)
+        if c.due
+        else None,
+        conditions=[cond(v) for v in c.conditions],
+        sha256=c.sha256,
+        warnings=list(c.warnings()),
+        fields=sorted(c.relevant_source_fields()),
+        iter=[v.id for v in c.iter_conditions()],
+    )
+
+
+base = dict(
+    schema_version="sesslint.outcome-contract/v1",
+    name="synthetic",
+    version="1",
+    key=dict(source="id", target="id"),
+    conditions=[dict(id="ok", type="exists")],
+)
+cases = []
+
+
+def add(op, raw, **kw):
+    cases.append(dict(id=len(cases), op=op, raw=json.dumps(raw, ensure_ascii=True), **kw))
+
+
+def condition(raw, nested=False, has_due=False):
+    add("condition", raw, nested=nested, has_due=has_due)
+
+
+def doc(key, value):
+    x = copy.deepcopy(base)
+    x[key] = value
+    add("contract", x)
+
+
+bad = [None, False, 0, 1, 1.0, "", " ", "x", [], {}]
+for v in bad + [
+    ["a", "a"],
+    ["a"] * 9,
+    ["x" * 256],
+    ["x" * 257],
+    ["😀" * 256],
+    ["a", None],
+    ["a", "b"],
+]:
+    add("key", v)
+for v in bad:
+    condition(v)
+    add("contract", v)
+for key in base:
+    x = copy.deepcopy(base)
+    del x[key]
+    add("contract", x)
+for key in [
+    "schema_version",
+    "name",
+    "description",
+    "version",
+    "key",
+    "eligibility",
+    "due",
+    "conditions",
+]:
+    for v in bad:
+        doc(key, v)
+for v in ["\x1c", "\u200b", "😀" * 64, "😀" * 65, "x" * 2000, "x" * 2001]:
+    doc("name", v)
+    doc("version", v)
+for v in [
+    dict(source=["a", "a"], target="b"),
+    dict(source=["a", "b"], target="c"),
+    dict(source="a", target="b", z=1, a=2),
+]:
+    doc("key", v)
+for v in [None, False, -1, 0, 1, 316224000, 316224001, 10**100, 1.0]:
+    doc("due", dict(source_time_field="time", within_seconds=v))
+doc("due", dict(source_time_field="", within_seconds=True, z=1))
+for v in [
+    dict(id="a", type="exists", disabled="reason"),
+    dict(id="a", type="exists", advisory=True),
+    dict(id="?", type="exists"),
+]:
+    doc("conditions", [v])
+doc("conditions", [dict(id="same", type="exists")] * 2)
+doc("conditions", [dict(id=str(i), type="exists") for i in range(65)])
+doc("conditions", [dict(id=str(i), type="exists") for i in range(64)])
+valid = {
+    "exists": {},
+    "count": {},
+    "required": dict(field="x"),
+    "type": dict(field="x", kind="integer"),
+    "one_of": dict(field="x", values=[None, True, 1, 1.0, "é"], normalize=["casefold", "trim"]),
+    "equals": dict(field="x", source_field="y", normalize=["trim"]),
+    "range": dict(field="x", min=-1.0, max=2),
+    "route": dict(field="x", values=["x"], when=[dict(field="x", op="eq", value=1)]),
+    "on_time": dict(basis="target_time", field="at"),
+    "any_of": dict(
+        conditions=[dict(id="a", type="exists"), dict(id="b", type="required", field="x")]
+    ),
+}
+for kind, extra in valid.items():
+    raw = dict(id="c", type=kind, **extra)
+    condition(raw, has_due=True)
+    x = copy.deepcopy(base)
+    x["conditions"] = [raw]
+    x["due"] = dict(source_time_field="at", within_seconds=1)
+    add("contract", x)
+    for key in ["id", "advisory", "disabled", "description", "field"] + list(extra):
+        for v in bad:
+            mutated = copy.deepcopy(raw)
+            mutated[key] = v
+            condition(mutated)
+    mutated = copy.deepcopy(raw)
+    mutated.update(z=1, a=2)
+    condition(mutated)
+for lo in [None, False, True, -1, 0, 1, 1.0, 10**400]:
+    for hi in [None, False, 0, 1, 2, 10**400]:
+        condition(dict(id="c", type="count", min=lo, max=hi))
+for v in [float("inf"), 10**400, 2**200 + 1, -0.0, 1e-7, 1e16, 0.0001]:
+    if type(v) is float and v == float("inf"):
+        x = copy.deepcopy(base)
+        x["conditions"] = [dict(id="c", type="range", field="x", min=1)]
+        s = json.dumps(x).replace('"min": 1', '"min": 1e999')
+        cases.append(dict(id=len(cases), op="contract", raw=s))
+    else:
+        x = copy.deepcopy(base)
+        x["conditions"] = [dict(id="c", type="one_of", field="x", values=[v])]
+        add("contract", x)
+for v in [
+    dict(id="a", type="exists", advisory=True),
+    dict(id="a", type="exists", disabled="why"),
+    dict(
+        id="a",
+        type="any_of",
+        conditions=[dict(id="deep1", type="exists"), dict(id="deep2", type="exists")],
+    ),
+]:
+    condition(dict(id="c", type="any_of", conditions=[v, dict(id="b", type="exists")]))
+condition(
+    dict(
+        id="c", type="any_of", conditions=[dict(id="a", type="exists"), dict(id="b", type="exists")]
+    ),
+    nested=True,
+)
+for v in bad:
+    condition(dict(id="c", type=v))
+
+
+def literal(text):
+    cases.append(dict(id=len(cases), op="parse", raw=text))
+
+
+for raw in [
+    "null",
+    "true",
+    "false",
+    "0",
+    "-0",
+    "1.0",
+    "-0.0",
+    "1e999",
+    "-1e999",
+    "1e-999",
+    "1234567890123456789012345678901234567890",
+    "NaN",
+    "Infinity",
+    "-Infinity",
+    '{"a":1,"a":2}',
+    '{"a":1,"a":2,"b":{"x":1,"x":2}}',
+    '{"a":1,"a":NaN}',
+    "[1,]",
+    "01",
+    "1e+",
+    '"\\ud83d\\ude00"',
+]:
+    literal(raw)
+for v in [
+    None,
+    False,
+    0,
+    1.5,
+    "",
+    " ",
+    "x",
+    "😀" * 256,
+    "😀" * 257,
+    "x" * 2000,
+    "x" * 2001,
+    "\x1c",
+    "\u200b",
+    [],
+    {},
+]:
+    add("field", {"field": v})
+    add("text", {"text": v})
+    add("bound", {"min": v})
+for v in [
+    None,
+    [],
+    ["trim"],
+    ["casefold", "trim"],
+    ["z", "a", "z", "trim"],
+    ["\u200b", "\ue000", "\u0378", "\U0001fae0"],
+    [1],
+    ["trim"] * 3,
+]:
+    add("normalize", {"normalize": v})
+for op in ["field", "text", "normalize", "values", "bound"]:
+    add(op, {})
+for v in [10**400, 2**100 + 1, int(sys.float_info.max), int(sys.float_info.max) + 2**970]:
+    add("bound", {"min": v})
+cases.append({"id": len(cases), "op": "bound", "raw": '{"min":1e999}'})
+for v in [None, False, [], [None, 1, True, "x"], [{}], [1] * 1000, [1] * 1001]:
+    add("values", {"values": v})
+for v in [None, False, {}, [], [{}] * 32, [{}] * 33]:
+    add("predicates", v)
+for op in ["absent", "eq", "gt", "gte", "in", "lt", "lte", "ne", "not_in", "present", "bad", None]:
+    for extra in [
+        {},
+        {"field": "x"},
+        {"field": "x", "value": None},
+        {"field": "x", "value": True},
+        {"field": "x", "value": 1},
+        {"field": "x", "values": [1, None]},
+        {"value": [], "z": 1, "a": 2},
+    ]:
+        add("predicate", {"op": op, **extra})
+for cp in [0, 0x1C, 0x7F, 0xA0, 0x200B, 0x2028, 0x2066, 0x378, 0xE000, 0x1FAE0, 0x10FFFF]:
+    add("unknown", {chr(cp): None, "known": 0})
+rng = random.Random(411)
+for _ in range(100):
+    cp = rng.randrange(0x110000)
+    if not 0xD800 <= cp <= 0xDFFF:
+        add("unknown", {chr(cp): None})
+
+
+def file_case(data=None, *, spaces=None, missing=False):
+    spec = (
+        {"missing": True}
+        if missing
+        else {"spaces": spaces}
+        if spaces is not None
+        else {"hex": data.hex()}
+    )
+    cases.append(dict(id=len(cases), op="file", file=spec))
+    return len(cases) - 1
+
+
+for data in [
+    json.dumps(base).encode(),
+    b"\xef\xbb\xbf" + json.dumps(base).encode(),
+    b"\xff",
+    b"{",
+    b"NaN",
+    b'{"x":1,"x":2}',
+    b"\xef\xbb\xbf\xef\xbb\xbf{}",
+    b"[]",
+    b'{"n":' + b"9" * 4301 + b"}",
+]:
+    file_case(data)
+file_case(spaces=1048576)
+file_case(spaces=1048577)
+file_case(missing=True)
+
+# Complete source-test mapping, including parametrize rows. AST reads literals;
+# it never executes a source test or replaces the reference implementation.
+test_bytes = show(TEST_SOURCE)
+tree = ast.parse(test_bytes)
+test_functions = [
+    n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+]
+raw_fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_raw")
+source_base = ast.literal_eval(next(n.value for n in raw_fn.body if isinstance(n, ast.AnnAssign)))
+coverage = []
+test_ids = {}
+
+
+def test_doc(test_name, **over):
+    value = copy.deepcopy(source_base)
+    value.update(over)
+    add("contract", value)
+    test_ids.setdefault(test_name, []).append(len(cases) - 1)
+
+
+test_doc("test_empty_contract_is_an_error_not_a_pass", conditions=[])
+invalid = next(n for n in test_functions if n.name == "test_invalid_contracts_are_rejected")
+params = ast.literal_eval(invalid.decorator_list[0].args[1])
+for over, needle in params:
+    test_doc(invalid.name, **over)
+    cases[-1]["assert_contains"] = needle
+name = "test_any_of_cannot_nest_or_hide_flags"
+inner = dict(id="in", type="any_of", conditions=[dict(id="a", type="exists")] * 2)
+test_doc(
+    name, conditions=[dict(id="o", type="any_of", conditions=[inner, dict(id="b", type="exists")])]
+)
+cases[-1]["assert_contains"] = "cannot nest"
+test_doc(
+    name,
+    conditions=[
+        dict(
+            id="o",
+            type="any_of",
+            conditions=[dict(id="a", type="exists", advisory=True), dict(id="b", type="exists")],
+        )
+    ],
+)
+cases[-1]["assert_contains"] = "advisory or disabled"
+test_doc(
+    "test_every_problem_is_reported_at_once",
+    name=None,
+    version="",
+    extra=True,
+    conditions=[dict(type="exists")],
+)
+load = next(n for n in test_functions if n.name == "test_load_rejects_non_strict_json")
+test_ids[load.name] = [
+    file_case(value.encode()) for value in ast.literal_eval(load.decorator_list[0].args[1])
+]
+test_ids["test_load_rejects_oversized_and_non_utf8"] = [
+    file_case(spaces=1048577),
+    file_case(b'{"name": "\xe9"}'),
+]
+name = "test_fingerprint_ignores_key_order_but_not_values"
+test_doc(name)
+add("contract", dict(reversed(list(source_base.items()))))
+test_ids[name].append(len(cases) - 1)
+test_doc(name, version="2")
+test_doc(
+    "test_warnings_flag_gaps_without_failing",
+    conditions=[dict(id="s", type="required", field="status")],
+)
+for node in test_functions:
+    if node.name in test_ids:
+        row = dict(
+            test_file=TEST_SOURCE,
+            test_name=node.name,
+            status="covered",
+            vector_ids=test_ids[node.name],
+            reason=(
+                "All assertions and parameter rows are represented; "
+                "full output/errors are compared."
+            ),
+        )
+    else:
+        reason = {
+            "test_fixture_contract_loads_and_matches_schema": (
+                "Requires JSON Schema validation as well as loader, outside module scope."
+            ),
+            "test_explain_is_deterministic_and_lists_every_condition": (
+                "Calls explain_contract in outcome.report, not this module."
+            ),
+        }[node.name]
+        row = dict(
+            test_file=TEST_SOURCE,
+            test_name=node.name,
+            status="not_applicable",
+            vector_ids=[],
+            reason=reason,
+        )
+    coverage.append(row)
+
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+with tempfile.TemporaryDirectory(prefix="sesslint-contract-parity-") as temporary:
+    source = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            path = Path(member.filename)
+            if member.is_dir():
+                continue
+            assert (
+                not path.is_absolute()
+                and ".." not in path.parts
+                and path.parts[:2] == ("src", "sesslint")
+            )
+            target = source / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(z.read(member))
+    sys.path.insert(0, str(source / "src"))
+    c = importlib.import_module("sesslint.outcome.contract")
+    results = []
+    for case in cases:
+        op = case["op"]
+        p = c._Problems()
+        try:
+            if op == "file":
+                path = source / f"synthetic-{case['id']}.json"
+                spec = case["file"]
+                if not spec.get("missing"):
+                    data = b" " * spec["spaces"] if "spaces" in spec else bytes.fromhex(spec["hex"])
+                    path.write_bytes(data)
+                result = {"output": contract(c.load_contract(path))}
+            else:
+                try:
+                    raw = c.parse_strict_json(case["raw"])
+                except json.JSONDecodeError:
+                    result = {"error": "syntax"}
+                except ValueError as e:
+                    result = {"error": str(e)}
+                else:
+                    if op == "contract":
+                        result = {"output": contract(c.contract_from_dict(raw))}
+                    else:
+                        if op == "key":
+                            out = list(c._key_fields(raw, "w", p))
+                        elif op == "condition":
+                            v = c._condition(
+                                raw, "w", p, nested=case["nested"], has_due=case["has_due"]
+                            )
+                            out = cond(v) if v is not None and not p.items else None
+                        elif op == "parse":
+                            out = tag(raw)
+                        elif op == "field":
+                            out = c._field(raw, "field", "w", p)
+                        elif op == "text":
+                            out = c._text(raw, "text", "w", p)
+                        elif op == "normalize":
+                            out = list(c._normalize(raw, "w", p))
+                        elif op == "unknown":
+                            out = c._unknown_keys(raw, frozenset({"known"}), "w", p)
+                        elif op == "values":
+                            out = [tag(v) for v in c._values(raw, "w", p)]
+                        elif op == "predicate":
+                            out = pred(c._predicate(raw, "w", p))
+                        elif op == "predicates":
+                            out = [pred(v) for v in c._predicates(raw, "w", p)]
+                        elif op == "bound":
+                            v = c._bound(raw, "min", "w", p)
+                            out = struct.pack(">d", v).hex() if v is not None else None
+                        else:
+                            raise AssertionError(op)
+                        result = {"output": out, "problems": p.items}
+        except c.ContractError as e:
+            result = {"error": "ContractError", "problems": list(e.problems)}
+        except OSError:
+            result = {"error": "OSError"}
+        except Exception as e:
+            result = {"error": type(e).__name__}
+        if "assert_contains" in case:
+            assert any(case["assert_contains"] in p for p in result["problems"])
+        results.append(result)
+
+assert any(
+    "non-empty list" in p
+    for p in results[test_ids["test_empty_contract_is_an_error_not_a_pass"][0]]["problems"]
+)
+assert len(results[test_ids["test_every_problem_is_reported_at_once"][0]]["problems"]) >= 3
+assert all(
+    results[i]["error"] == "ContractError" for i in test_ids["test_load_rejects_non_strict_json"]
+)
+a, b = test_ids["test_load_rejects_oversized_and_non_utf8"]
+assert "1 MiB" in results[a]["problems"][0] and "UTF-8" in results[b]["problems"][0]
+a, b, d = test_ids["test_fingerprint_ignores_key_order_but_not_values"]
+assert (
+    results[a]["output"]["sha256"]
+    == results[b]["output"]["sha256"]
+    != results[d]["output"]["sha256"]
+)
+warnings = " ".join(
+    results[test_ids["test_warnings_flag_gaps_without_failing"][0]]["output"]["warnings"]
+)
+assert "no active exists/count" in warnings and "no due window" in warnings
+rows = [
+    dict(
+        id=q["id"],
+        input={k: v for k, v in q.items() if k not in ("id", "assert_contains")},
+        expected_json=wire(r),
+    )
+    for q, r in zip(cases, results, strict=True)
+]
+dump(
+    "vectors.json",
+    dict(schema=SCHEMA, module="sesslint.outcome.contract", python_commit=PIN, cases=rows),
+)
+digest = hashlib.sha256((HERE / "vectors.json").read_bytes()).hexdigest()
+dump(
+    "manifest.json",
+    dict(
+        schema=SCHEMA,
+        module="sesslint.outcome.contract",
+        python_commit=PIN,
+        python_sha256=hashlib.sha256(show(SOURCE)).hexdigest(),
+        test_source_sha256=hashlib.sha256(test_bytes).hexdigest(),
+        rust_sha256=hashlib.sha256(
+            (ROOT / "rust/crates/outcome/src/contract.rs").read_bytes()
+        ).hexdigest(),
+        codec_sha256=hashlib.sha256(
+            (ROOT / "rust/crates/codec/src/canonical_codec.rs").read_bytes()
+        ).hexdigest(),
+        vectors_sha256=digest,
+        vector_count=len(rows),
+        generator="rust/parity/vectors/outcome.contract/generate",
+    ),
+)
+dump("coverage.json", dict(rows=coverage))
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        origin="synthetic",
+        python_commit=PIN,
+        generator="rust/parity/vectors/outcome.contract/generate",
+        known_parity_gaps=[
+            "Unicode scalar JSON; no lone surrogates, Python subclass/identity or custom mapping. "
+            "Rust parsing/conversion depth128; integer parsing cap4300 digits.",
+            "Invalid condition partial models are compared by ordered problems, "
+            "not invalid kind/basis values discarded by typed Option<String>.",
+            "Unhashable predicate operators remain a declared part01 boundary: "
+            "Rust validation instead of Python TypeError; not in these vectors.",
+            "No schema/report/evaluator/CLI integration or multi-OS/runtime release claim. "
+            "Source-test coverage counts complete functions, never partial assertions.",
+        ],
+    ),
+)
+print(
+    json.dumps(
+        dict(
+            vectors=len(rows),
+            sha256=digest,
+            covered=sum(r["status"] == "covered" for r in coverage),
+            not_applicable=sum(r["status"] == "not_applicable" for r in coverage),
+        )
+    )
+)

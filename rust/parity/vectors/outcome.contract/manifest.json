@@ -1,0 +1,12 @@
+{
+  "codec_sha256": "459bebc65da604a295226527c2797443fc60eb5aabab5aaf5279b02d2721ea31",
+  "generator": "rust/parity/vectors/outcome.contract/generate",
+  "module": "sesslint.outcome.contract",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "python_sha256": "37ec06a8baa66307c4652a1dc6ce2a64d6b5131af3a44d9ac14e3f24a61abf01",
+  "rust_sha256": "a337fde5f75d61b1ccb03802d9ade2c197a560f23f8fb66c646bfa504d1cadfc",
+  "schema": "sesslint.parity-module-vectors/v1",
+  "test_source_sha256": "aee3b4212cd1d048c3545c3557c5cb6d013ffb5ac6b06d98581f9c773fb37397",
+  "vector_count": 1270,
+  "vectors_sha256": "ce47f1bc71aa63a12dd8c5d0c7260ad871c0f7ccd97f07515f8fa1a81a20ab5c"
+}

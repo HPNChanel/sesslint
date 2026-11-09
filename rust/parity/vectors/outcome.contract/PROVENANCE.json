@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/outcome.contract/generate",
+  "known_parity_gaps": [
+    "Unicode scalar JSON; no lone surrogates, Python subclass/identity or custom mapping. Rust parsing/conversion depth128; integer parsing cap4300 digits.",
+    "Invalid condition partial models are compared by ordered problems, not invalid kind/basis values discarded by typed Option<String>.",
+    "Unhashable predicate operators remain a declared part01 boundary: Rust validation instead of Python TypeError; not in these vectors.",
+    "No schema/report/evaluator/CLI integration or multi-OS/runtime release claim. Source-test coverage counts complete functions, never partial assertions."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

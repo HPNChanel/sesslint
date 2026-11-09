@@ -1,0 +1,116 @@
+{
+  "rows": [
+    {
+      "reason": "Requires JSON Schema validation as well as loader, outside module scope.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_fixture_contract_loads_and_matches_schema",
+      "vector_ids": []
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_empty_contract_is_an_error_not_a_pass",
+      "vector_ids": [
+        1236
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_invalid_contracts_are_rejected",
+      "vector_ids": [
+        1237,
+        1238,
+        1239,
+        1240,
+        1241,
+        1242,
+        1243,
+        1244,
+        1245,
+        1246,
+        1247,
+        1248,
+        1249,
+        1250,
+        1251,
+        1252,
+        1253,
+        1254,
+        1255,
+        1256
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_any_of_cannot_nest_or_hide_flags",
+      "vector_ids": [
+        1257,
+        1258
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_every_problem_is_reported_at_once",
+      "vector_ids": [
+        1259
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_load_rejects_non_strict_json",
+      "vector_ids": [
+        1260,
+        1261,
+        1262,
+        1263
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_load_rejects_oversized_and_non_utf8",
+      "vector_ids": [
+        1264,
+        1265
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_fingerprint_ignores_key_order_but_not_values",
+      "vector_ids": [
+        1266,
+        1267,
+        1268
+      ]
+    },
+    {
+      "reason": "All assertions and parameter rows are represented; full output/errors are compared.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_warnings_flag_gaps_without_failing",
+      "vector_ids": [
+        1269
+      ]
+    },
+    {
+      "reason": "Calls explain_contract in outcome.report, not this module.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_explain_is_deterministic_and_lists_every_condition",
+      "vector_ids": []
+    }
+  ]
+}
