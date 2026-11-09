@@ -1,0 +1,13 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic MCP stdio protocol vectors from pinned sesslint.mcp_server (handle_line/serve JSON-RPC boundaries; no live session payloads).",
+  "generator": "rust/parity/vectors/mcp_server/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-mcp-server-check-file: sesslint_check tools/call imports sesslint.api.check_file in Python; Rust stops at sesslint.api.check_file is not available (not byte-compared here).",
+    "GAP-mcp-server-precheck: sesslint_precheck tools/call imports sesslint.precheck.precheck in Python; Rust stops at sesslint.precheck.precheck is not available (not byte-compared here).",
+    "GAP-mcp-server-scan: sesslint_scan tools/call imports sesslint.api.check_dir in Python; Rust stops at sesslint.api.check_dir is not available (not byte-compared here).",
+    "GAP-mcp-server-serve-readline: test_wave1_correctness MCP bounds case also asserts bounded readline(size) on stdin; vectors assert serve output only."
+  ]
+}

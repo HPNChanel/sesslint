@@ -1,0 +1,10 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.mcp_server",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "mcp_server_py_sha256": "6fe904b833fcf6529a9645dd67594a16f9dac58a28e553e8d895189704f2300c",
+  "mcp_server_rs_sha256": "0804b9044223b5aa844c5fb3d0f98ca9cee5914b5d03bf387bd28a3a5c64af0b",
+  "vector_count": 24,
+  "vectors_sha256": "fa05def2a3961354192f8705ec6e6ebaa9cb495505a54ffb481815d30fe40ea5",
+  "generator": "rust/parity/vectors/mcp_server/generate"
+}

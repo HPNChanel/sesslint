@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+"""Generate sesslint.mcp_server parity vectors from pinned Python (stdlib only)."""
+
+from __future__ import annotations
+
+import ast
+import base64
+import hashlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import types
+import zipfile
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA = "sesslint.parity-module-vectors/v1"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
+MCP_SERVER_PY_SHA256 = (
+    "6fe904b833fcf6529a9645dd67594a16f9dac58a28e553e8d895189704f2300c"
+)
+MCP_SERVER_RS_SHA256 = (
+    "0804b9044223b5aa844c5fb3d0f98ca9cee5914b5d03bf387bd28a3a5c64af0b"
+)
+MODULE = "sesslint.mcp_server"
+
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
+    "GAP-mcp-server-check-file: sesslint_check tools/call imports "
+    "sesslint.api.check_file in Python; Rust stops at "
+    "sesslint.api.check_file is not available (not byte-compared here).",
+    "GAP-mcp-server-precheck: sesslint_precheck tools/call imports "
+    "sesslint.precheck.precheck in Python; Rust stops at "
+    "sesslint.precheck.precheck is not available (not byte-compared here).",
+    "GAP-mcp-server-scan: sesslint_scan tools/call imports sesslint.api.check_dir "
+    "in Python; Rust stops at sesslint.api.check_dir is not available "
+    "(not byte-compared here).",
+    "GAP-mcp-server-serve-readline: test_wave1_correctness MCP bounds case also "
+    "asserts bounded readline(size) on stdin; vectors assert serve output only.",
+)
+
+COVERAGE_TEST_FILES: Final[tuple[str, ...]] = (
+    "tests/cli/test_mcp.py",
+    "tests/test_wave1_correctness.py",
+)
+
+COVERED_BY_VECTORS: Final[dict[str, tuple[str, ...]]] = {
+    "tests/cli/test_mcp.py::test_initialize_handshake": ("initialize_handshake",),
+    "tests/cli/test_mcp.py::test_initialized_notification_is_dropped": (
+        "initialized_notification",
+    ),
+    "tests/cli/test_mcp.py::test_tools_list_returns_three_readonly_tools": ("tools_list",),
+    "tests/cli/test_mcp.py::test_tools_list_is_static": ("module_constants",),
+    "tests/cli/test_mcp.py::test_missing_path_is_iserror_result_not_protocol_error": (
+        "missing_path",
+    ),
+    "tests/cli/test_mcp.py::test_invalid_params_produce_error_objects": (
+        "invalid_bogus_tool",
+        "invalid_missing_path",
+        "invalid_unknown_arg",
+        "invalid_bad_profile",
+    ),
+    "tests/cli/test_mcp.py::test_unknown_method_and_malformed_json": (
+        "unknown_method",
+        "malformed_json",
+    ),
+    "tests/cli/test_mcp.py::test_ping_responds_empty_result": ("ping",),
+}
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def git_show_bytes(rev_path: str) -> bytes:
+    return subprocess.check_output(["git", "show", rev_path], cwd=repo_root())
+
+
+def verify_pin_hashes() -> None:
+    blob = git_show_bytes(f"{PYTHON_COMMIT}:src/sesslint/mcp_server.py")
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != MCP_SERVER_PY_SHA256:
+        raise SystemExit(
+            f"mcp_server.py pin sha256 mismatch: expected {MCP_SERVER_PY_SHA256}, got {digest}"
+        )
+    rs_path = repo_root() / "rust/crates/integrations/src/mcp_server.rs"
+    rs_digest = hashlib.sha256(rs_path.read_bytes()).hexdigest()
+    if rs_digest != MCP_SERVER_RS_SHA256:
+        raise SystemExit(
+            f"mcp_server.rs sha256 mismatch: expected {MCP_SERVER_RS_SHA256}, got {rs_digest}"
+        )
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def load_mcp_module() -> types.ModuleType:
+    verify_pin_hashes()
+    archive = subprocess.check_output(
+        ["git", "archive", "--format=zip", PYTHON_COMMIT, "src/sesslint"],
+        cwd=repo_root(),
+    )
+    tmp = tempfile.mkdtemp(prefix="sesslint-pinned-mcp-par-")
+    zipfile.ZipFile(io.BytesIO(archive)).extractall(tmp)
+    sys.path.insert(0, str(Path(tmp) / "src"))
+    import importlib
+
+    return importlib.import_module("sesslint.mcp_server")
+
+
+def line_msg(mcp: Any, message: dict[str, Any]) -> bytes:
+    return (json.dumps(message, sort_keys=True) + "\n").encode()
+
+
+def handle_line_outcome(mcp: Any, raw: bytes) -> dict[str, Any]:
+    out = mcp.handle_line(raw)
+    if out is None:
+        return {"kind": "none"}
+    return {"kind": "bytes", "sha256": hashlib.sha256(out).hexdigest(), "b64": b64(out)}
+
+
+def build_vectors(mcp: Any) -> list[dict[str, Any]]:
+    vectors: list[dict[str, Any]] = []
+
+    def add(vector_id: str, construct: dict[str, Any], expected: dict[str, Any]) -> None:
+        vectors.append({"id": vector_id, "construct": construct, "expected": expected})
+
+    tool_names = [tool["name"] for tool in mcp.TOOLS]
+    add(
+        "module_constants",
+        {"type": "module_constants"},
+        {
+            "protocol_version": mcp.PROTOCOL_VERSION,
+            "server_info": dict(mcp.SERVER_INFO),
+            "max_mcp_line_bytes": mcp.MAX_MCP_LINE_BYTES,
+            "tool_names": tool_names,
+            "all_exports": list(mcp.__all__),
+        },
+    )
+
+    init_req = line_msg(
+        mcp,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0"},
+            },
+        },
+    )
+    add(
+        "initialize_handshake",
+        {"type": "handle_line", "raw_b64": b64(init_req)},
+        handle_line_outcome(mcp, init_req),
+    )
+
+    notif = line_msg(mcp, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    add(
+        "initialized_notification",
+        {"type": "handle_line", "raw_b64": b64(notif)},
+        handle_line_outcome(mcp, notif),
+    )
+
+    list_req = line_msg(mcp, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    add(
+        "tools_list",
+        {"type": "handle_line", "raw_b64": b64(list_req)},
+        handle_line_outcome(mcp, list_req),
+    )
+
+    ping_req = line_msg(mcp, {"jsonrpc": "2.0", "id": 8, "method": "ping"})
+    add("ping", {"type": "handle_line", "raw_b64": b64(ping_req)}, handle_line_outcome(mcp, ping_req))
+
+    list_det = line_msg(mcp, {"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+    add(
+        "deterministic_tools_list",
+        {"type": "handle_line_twice", "raw_b64": b64(list_det)},
+        {"kind": "equal"},
+    )
+
+    unknown = line_msg(mcp, {"jsonrpc": "2.0", "id": 7, "method": "bogus/method"})
+    add(
+        "unknown_method",
+        {"type": "handle_line", "raw_b64": b64(unknown)},
+        handle_line_outcome(mcp, unknown),
+    )
+
+    malformed = b"this is not json\n"
+    add(
+        "malformed_json",
+        {"type": "handle_line", "raw_b64": b64(malformed)},
+        handle_line_outcome(mcp, malformed),
+    )
+
+    missing_path = line_msg(
+        mcp,
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "sesslint_check",
+                "arguments": {"path": "nope.jsonl"},
+            },
+        },
+    )
+    add(
+        "missing_path",
+        {"type": "handle_line", "raw_b64": b64(missing_path)},
+        handle_line_outcome(mcp, missing_path),
+    )
+
+    invalid_params = (
+        ("invalid_bogus_tool", {"name": "sesslint_bogus", "arguments": {"path": "x"}}),
+        ("invalid_missing_path", {"name": "sesslint_check", "arguments": {}}),
+        (
+            "invalid_unknown_arg",
+            {"name": "sesslint_check", "arguments": {"path": "x", "bogus": 1}},
+        ),
+        (
+            "invalid_bad_profile",
+            {"name": "sesslint_check", "arguments": {"path": "x", "profile": "nope"}},
+        ),
+    )
+    for index, (vector_id, params) in enumerate(invalid_params):
+        req = line_msg(
+            mcp,
+            {"jsonrpc": "2.0", "id": 100 + index, "method": "tools/call", "params": params},
+        )
+        add(
+            vector_id,
+            {"type": "handle_line", "raw_b64": b64(req)},
+            handle_line_outcome(mcp, req),
+        )
+
+    deep = b"[" * 2000
+    add(
+        "deep_brackets_parse_error",
+        {"type": "handle_line", "raw_b64": b64(deep)},
+        handle_line_outcome(mcp, deep),
+    )
+
+    oversized = b"{" + b"x" * (mcp.MAX_MCP_LINE_BYTES + 32)
+    add(
+        "oversized_line",
+        {"type": "handle_line", "raw_b64": b64(oversized)},
+        handle_line_outcome(mcp, oversized),
+    )
+
+    init_min = line_msg(
+        mcp,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}},
+        },
+    )
+    add(
+        "initialize_minimal",
+        {"type": "handle_line", "raw_b64": b64(init_min)},
+        handle_line_outcome(mcp, init_min),
+    )
+
+    missing_path_field = line_msg(
+        mcp,
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "sesslint_check", "arguments": {}},
+        },
+    )
+    add(
+        "tools_call_missing_path_field",
+        {"type": "handle_line", "raw_b64": b64(missing_path_field)},
+        handle_line_outcome(mcp, missing_path_field),
+    )
+
+    extras: tuple[tuple[str, bytes], ...] = (
+        ("strip_vt_ff_ping", b"\x0b{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}\x0c\n"),
+        ("strip_crlf_ping", b"\r\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\r\n"),
+        ("whitespace_only", b" \t\n\r\x0b\x0c"),
+        ("empty_line", b""),
+        ("non_object_null", b"null"),
+        ("non_object_array", b"[]"),
+    )
+    for vector_id, raw in extras:
+        add(
+            vector_id,
+            {"type": "handle_line", "raw_b64": b64(raw)},
+            handle_line_outcome(mcp, raw),
+        )
+
+    oversized_line = b"{" + b"x" * (mcp.MAX_MCP_LINE_BYTES + 32) + b"\n"
+    valid_ping = line_msg(mcp, {"jsonrpc": "2.0", "id": 7, "method": "ping"})
+    script = oversized_line + valid_ping
+    stdin = io.BytesIO(script)
+    stdout = io.BytesIO()
+    exit_code = mcp.serve(stdin, stdout)
+    stdout_bytes = stdout.getvalue()
+    replies = [json.loads(line) for line in stdout_bytes.splitlines()]
+    add(
+        "serve_oversized_then_ping",
+        {"type": "serve", "script_b64": b64(script)},
+        {
+            "exit_code": exit_code,
+            "reply_count": len(replies),
+            "first_error_code": replies[0]["error"]["code"],
+            "second_id": replies[1]["id"],
+            "second_has_empty_result": replies[1].get("result") == {},
+            "stdout_sha256": hashlib.sha256(stdout_bytes).hexdigest(),
+            "stdout_b64": b64(stdout_bytes),
+        },
+    )
+
+    return vectors
+
+
+def coverage_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for rel in COVERAGE_TEST_FILES:
+        source = git_show_bytes(f"{PYTHON_COMMIT}:{rel}").decode("utf-8")
+        for node in ast.parse(source).body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+            qualified = f"{rel}::{node.name}"
+            covered_ids = COVERED_BY_VECTORS.get(qualified)
+            row: dict[str, Any] = {
+                "test": qualified,
+                "status": "covered" if covered_ids else "not_applicable",
+            }
+            if covered_ids:
+                row["vectors"] = list(covered_ids)
+            elif qualified == "tests/cli/test_mcp.py::test_deterministic_responses":
+                row["reason"] = (
+                    "Vector checks Rust handle_line self-equality only and does not "
+                    "record pinned Python response bytes."
+                )
+            elif rel == "tests/test_wave1_correctness.py" and node.name == "test_mcp_bounds_oversized_jsonl_and_recursion_failures":
+                row["reason"] = (
+                    "Vectors cover serve/handle_line outcomes only; bounded readline "
+                    "instrumentation in the source test is not replayed."
+                )
+            elif rel == "tests/test_wave1_correctness.py":
+                row["reason"] = "Source test does not exercise sesslint.mcp_server."
+            else:
+                row["reason"] = (
+                    "Tool success paths or end-to-end recorded sequences require "
+                    "sesslint.api or sesslint.precheck behind the MCP backend seam."
+                )
+            rows.append(row)
+    return rows
+
+
+def write_outputs(out_dir: Path, vectors: list[dict[str, Any]]) -> str:
+    document = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "mcp_server_py_sha256": MCP_SERVER_PY_SHA256,
+        "mcp_server_rs_sha256": MCP_SERVER_RS_SHA256,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+        "vectors": vectors,
+    }
+    payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    vectors_path = out_dir / "vectors.json"
+    vectors_path.write_text(payload, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": SCHEMA,
+        "module": MODULE,
+        "python_commit": PYTHON_COMMIT,
+        "mcp_server_py_sha256": MCP_SERVER_PY_SHA256,
+        "mcp_server_rs_sha256": MCP_SERVER_RS_SHA256,
+        "vector_count": len(vectors),
+        "vectors_sha256": digest,
+        "generator": "rust/parity/vectors/mcp_server/generate",
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    rows = coverage_rows()
+    (out_dir / "coverage.json").write_text(
+        json.dumps({"rows": rows}, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    provenance = {
+        "contains_real_data": False,
+        "description": (
+            "Synthetic MCP stdio protocol vectors from pinned sesslint.mcp_server "
+            "(handle_line/serve JSON-RPC boundaries; no live session payloads)."
+        ),
+        "generator": "rust/parity/vectors/mcp_server/generate",
+        "origin": "synthetic",
+        "python_commit": PYTHON_COMMIT,
+        "known_parity_gaps": list(KNOWN_PARITY_GAPS),
+    }
+    (out_dir / "PROVENANCE.json").write_text(
+        json.dumps(provenance, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    fixtures = out_dir / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    prov_fixture = fixtures / "PROVENANCE.json"
+    if not prov_fixture.exists():
+        prov_fixture.write_text(
+            json.dumps(
+                {
+                    "contains_real_data": False,
+                    "origin": "synthetic",
+                    "python_commit": PYTHON_COMMIT,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+    return digest
+
+
+def main() -> int:
+    out_dir = Path(__file__).resolve().parent
+    mcp = load_mcp_module()
+    vectors = build_vectors(mcp)
+    digest = write_outputs(out_dir, vectors)
+    rows = coverage_rows()
+    print(
+        json.dumps(
+            {
+                "vectors": len(vectors),
+                "sha256": digest,
+                "covered": sum(row["status"] == "covered" for row in rows),
+                "not_applicable": sum(row["status"] == "not_applicable" for row in rows),
+            }
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

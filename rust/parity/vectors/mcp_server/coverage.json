@@ -1,0 +1,169 @@
+{
+  "rows": [
+    {
+      "test": "tests/cli/test_mcp.py::test_initialize_handshake",
+      "status": "covered",
+      "vectors": [
+        "initialize_handshake"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_initialized_notification_is_dropped",
+      "status": "covered",
+      "vectors": [
+        "initialized_notification"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_tools_list_returns_three_readonly_tools",
+      "status": "covered",
+      "vectors": [
+        "tools_list"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_tools_list_is_static",
+      "status": "covered",
+      "vectors": [
+        "module_constants"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_tools_call_check_reports_findings_as_result",
+      "status": "not_applicable",
+      "reason": "Tool success paths or end-to-end recorded sequences require sesslint.api or sesslint.precheck behind the MCP backend seam."
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_tools_call_precheck_gate",
+      "status": "not_applicable",
+      "reason": "Tool success paths or end-to-end recorded sequences require sesslint.api or sesslint.precheck behind the MCP backend seam."
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_tools_call_scan_directory",
+      "status": "not_applicable",
+      "reason": "Tool success paths or end-to-end recorded sequences require sesslint.api or sesslint.precheck behind the MCP backend seam."
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_missing_path_is_iserror_result_not_protocol_error",
+      "status": "covered",
+      "vectors": [
+        "missing_path"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_invalid_params_produce_error_objects",
+      "status": "covered",
+      "vectors": [
+        "invalid_bogus_tool",
+        "invalid_missing_path",
+        "invalid_unknown_arg",
+        "invalid_bad_profile"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_unknown_method_and_malformed_json",
+      "status": "covered",
+      "vectors": [
+        "unknown_method",
+        "malformed_json"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_ping_responds_empty_result",
+      "status": "covered",
+      "vectors": [
+        "ping"
+      ]
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_full_recorded_sequence_through_serve",
+      "status": "not_applicable",
+      "reason": "Tool success paths or end-to-end recorded sequences require sesslint.api or sesslint.precheck behind the MCP backend seam."
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_deterministic_responses",
+      "status": "not_applicable",
+      "reason": "Vector checks Rust handle_line self-equality only and does not record pinned Python response bytes."
+    },
+    {
+      "test": "tests/cli/test_mcp.py::test_no_values_leak_in_tool_results",
+      "status": "not_applicable",
+      "reason": "Tool success paths or end-to-end recorded sequences require sesslint.api or sesslint.precheck behind the MCP backend seam."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_secret_shapes_after_real_json_escapes_are_detected",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_escaped_backslash_text_does_not_create_a_secret_boundary",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_escape_run_parity_preserves_secret_boundaries",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_private_key_digest_uses_original_bytes_after_escape_shadow",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_secret_window_keeps_stripped_record_boundaries",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_short_prefix_gate_preserves_reference_boundaries",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_shared_secret_families_are_detected_and_never_echoed",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_azure_and_gcp_service_account_secret_shapes_are_detected",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_dump_session_file_uses_atomic_writer_and_lf",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_jsonl_readers_treat_unicode_separators_as_json_string_content",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_mcp_bounds_oversized_jsonl_and_recursion_failures",
+      "status": "not_applicable",
+      "reason": "Vectors cover serve/handle_line outcomes only; bounded readline instrumentation in the source test is not replayed."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_index_and_cache_recursion_fail_closed",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_bundle_chunk_count_matches_physical_lf_reference",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_sarif_artifact_uri_percent_encodes_path_bytes",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    },
+    {
+      "test": "tests/test_wave1_correctness.py::test_deterministic_python_codec_wording_and_bytes_are_stable",
+      "status": "not_applicable",
+      "reason": "Source test does not exercise sesslint.mcp_server."
+    }
+  ]
+}
