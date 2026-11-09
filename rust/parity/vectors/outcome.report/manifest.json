@@ -31,8 +31,8 @@
     "rust/crates/codec/src/canonical_codec.rs": "459bebc65da604a295226527c2797443fc60eb5aabab5aaf5279b02d2721ea31",
     "rust/crates/model/src/version.rs": "0a5bf0aeed913066e809563ca2119d4203ef36ae35a9a7d2c6d09deac65116a5",
     "rust/crates/outcome/src/contract.rs": "d779d04a4406d1db157ffdf8428d1f492a30cd2f9df75920ac5f54294d7e4872",
-    "rust/crates/outcome/src/engine.rs": "598491233aaeb6436f3b2ee04f5a9994f91a49a66b1c3cb491c55be7d8792fd0",
-    "rust/crates/outcome/src/report.rs": "f7d504c6a692ae482e12715588a1b622eb683949b31172e126713f9810a024bf",
+    "rust/crates/outcome/src/engine.rs": "77f20da3027b64412caa439a4c6d2ea78360d88fad256ae9651cc1810f1e2d6b",
+    "rust/crates/outcome/src/report.rs": "133fe340c7923733d548cc40dd0c7144d0a1bdb96035490f2d946820a0a1bf60",
     "rust/crates/outcome/src/snapshot.rs": "e8895e3bdf946a3fa206b33b293573f6b6d8a65ba80640feda551dec41bd4988"
   },
   "schema": "sesslint.parity-module-vectors/v1",

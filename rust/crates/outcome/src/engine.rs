@@ -6,6 +6,7 @@
 use crate::contract::{repr_list, Condition, Contract, Integer, Json, Mapping, Predicate, Scalar};
 use crate::snapshot::{format_instant, parse_instant_str, Instant, Record, Snapshot, Value};
 use codec::canonical_codec::{CanonicalCodec, PurePythonCanonicalCodec, Value as CodecValue};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -219,12 +220,12 @@ pub struct ItemResult {
     pub conditions: Vec<ConditionResult>,
     pub detail: Mapping,
 }
-/// Borrow observations without duplicating potentially large record collections.
+/// Borrow preloaded observations or own inputs loaded by the public API.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Evaluation<'a> {
-    pub contract: &'a Contract,
-    pub source: &'a Snapshot,
-    pub target: &'a Snapshot,
+    pub contract: Cow<'a, Contract>,
+    pub source: Cow<'a, Snapshot>,
+    pub target: Cow<'a, Snapshot>,
     pub as_of: Instant,
     pub outcome: String,
     pub outcome_reasons: Vec<String>,
@@ -1329,9 +1330,9 @@ fn reconcile<'a>(
     .collect::<Result<_, HelperError>>()?;
     coverage.insert("counts".into(), Json::Object(counts));
     Ok(Evaluation {
-        contract,
-        source,
-        target,
+        contract: Cow::Borrowed(contract),
+        source: Cow::Borrowed(source),
+        target: Cow::Borrowed(target),
         as_of,
         outcome: outcome.into(),
         outcome_reasons,
@@ -2048,7 +2049,7 @@ mod decision_tests {
         ] {
             assert_eq!(e.coverage[name], count_json(count).unwrap());
         }
-        assert!(std::ptr::eq(e.source, &s));
+        assert!(std::ptr::eq(e.source.as_ref(), &s));
     }
 
     #[test]

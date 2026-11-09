@@ -22,7 +22,7 @@
   "python_version": "CPython 3.11.9",
   "rust_sha256": {
     "contract": "d779d04a4406d1db157ffdf8428d1f492a30cd2f9df75920ac5f54294d7e4872",
-    "engine": "598491233aaeb6436f3b2ee04f5a9994f91a49a66b1c3cb491c55be7d8792fd0",
+    "engine": "77f20da3027b64412caa439a4c6d2ea78360d88fad256ae9651cc1810f1e2d6b",
     "snapshot": "e8895e3bdf946a3fa206b33b293573f6b6d8a65ba80640feda551dec41bd4988"
   },
   "schema": "sesslint.parity-module-vectors/v1",

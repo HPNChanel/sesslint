@@ -471,8 +471,8 @@ impl<'a> OutcomeReport<'a> {
             (
                 "observations",
                 Json::Object(object([
-                    ("source", snapshot_metadata(ev.source)?),
-                    ("target", snapshot_metadata(ev.target)?),
+                    ("source", snapshot_metadata(&ev.source)?),
+                    ("target", snapshot_metadata(&ev.target)?),
                 ])),
             ),
             ("coverage", Json::Object(ev.coverage.clone())),
@@ -558,7 +558,7 @@ impl<'a> OutcomeReport<'a> {
             "  incident handling:    not tracked".into(),
             "Observations:".into(),
         ]);
-        for snap in [ev.source, ev.target] {
+        for snap in [&ev.source, &ev.target] {
             lines.push(format!(
                 "  {}: {} records, {}, observed {} ({}, {})",
                 snap.role,
