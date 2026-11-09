@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+
+[package]
+name = "sesslint-differential-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+codec = { path = "../crates/codec" }
+adapters = { path = "../crates/adapters" }
+serde_json = "=1.0.151"
+
+[[bin]]
+name = "sesslint-differential-probe"
+path = "src/main.rs"

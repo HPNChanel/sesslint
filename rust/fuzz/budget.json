@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "smoke_cases": 10000,
+  "max_cases": 100000,
+  "max_line_bytes": 262144,
+  "max_corpus_bytes": 16777216,
+  "max_output_bytes": 134217728,
+  "build_timeout_seconds": 180,
+  "batch_timeout_seconds": 120,
+  "campaign_timeout_seconds": 240,
+  "cloud_max_vcpus": 2,
+  "cloud_max_parallel_jobs": 1,
+  "cloud_ttl_seconds": 450,
+  "cloud_allocated_vcpu_hours_cap": 0.25,
+  "automatic_cloud_launch": false
+}
