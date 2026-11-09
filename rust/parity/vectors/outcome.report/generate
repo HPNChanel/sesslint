@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Recompute report vectors from pinned Python and synthetic-only inputs."""
+
+import ast
+import hashlib
+import importlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+PIN = "02694d537104659df66cdd084354739f3cccc440"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+MODULE = "sesslint.outcome.report"
+SCHEMA = "sesslint.parity-module-vectors/v1"
+TEST_FILES = ["tests/outcome/test_outcome_engine.py", "tests/outcome/test_outcome_contract.py"]
+FIXTURE = "fixtures/outcome/orders/contract.json"
+FIXTURE_PROVENANCE = "fixtures/outcome/orders/PROVENANCE.json"
+TEST_NAME = "test_explain_is_deterministic_and_lists_every_condition"
+assert sys.implementation.name == "cpython" and sys.version_info[:3] == (3, 11, 9), sys.version
+
+
+def show(path):
+    return subprocess.check_output(["git", "show", f"{PIN}:{path}"], cwd=ROOT)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wire(value):
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def dump(name, value):
+    (HERE / name).write_text(
+        json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+assert json.loads(show(FIXTURE_PROVENANCE))["contains_real_data"] is False
+(HERE / "fixture-contract.json").write_bytes(show(FIXTURE))
+archive = subprocess.check_output(["git", "archive", "--format=zip", PIN, "src/sesslint"], cwd=ROOT)
+vectors = []
+family_counts = {}
+with tempfile.TemporaryDirectory(prefix="sesslint-report-vectors-") as temporary:
+    root = Path(temporary)
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        for member in z.infolist():
+            if member.is_dir():
+                continue
+            p = Path(member.filename)
+            assert (
+                not p.is_absolute() and ".." not in p.parts and p.parts[:2] == ("src", "sesslint")
+            )
+            dest = root / p
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(z.read(member))
+    sys.path.insert(0, str(root / "src"))
+    report = importlib.import_module(MODULE)
+    engine = importlib.import_module("sesslint.outcome.engine")
+    contract = importlib.import_module("sesslint.outcome.contract")
+    assert Path(report.__file__).resolve() == (root / "src/sesslint/outcome/report.py").resolve()
+    for family in ["report_cases", "explain_cases"]:
+        cases = importlib.import_module(family)
+        results = cases.expected(engine, report)
+        family_counts[family] = len(cases.cases)
+        for case, result in zip(cases.cases, results, strict=True):
+            vectors.append(
+                dict(id=len(vectors), family=family, input=case, expected_json=wire(result))
+            )
+    # Reproduce the complete pinned explanation test, including independent loads.
+    spec = contract.load_contract(HERE / "fixture-contract.json")
+    text = report.explain_contract(spec)
+    repeat = report.explain_contract(contract.load_contract(HERE / "fixture-contract.json"))
+    ids = [c.id for c in spec.conditions]
+    assert text == repeat and all(f"- {name}:" in text for name in ids)
+    assert "[advisory" in text and "INCONCLUSIVE" in text
+    fixture_id = len(vectors)
+    vectors.append(
+        dict(
+            id=fixture_id,
+            family="fixture_explain",
+            input=dict(file="fixture-contract.json"),
+            expected_json=wire(dict(ok=dict(text=text, repeat=repeat, condition_ids=ids))),
+        )
+    )
+    family_counts["fixture_explain"] = 1
+
+coverage = []
+test_hashes = {}
+for path in TEST_FILES:
+    raw = show(path)
+    test_hashes[path] = digest(raw)
+    for node in ast.parse(raw).body:
+        if not isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) or not node.name.startswith("test_"):
+            continue
+        covered = node.name == TEST_NAME and path.endswith("test_outcome_contract.py")
+        reason = (
+            "All assertions are replayed: two actual contract loads, identical explanation text, "
+            "every condition id, advisory and INCONCLUSIVE."
+            if covered
+            else "Whole source test is not reproduced by these module vectors: "
+            "loader/API/schema/report pipeline or contract-only assertions remain "
+            "outside this coverage claim."
+        )
+        coverage.append(
+            dict(
+                test_file=path,
+                test_name=node.name,
+                status="covered" if covered else "not_applicable",
+                vector_ids=[fixture_id] if covered else [],
+                reason=reason,
+            )
+        )
+assert len(coverage) == 48 and sum(r["status"] == "covered" for r in coverage) == 1
+header = wire(dict(schema=SCHEMA, module=MODULE, python_commit=PIN))
+(HERE / "vectors.json").write_text(
+    header[:-1] + ',"cases":[\n' + ",\n".join(map(wire, vectors)) + "\n]}\n",
+    encoding="utf-8",
+    newline="\n",
+)
+dump("coverage.json", dict(rows=coverage))
+python_paths = [
+    f"src/sesslint/outcome/{n}.py" for n in ["report", "engine", "contract", "snapshot"]
+] + ["src/sesslint/_canonical_codec.py", "src/sesslint/_version.py"]
+rust_paths = [
+    f"rust/crates/outcome/src/{n}.rs" for n in ["report", "engine", "contract", "snapshot"]
+] + ["rust/crates/codec/src/canonical_codec.rs", "rust/crates/model/src/version.rs"]
+dump(
+    "manifest.json",
+    dict(
+        schema=SCHEMA,
+        module=MODULE,
+        python_commit=PIN,
+        python_version="CPython 3.11.9",
+        python_sha256={p: digest(show(p)) for p in python_paths},
+        rust_sha256={p: digest((ROOT / p).read_bytes()) for p in rust_paths},
+        test_source_sha256=test_hashes,
+        fixture_sha256=digest(show(FIXTURE)),
+        fixture_provenance_sha256=digest(show(FIXTURE_PROVENANCE)),
+        generator="rust/parity/vectors/outcome.report/generate",
+        generator_sha256={
+            p: digest((HERE / p).read_bytes())
+            for p in ["generate", "report_cases.py", "explain_cases.py"]
+        },
+        case_dependency_sha256={
+            "rust/parity/vectors/outcome.engine/part03.py": digest(
+                (HERE.parent / "outcome.engine/part03.py").read_bytes()
+            )
+        },
+        vectors_sha256=digest((HERE / "vectors.json").read_bytes()),
+        coverage_sha256=digest((HERE / "coverage.json").read_bytes()),
+        vector_count=len(vectors),
+        family_counts=family_counts,
+    ),
+)
+dump(
+    "PROVENANCE.json",
+    dict(
+        contains_real_data=False,
+        origin="synthetic",
+        python_commit=PIN,
+        generator="rust/parity/vectors/outcome.report/generate",
+        known_parity_gaps=[
+            "Linked session checks use an injected synthetic backend. Default Rust linked path "
+            "is Unsupported; no live check_file/API/session proof.",
+            "Scalar Unicode, JSON depth128/intdigits4300 and typed model restrictions inherited. "
+            "Human compound session.status is a typed error; manually nested condition depth "
+            "is capped128.",
+            "CPython3.11.9 behavior only. No API/CLI/full workspace/multi-OS/release acceptance.",
+            "Only the complete pinned explanation test gets coverage credit; remaining47 source "
+            "tests are explicit not_applicable, not partial-covered.",
+        ],
+    ),
+)
+print(
+    json.dumps(
+        dict(
+            vectors=len(vectors),
+            family_counts=family_counts,
+            sha256=digest((HERE / "vectors.json").read_bytes()),
+            covered=1,
+            not_applicable=47,
+        )
+    )
+)

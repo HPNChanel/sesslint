@@ -1,0 +1,12 @@
+{
+  "contains_real_data": false,
+  "generator": "rust/parity/vectors/outcome.report/generate",
+  "known_parity_gaps": [
+    "Linked session checks use an injected synthetic backend. Default Rust linked path is Unsupported; no live check_file/API/session proof.",
+    "Scalar Unicode, JSON depth128/intdigits4300 and typed model restrictions inherited. Human compound session.status is a typed error; manually nested condition depth is capped128.",
+    "CPython3.11.9 behavior only. No API/CLI/full workspace/multi-OS/release acceptance.",
+    "Only the complete pinned explanation test gets coverage credit; remaining47 source tests are explicit not_applicable, not partial-covered."
+  ],
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
+}

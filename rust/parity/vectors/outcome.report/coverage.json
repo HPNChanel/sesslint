@@ -1,0 +1,342 @@
+{
+  "rows": [
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_orders_fixture_end_to_end_against_golden",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at06_missing_and_duplicate_per_id_not_totals",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at07_ineligible_items_are_not_applicable",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_eligibility_on_missing_field_is_undecidable",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at08_before_deadline_is_pending",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at09_missing_after_deadline_in_complete_target_is_violated",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at10_11_22_absence_needs_complete_current_target",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_unkeyed_target_rows_block_absence",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at12_late_arrival_exists_but_on_time_violated",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_on_time_uses_earliest_valid_completion",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at46_47_observation_basis",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at13_17_keys_match_exactly",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_integer_and_string_keys_compare_as_text",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_invalid_keys_are_inconclusive_not_dropped",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at14_composite_namespaced_keys",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at15_identical_retries_merge_and_conflicts_do_not",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at16_route_is_separate_from_existence",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at18_19_session_integrity_is_a_separate_dimension",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at21_unproven_source_coverage_never_verifies",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at23_mapping_problems_surface",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_field_conditions_and_typing",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_csv_values_coerce_strictly",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_any_of_advisory_and_disabled",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at41_violations_and_inconclusive_items_are_both_reported",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at42_naive_source_time_is_inconclusive",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at45_run_status_is_not_the_outcome",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_empty_or_unavailable_source",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_evaluation_instant_is_never_the_wall_clock",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_at38_deterministic_regardless_of_record_order",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_hash_keys_hide_plain_keys",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_reports_are_content_free",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_demo_snapshots_are_flagged",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_every_emitted_reason_is_documented",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_unevaluated_items_never_roll_up_to_verified",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_extreme_numbers_and_times_do_not_crash",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_equals_compares_json_numbers_numerically",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_hashed_output_order_does_not_follow_plain_keys",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_engine.py",
+      "test_name": "test_default_detail_lists_only_non_passing_conditions",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_fixture_contract_loads_and_matches_schema",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_empty_contract_is_an_error_not_a_pass",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_invalid_contracts_are_rejected",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_any_of_cannot_nest_or_hide_flags",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_every_problem_is_reported_at_once",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_load_rejects_non_strict_json",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_load_rejects_oversized_and_non_utf8",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_fingerprint_ignores_key_order_but_not_values",
+      "vector_ids": []
+    },
+    {
+      "reason": "Whole source test is not reproduced by these module vectors: loader/API/schema/report pipeline or contract-only assertions remain outside this coverage claim.",
+      "status": "not_applicable",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_warnings_flag_gaps_without_failing",
+      "vector_ids": []
+    },
+    {
+      "reason": "All assertions are replayed: two actual contract loads, identical explanation text, every condition id, advisory and INCONCLUSIVE.",
+      "status": "covered",
+      "test_file": "tests/outcome/test_outcome_contract.py",
+      "test_name": "test_explain_is_deterministic_and_lists_every_condition",
+      "vector_ids": [
+        25386
+      ]
+    }
+  ]
+}
