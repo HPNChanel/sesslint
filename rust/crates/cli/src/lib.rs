@@ -14,7 +14,7 @@ pub mod output;
 pub mod progress;
 pub mod seal;
 pub mod version;
-pub mod api {}
+pub mod api;
 pub mod common;
 pub mod render;
 pub mod scan_args;
