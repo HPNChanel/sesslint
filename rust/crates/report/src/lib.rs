@@ -14,3 +14,5 @@ pub mod report;
 pub mod html_report;
 pub mod sarif;
 pub mod triage;
+#[path = "schema/sesslint.triage.v1.rs"]
+pub mod triage_schema;
