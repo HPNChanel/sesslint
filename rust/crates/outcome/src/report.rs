@@ -1,7 +1,7 @@
 //! Outcome report presentation and user-asserted session dimension (EVD-04, EXE-03).
-//! Pinned report.py lines 1..272; no snapshot payload values are added to reports.
+//! Pinned report.py lines 1..355; no snapshot payload values are added to reports.
 //! The unported check_file integration fails with typed Unsupported by default.
-use crate::contract::{repr_list, Integer, Json, Mapping, Predicate, Scalar};
+use crate::contract::{repr_list, Condition, Contract, Integer, Json, Mapping, Predicate, Scalar};
 use crate::engine::{
     Evaluation, ItemResult, HASHED_KEY_LIMITATION, LIMITATIONS, MAX_UNMATCHED_KEYS, NOT_APPLICABLE,
     REASONS, STATUSES, VERIFIED,
@@ -678,6 +678,199 @@ pub fn describe_predicate(pred: &Predicate) -> Result<String, ReportError> {
     })
 }
 
+/// Python's default :g is six significant decimal digits, round to nearest/even.
+/// Choose fixed/scientific notation using the rounded exponent, not log10(x).
+fn general_float(value: f64) -> Result<String, ReportError> {
+    if value.is_nan() {
+        return Ok("nan".into());
+    }
+    if value.is_infinite() {
+        return Ok(if value.is_sign_positive() {
+            "inf"
+        } else {
+            "-inf"
+        }
+        .into());
+    }
+    let scientific = format!("{value:.5e}");
+    let (mantissa, exponent) = scientific
+        .split_once('e')
+        .ok_or(ReportError::Serialization)?;
+    let exponent: i32 = exponent.parse().map_err(|_| ReportError::Serialization)?;
+    if !(-4..6).contains(&exponent) {
+        let mantissa = mantissa.trim_end_matches('0').trim_end_matches('.');
+        Ok(format!(
+            "{mantissa}e{}{:02}",
+            if exponent >= 0 { "+" } else { "-" },
+            exponent.unsigned_abs()
+        ))
+    } else {
+        let places = (5 - exponent) as usize;
+        let fixed = format!("{value:.places$}");
+        Ok(if places > 0 {
+            fixed.trim_end_matches('0').trim_end_matches('.').into()
+        } else {
+            fixed
+        })
+    }
+}
+fn count_bound(value: f64) -> Result<String, ReportError> {
+    if value.is_nan() {
+        return Err(ReportError::InvalidValue(
+            "cannot convert float NaN to integer",
+        ));
+    }
+    if value.is_infinite() {
+        return Err(ReportError::InvalidValue(
+            "cannot convert float infinity to integer",
+        ));
+    }
+    if value.trunc() == 0.0 {
+        return Ok("0".into());
+    }
+    Ok(format!("{:.0}", value.trunc()))
+}
+pub fn describe_condition(cond: &Condition) -> Result<String, ReportError> {
+    describe_condition_at(cond, 0)
+}
+fn describe_condition_at(cond: &Condition, depth: usize) -> Result<String, ReportError> {
+    if depth > 128 {
+        return Err(ReportError::InvalidValue("condition nesting exceeds 128"));
+    }
+    let norm = if cond.normalize.is_empty() {
+        String::new()
+    } else {
+        format!(" (after {})", cond.normalize.join(", "))
+    };
+    let values = cond
+        .values
+        .iter()
+        .map(|v| json_text(&Json::Scalar(v.clone()), false))
+        .collect::<Result<Vec<_>, _>>()?
+        .join(", ");
+    let field = cond.field.as_deref().unwrap_or("None");
+    let mut text = match cond.kind.as_str() {
+        "exists" => "at least one matching target record exists".into(),
+        "count" => {
+            let low = count_bound(cond.minimum.unwrap_or(0.0))?;
+            let high = cond.maximum.map(count_bound).transpose()?;
+            match high {
+                None => format!("at least {low} matching target record(s) exist"),
+                Some(high) if high == low => {
+                    format!("exactly {low} matching target record(s) exist")
+                }
+                Some(high) => format!("between {low} and {high} matching target records exist"),
+            }
+        }
+        "required" => {
+            let allowed: Vec<_> = [("null", cond.allow_null), ("empty", cond.allow_empty)]
+                .into_iter()
+                .filter(|(_, v)| *v)
+                .map(|(n, _)| n)
+                .collect();
+            let extra = if allowed.is_empty() {
+                String::new()
+            } else {
+                format!(" ({} allowed)", allowed.join(" and "))
+            };
+            format!("target field {field} is present, non-null and non-empty{extra}")
+        }
+        "type" => format!(
+            "target field {field}, when present, is a {}",
+            cond.value_kind.as_deref().unwrap_or("None")
+        ),
+        "one_of" => format!("target field {field}, when present, is one of {values}{norm}"),
+        "equals" => format!(
+            "target field {field} equals source field {}{norm}",
+            cond.source_field.as_deref().unwrap_or("None")
+        ),
+        "range" => {
+            let mut bounds = Vec::new();
+            if let Some(low) = cond.minimum {
+                bounds.push(format!(">= {}", general_float(low)?));
+            }
+            if let Some(high) = cond.maximum {
+                bounds.push(format!("<= {}", general_float(high)?));
+            }
+            format!(
+                "target field {field}, when present, is a number {}",
+                bounds.join(" and ")
+            )
+        }
+        "route" => format!(
+            "when {}: target field {field} is one of {values}{norm}",
+            cond.when
+                .iter()
+                .map(describe_predicate)
+                .collect::<Result<Vec<_>, _>>()?
+                .join(" and ")
+        ),
+        "on_time" if cond.basis.as_deref() == Some("target_time") => {
+            format!("target completion time {field} is at or before the deadline")
+        }
+        "on_time" => {
+            "the record is visible in a target snapshot taken at or before the deadline".into()
+        }
+        _ => format!(
+            "any one of: {}",
+            cond.conditions
+                .iter()
+                .map(|c| describe_condition_at(c, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?
+                .join("; ")
+        ),
+    };
+    if let Some(disabled) = &cond.disabled {
+        text.push_str(&format!(" [disabled: {disabled}]"));
+    } else if cond.advisory {
+        text.push_str(" [advisory: reported, does not decide the outcome]");
+    }
+    Ok(text)
+}
+pub fn explain_contract(contract: &Contract) -> Result<String, ReportError> {
+    let short_hash: String = contract.sha256.chars().take(16).collect();
+    let mut lines = vec![format!(
+        "Contract {} v{} (sha256 {short_hash})",
+        contract.name, contract.version
+    )];
+    if let Some(description) = &contract.description {
+        if !description.is_empty() {
+            lines.push(format!("  {description}"));
+        }
+    }
+    lines.push(format!(
+        "Work items: one per distinct source key ({}), matched exactly to target key ({}).",
+        contract.source_key.join(", "),
+        contract.target_key.join(", ")
+    ));
+    if contract.eligibility.is_empty() {
+        lines.push("Applies to every keyed source record.".into());
+    } else {
+        lines.push("Applies only when all of:".into());
+        for predicate in &contract.eligibility {
+            lines.push(format!("  - {}", describe_predicate(predicate)?));
+        }
+    }
+    if let Some(due) = &contract.due {
+        lines.push(format!(
+            "Deadline: {} + {}s; before it, missing results are PENDING.",
+            due.source_time_field, due.within_seconds
+        ));
+    }
+    lines.push("Conditions:".into());
+    for c in &contract.conditions {
+        lines.push(format!("  - {}: {}", c.id, describe_condition(c)?));
+    }
+    lines.extend(
+        contract
+            .warnings()
+            .into_iter()
+            .map(|w| format!("Warning: {w}")),
+    );
+    lines.push("Absence is proven only from a target snapshot declared complete and observed at or after the deadline; otherwise the verdict is INCONCLUSIVE.".into());
+    Ok(lines.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -712,6 +905,98 @@ mod tests {
         let mut t = s.clone();
         t.role = "target".into();
         (c, s, t)
+    }
+
+    #[test]
+    fn general_format_uses_rounded_exponent_and_keeps_negative_zero() {
+        for (value, expected) in [
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (0.0001, "0.0001"),
+            (0.00001, "1e-05"),
+            (999999.4, "999999"),
+            (999999.6, "1e+06"),
+            (f64::MAX, "1.79769e+308"),
+            (f64::from_bits(1), "4.94066e-324"),
+        ] {
+            assert_eq!(general_float(value).unwrap(), expected);
+        }
+        assert_eq!(general_float(f64::NEG_INFINITY).unwrap(), "-inf");
+        assert_eq!(general_float(f64::NAN).unwrap(), "nan");
+        assert_eq!(count_bound(-0.9).unwrap(), "0");
+        assert_eq!(count_bound(1.9).unwrap(), "1");
+        assert_eq!(count_bound(-1.9).unwrap(), "-1");
+        assert!(count_bound(f64::NAN).is_err());
+        assert!(count_bound(f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn condition_descriptions_preserve_flags_null_fields_and_bound_shapes() {
+        let mut c = Condition {
+            kind: "count".into(),
+            minimum: Some(-0.9),
+            maximum: Some(0.9),
+            ..Condition::default()
+        };
+        assert_eq!(
+            describe_condition(&c).unwrap(),
+            "exactly 0 matching target record(s) exist"
+        );
+        c.kind = "required".into();
+        c.allow_null = true;
+        c.allow_empty = true;
+        c.advisory = true;
+        c.disabled = Some(String::new());
+        assert_eq!(describe_condition(&c).unwrap(),"target field None is present, non-null and non-empty (null and empty allowed) [disabled: ]");
+        c.kind = "range".into();
+        c.disabled = None;
+        c.advisory = false;
+        c.minimum = None;
+        c.maximum = None;
+        assert_eq!(
+            describe_condition(&c).unwrap(),
+            "target field None, when present, is a number "
+        );
+        let outer = Condition {
+            kind: "unknown".into(),
+            conditions: vec![c],
+            ..Condition::default()
+        };
+        assert_eq!(
+            describe_condition(&outer).unwrap(),
+            "any one of: target field None, when present, is a number "
+        );
+    }
+
+    #[test]
+    fn explain_preserves_contract_order_and_unicode_hash_prefix() {
+        let (mut c, _, _) = fixture();
+        c.description = Some("description".into());
+        c.sha256 = "🚀".repeat(20);
+        c.eligibility = vec![Predicate::new("paid", "present")];
+        c.due = Some(crate::contract::Due {
+            source_time_field: "start".into(),
+            within_seconds: 0,
+        });
+        let text = explain_contract(&c).unwrap();
+        assert!(text.starts_with(&format!(
+            "Contract synthetic v1 (sha256 {})\n  description\n",
+            "🚀".repeat(16)
+        )));
+        assert!(text.contains("Applies only when all of:\n  - paid is present and non-empty\nDeadline: start + 0s; before it, missing results are PENDING.\nConditions:\n  - exists: at least one matching target record exists"));
+        c.eligibility[0].op = "bad".into();
+        assert_eq!(explain_contract(&c), Err(ReportError::Key("bad".into())));
+        let mut child = Condition::default();
+        for _ in 0..130 {
+            child = Condition {
+                conditions: vec![child],
+                ..Condition::default()
+            };
+        }
+        assert_eq!(
+            describe_condition(&child),
+            Err(ReportError::InvalidValue("condition nesting exceeds 128"))
+        );
     }
 
     #[test]
