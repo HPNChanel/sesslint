@@ -57,7 +57,7 @@ pub mod stats;
 pub mod verify;
 pub mod watch;
 pub mod registry;
-pub mod main__ {}
+pub mod main__;
 
 use std::convert::Infallible;
 use std::env;

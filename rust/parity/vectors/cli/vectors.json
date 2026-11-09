@@ -3,7 +3,7 @@
   "module": "sesslint.cli",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "cli_init_py_sha256": "aa32db5fee47d314773622038ef164bd83175c83584361d0aa34e9f2ae17c4c9",
-  "cli_lib_rs_sha256": "9595b34b7546aebaf9425795ef44e3b886c03011fbe7783fe818fb03a3e82c64",
+  "cli_lib_rs_sha256": "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66",
   "python_all": [
     "CHECK_EXIT_LINES",
     "CHECK_EXIT_NOTES",
