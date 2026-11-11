@@ -270,7 +270,7 @@ class RunnerTests(unittest.TestCase):
         # registries must fail before Git, venv setup or implementation capture.
         for name in ("run", "divergences.py"):
             (self.root / name).write_bytes((HERE / name).read_bytes())
-        (self.root / "PIN").write_bytes((PIN + "\n").encode("ascii"))
+        (self.root / "PIN").write_bytes((HERE / "PIN").read_bytes())
         registry = self.root / "KNOWN_DIVERGENCES.md"
         pending = entry()
         pending["reviewer"] = None
@@ -294,6 +294,97 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(result.stderr, ("reason=" + reason + "\n").encode())
                 self.assertNotIn(b"synthetic-reference", result.stdout + result.stderr)
                 self.assertFalse((self.root / "run-work").exists())
+
+    def write_corpus(self, rel, commit, vectors, gaps=None, coverage=None):
+        folder = self.root / rel
+        folder.mkdir(parents=True)
+        body = {
+            "python_commit": commit,
+            "known_parity_gaps": [] if gaps is None else gaps,
+            "vectors": vectors,
+        }
+        (folder / "vectors.json").write_text(json.dumps(body), encoding="utf-8", newline="\n")
+        if coverage is not None:
+            (folder / "coverage.json").write_text(
+                json.dumps({"rows": coverage}), encoding="utf-8", newline="\n"
+            )
+
+    def census(self, name, mapping, pin):
+        runner = self.runner
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            patch.object(runner, "HERE", self.root),
+            patch.object(runner, "CRATE_CORPORA", mapping),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = runner.census_crate(name, pin)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_crate_match_requires_recorded_rust_equality(self):
+        pin = "02694d537104659df66cdd084354739f3cccc440"
+        expected = {"text": "ok"}
+        self.write_corpus("vectors/one", pin, [{"id": "v", "expected": expected, "rust": expected}])
+        code, out, err = self.census("demo", {"demo": ("vectors/one",)}, pin)
+        self.assertEqual(code, 0)
+        self.assertIn("diff=0\n", out)
+        self.assertIn("skip=0\n", out)
+        self.assertIn("match=1\n", out)
+        self.assertEqual(err, "")
+        self.assertFalse((self.root / "receipts").exists())
+
+    def test_unexecuted_na_and_difference_fail_closed(self):
+        pin = "02694d537104659df66cdd084354739f3cccc440"
+        self.write_corpus(
+            "vectors/one",
+            pin,
+            [{"id": "v", "expected": {"text": "ok"}}],
+            gaps=["GAP-demo"],
+            coverage=[{"test": "tests/test_demo.py::test_demo", "status": "not_applicable"}],
+        )
+        code, out, _ = self.census("demo", {"demo": ("vectors/one",)}, pin)
+        self.assertEqual(code, 1)
+        self.assertIn("skip=2\n", out)
+        self.assertIn("na=1\n", out)
+        self.assertIn("gap=one:GAP-demo\n", out)
+        self.assertNotIn("compare=match", out)
+
+    def test_case_rows_are_comparisons(self):
+        pin = "02694d537104659df66cdd084354739f3cccc440"
+        self.write_corpus(
+            "vectors/one",
+            pin,
+            [],
+        )
+        folder = self.root / "vectors" / "one"
+        body = {
+            "python_commit": pin,
+            "known_parity_gaps": [],
+            "cases": [{"id": 0, "expected_json": "{\"ok\":true}"}],
+        }
+        (folder / "vectors.json").write_text(json.dumps(body), encoding="utf-8", newline="\n")
+        code, out, _ = self.census("demo", {"demo": ("vectors/one",)}, pin)
+        self.assertEqual(code, 1)
+        self.assertIn("vectors=1\n", out)
+        self.assertIn("unexecuted=1\n", out)
+        self.assertIn("skip=1\n", out)
+
+    def test_unknown_crate_and_mixed_fixture_refuse(self):
+        runner = self.runner
+        for args, reason in (
+            (["--strict", "--crate", "not-a-crate"], "unknown_crate"),
+            (["--crate", "codec", "--fixture", "fixtures/x"], "crate_and_fixture"),
+        ):
+            with self.subTest(reason=reason):
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = runner.main(args)
+                self.assertEqual(code, 2)
+                self.assertIn(f"reason={reason}", err.getvalue())
+                self.assertNotIn("compare=match", out.getvalue())
+
+    def test_real_corpora_are_assigned_once(self):
+        self.assertEqual(self.runner.unmapped_corpora(), [])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,85 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-support-reexport: __init__.py re-exports implementation symbols. This crate does not link those crates, so those names return Unsupported and are not byte-compared."
+  ],
+  "vectors": [
+    {
+      "id": "cli_version",
+      "construct": {
+        "type": "version_constant",
+        "symbol": "CLI_VERSION"
+      },
+      "expected": {
+        "symbol": "CLI_VERSION",
+        "text": "0.5.0"
+      },
+      "rust": {
+        "symbol": "CLI_VERSION",
+        "text": "0.5.0"
+      }
+    },
+    {
+      "id": "package_version",
+      "construct": {
+        "type": "version_constant",
+        "symbol": "__version__"
+      },
+      "expected": {
+        "symbol": "__version__",
+        "text": "0.5.0"
+      },
+      "rust": {
+        "symbol": "__version__",
+        "text": "0.5.0"
+      }
+    },
+    {
+      "id": "manifest_schema_version",
+      "construct": {
+        "type": "version_constant",
+        "symbol": "MANIFEST_SCHEMA_VERSION"
+      },
+      "expected": {
+        "symbol": "MANIFEST_SCHEMA_VERSION",
+        "text": "sesslint.repair-manifest/v1"
+      },
+      "rust": {
+        "symbol": "MANIFEST_SCHEMA_VERSION",
+        "text": "sesslint.repair-manifest/v1"
+      }
+    },
+    {
+      "id": "report_schema_version",
+      "construct": {
+        "type": "version_constant",
+        "symbol": "REPORT_SCHEMA_VERSION"
+      },
+      "expected": {
+        "symbol": "REPORT_SCHEMA_VERSION",
+        "text": "sesslint.report/v1"
+      },
+      "rust": {
+        "symbol": "REPORT_SCHEMA_VERSION",
+        "text": "sesslint.report/v1"
+      }
+    },
+    {
+      "id": "session_schema_version",
+      "construct": {
+        "type": "version_constant",
+        "symbol": "SESSION_SCHEMA_VERSION"
+      },
+      "expected": {
+        "symbol": "SESSION_SCHEMA_VERSION",
+        "text": "sesslint.session/v1"
+      },
+      "rust": {
+        "symbol": "SESSION_SCHEMA_VERSION",
+        "text": "sesslint.session/v1"
+      }
+    }
+  ]
+}

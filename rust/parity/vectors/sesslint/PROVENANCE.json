@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic sesslint barrel constants from the pinned _version.py. No session text is stored.",
+  "generator": "rust/parity/vectors/sesslint/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-support-reexport: __init__.py re-exports implementation symbols. This crate does not link those crates, so those names return Unsupported and are not byte-compared."
+  ]
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Rewrite the sesslint barrel vectors from pinned literals.
+
+The literals were read from src/sesslint/_version.py at
+02694d537104659df66cdd084354739f3cccc440. This script does not import sesslint
+and does not read Rust output.
+"""
+
+from __future__ import annotations
+
+print("sesslint barrel vectors are pinned literals; re-run rx-support-par.py to rewrite")

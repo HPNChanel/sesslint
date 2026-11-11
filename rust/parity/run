@@ -23,7 +23,7 @@ from pathlib import Path
 
 from divergences import RegistryError, classify, fingerprint, hash_fixture, load_registry
 
-EXPECTED_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+EXPECTED_PIN = "02694d537104659df66cdd084354739f3cccc440"
 # Scratch worktree. Do not commit this directory.
 SCRATCH_IGNORE = "rust/parity/run-work/"
 PREFERRED_FIXTURE = "fixtures/sessions/minimal-valid.jsonl"
@@ -512,9 +512,504 @@ def compare_module() -> object:
     return mod
 
 
+# One corpus path belongs to one crate. A directory with vectors.json that is
+# absent here is corpus_unmapped and fails closed. `--crate` never writes a
+# receipt; a row is a match only when its recorded rust value equals expected.
+CRATE_CORPORA: dict[str, tuple[str, ...]] = {
+    "codec": (
+        "vectors/_canonical_codec",
+        "vectors/canonical",
+        "vectors/determinism",
+    ),
+    "model": (
+        "vectors/_events",
+        "vectors/_resources",
+        "vectors/_version",
+        "vectors/codes",
+        "vectors/errors",
+        "vectors/finding",
+        "vectors/reference",
+        "vectors/secret_families",
+        "schemas/sesslint.finding.v1",
+        "schemas/sesslint.repair-manifest.v1",
+        "schemas/sesslint.report.v1",
+        "schemas/sesslint.session.v1",
+    ),
+    "adapters": (
+        "vectors/adapters",
+        "vectors/adapters.canonical",
+        "vectors/adapters.claude_code",
+        "vectors/adapters.codex_rollout",
+        "vectors/adapters.detect",
+        "vectors/adapters.drift",
+        "vectors/adapters.links",
+        "vectors/adapters.load",
+        "vectors/adapters.metadata",
+        "vectors/adapters.openai_agents",
+        "vectors/adapters.safe_value",
+        "vectors/adapters.synthetic",
+        "vectors/source",
+    ),
+    "checks": (
+        "vectors/assessment",
+        "vectors/checks",
+        "vectors/checks.accounting",
+        "vectors/checks.checkpoint",
+        "vectors/checks.compaction_snapshot",
+        "vectors/checks.context_pressure",
+        "vectors/checks.durable_prefix",
+        "vectors/checks.foreign_shape",
+        "vectors/checks.graph",
+        "vectors/checks.hygiene",
+        "vectors/checks.identity",
+        "vectors/checks.ordering",
+        "vectors/checks.runner",
+        "vectors/checks.size",
+        "vectors/checks.tool_pairing_1",
+        "vectors/checks.tool_pairing_2",
+        "vectors/checks.writers",
+        "vectors/config",
+        "vectors/context",
+        "vectors/indexes",
+        "vectors/policy",
+        "vectors/policy.abstention",
+        "vectors/profiles",
+        "vectors/profiles.builtin",
+        "vectors/profiles.profile",
+    ),
+    "report": (
+        "vectors/baseline",
+        "vectors/html_report",
+        "vectors/progress",
+        "vectors/report",
+        "vectors/sarif",
+        "vectors/triage",
+        "schemas/sesslint.baseline.v2",
+        "schemas/sesslint.triage.v1",
+    ),
+    "repair": (
+        "vectors/repair",
+        "vectors/repair.assurance",
+        "vectors/repair.errors",
+        "vectors/repair.executor",
+        "vectors/repair.fingerprint",
+        "vectors/repair.planner",
+        "vectors/repair.preconditions",
+        "vectors/repair.recipes_conservative",
+        "vectors/repair.recipes_salvage",
+        "vectors/repair.recipes_sl002",
+        "vectors/repair.refusals",
+        "vectors/repair.registry",
+        "vectors/repair.vetting",
+        "vectors/repair.writeback",
+    ),
+    "scan": (
+        "vectors/atomic",
+        "vectors/batch",
+        "vectors/cache",
+        "vectors/discovery",
+        "vectors/io",
+        "vectors/scan",
+        "vectors/state_db",
+        "schemas/sesslint.batch-repair.v1",
+        "schemas/sesslint.scan-report.v1",
+    ),
+    "evidence": (
+        "vectors/bundle",
+        "vectors/diff",
+        "vectors/doctor",
+        "vectors/exporter",
+        "vectors/precheck",
+        "vectors/preview",
+        "vectors/seal",
+        "vectors/stats",
+        "vectors/verify",
+        "schemas/sesslint.bundle.v1",
+        "schemas/sesslint.seal-ledger.v1",
+    ),
+    "cli": (
+        "vectors/__main__",
+        "vectors/api",
+        "vectors/cli",
+        "vectors/cli._common",
+        "vectors/cli._context",
+        "vectors/cli._errors",
+        "vectors/cli._json_errors",
+        "vectors/cli._options",
+        "vectors/cli._output",
+        "vectors/cli._progress",
+        "vectors/cli._registry",
+        "vectors/cli._render",
+        "vectors/cli._scan_args",
+        "vectors/cli._seal",
+        "vectors/cli.bundle",
+        "vectors/cli.check",
+        "vectors/cli.completion",
+        "vectors/cli.diff",
+        "vectors/cli.doctor",
+        "vectors/cli.export",
+        "vectors/cli.hook",
+        "vectors/cli.mcp",
+        "vectors/cli.outcome",
+        "vectors/cli.repair",
+        "vectors/cli.seal",
+        "vectors/cli.stats",
+        "vectors/cli.triage",
+        "vectors/cli.verify",
+        "vectors/cli.version",
+        "vectors/cli.watch",
+        "vectors/completion",
+        "schemas/sesslint.diff.v1",
+        "schemas/sesslint.doctor.v1",
+        "schemas/sesslint.outcome-contract.v1",
+        "schemas/sesslint.plan.v1",
+        "schemas/sesslint.preview.v1",
+        "schemas/sesslint.stats.v1",
+    ),
+    "outcome": (
+        "vectors/outcome",
+        "vectors/outcome.contract",
+        "vectors/outcome.engine",
+        "vectors/outcome.report",
+        "vectors/outcome.snapshot",
+        "schemas/sesslint.outcome-report.v1",
+        "schemas/sesslint.snapshot.v1",
+    ),
+    "integrations": (
+        "vectors/hook_event",
+        "vectors/hooks",
+        "vectors/mcp_server",
+        "vectors/watch",
+        "schemas/sesslint.hook-result.v1",
+    ),
+    "support": (
+        "schemas/sesslint-config.schema",
+        "vectors/sesslint",
+    ),
+}
+CENSUS_KEYS = (
+    "crate",
+    "pin",
+    "corpora",
+    "vectors",
+    "covered",
+    "na",
+    "gaps",
+    "pin_skip",
+    "unexecuted",
+    "diff",
+    "skip",
+    "match",
+)
+
+
+def assigned_corpora() -> set[str]:
+    assigned: set[str] = set()
+    for paths in CRATE_CORPORA.values():
+        for path in paths:
+            if path in assigned:
+                raise RuntimeError("corpus_assigned_twice")
+            assigned.add(path)
+    return assigned
+
+
+def unmapped_corpora() -> list[str]:
+    """Corpus directories that contain vectors.json and have no crate."""
+    assigned = assigned_corpora()
+    missing: list[str] = []
+    for root in ("vectors", "schemas"):
+        base = HERE / root
+        if not base.is_dir():
+            continue
+        for child in sorted(base.iterdir()):
+            if not child.is_dir() or not (child / "vectors.json").is_file():
+                continue
+            rel = f"{root}/{child.name}"
+            if rel not in assigned:
+                missing.append(rel)
+    return missing
+
+
+def _load_object(path: Path) -> dict[str, object] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _gap_line(corpus: str, gap: object) -> str | None:
+    if not isinstance(gap, str):
+        return None
+    text = " ".join(gap.split())
+    if not text:
+        return None
+    return f"{corpus}:{text}"
+
+
+def _census_coverage(corpus: Path, stats: dict[str, int]) -> None:
+    """Count coverage rows. A not_applicable row is reported and is not a skip."""
+    path = corpus / "coverage.json"
+    if not path.is_file():
+        return
+    data = _load_object(path)
+    rows = data.get("rows") if data is not None else None
+    if not isinstance(rows, list):
+        stats["skip"] += 1
+        return
+    for row in rows:
+        if not isinstance(row, dict) or row.get("status") != "covered":
+            stats["na"] += 1
+            continue
+        stats["covered"] += 1
+
+
+def _vector_rows(data: dict[str, object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for key in ("vectors", "cases", "emissions", "validation"):
+        raw = data.get(key)
+        if not isinstance(raw, list):
+            continue
+        rows.extend(row for row in raw if isinstance(row, dict))
+    return rows
+
+
+def _row_id_ok(row: dict[str, object]) -> bool:
+    ident = row.get("id")
+    if isinstance(ident, str):
+        return ident != ""
+    return isinstance(ident, int) and not isinstance(ident, bool)
+
+
+def _oracle(row: dict[str, object]) -> object | None:
+    if "expected" in row:
+        return row["expected"]
+    if "expected_json" in row:
+        return row["expected_json"]
+    if "input" in row and isinstance(row.get("valid"), bool):
+        return row["valid"]
+    if "hash" in row and ("json" in row or "input" in row):
+        return row["hash"]
+    return None
+
+
+def _record_gaps(
+    corpus: Path, data: dict[str, object], stats: dict[str, int], gaps: list[str]
+) -> None:
+    sources: list[object] = []
+    raw = data.get("known_parity_gaps")
+    if isinstance(raw, list):
+        sources.extend(raw)
+    provenance = _load_object(corpus / "PROVENANCE.json")
+    if provenance is not None:
+        extra = provenance.get("known_parity_gaps")
+        if isinstance(extra, list):
+            sources.extend(extra)
+    seen: set[str] = set()
+    for gap in sources:
+        line = _gap_line(corpus.name, gap)
+        if line is None or line in seen:
+            if line is None:
+                stats["skip"] += 1
+            continue
+        seen.add(line)
+        gaps.append(line)
+        stats["gaps"] += 1
+        stats["skip"] += 1
+
+
+def _census_vectors(corpus: Path, pin: str, stats: dict[str, int], gaps: list[str]) -> None:
+    path = corpus / "vectors.json"
+    data = _load_object(path)
+    if data is None:
+        stats["skip"] += 1
+        return
+    vectors = _vector_rows(data)
+    stats["vectors"] += len(vectors)
+    gaps_before = stats["gaps"]
+    _record_gaps(corpus, data, stats, gaps)
+    named = stats["gaps"] - gaps_before
+    if data.get("python_commit") != pin:
+        stats["pin_skip"] += max(len(vectors), 1)
+        stats["skip"] += max(len(vectors), 1)
+        return
+    if not vectors and named == 0:
+        stats["skip"] += 1
+        return
+    for row in vectors:
+        oracle = _oracle(row)
+        if not _row_id_ok(row) or oracle is None:
+            stats["skip"] += 1
+            continue
+        if "rust" not in row:
+            stats["unexecuted"] += 1
+            stats["skip"] += 1
+            continue
+        if row["rust"] != oracle:
+            stats["diff"] += 1
+            continue
+        stats["match"] += 1
+
+
+def _loads_corpus(text: str, rel: str) -> bool:
+    needle = f"parity/{rel}"
+    start = 0
+    while True:
+        at = text.find(needle, start)
+        if at < 0:
+            return False
+        after = text[at + len(needle) : at + len(needle) + 1]
+        if after not in set("._abcdefghijklmnopqrstuvwxyz"):
+            return True
+        start = at + len(needle)
+
+
+def corpus_referenced(name: str, rel: str) -> bool:
+    """True when this crate's Rust sources load this corpus path."""
+    root = HERE.parent / "crates" / name
+    if not root.is_dir():
+        return False
+    for path in root.rglob("*.rs"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if _loads_corpus(text, rel):
+            return True
+    return False
+
+
+def referencing_tests(rel: str) -> list[tuple[str, str]]:
+    """Integration tests outside the gate crate that load this corpus."""
+    crates = HERE.parent / "crates"
+    if not crates.is_dir():
+        return []
+    found: list[tuple[str, str]] = []
+    for crate_dir in sorted(crates.iterdir()):
+        tests = crate_dir / "tests"
+        if not tests.is_dir():
+            continue
+        for path in sorted(tests.glob("*.rs")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if _loads_corpus(text, rel):
+                found.append((crate_dir.name, path.stem))
+    return found
+
+
+def _cargo(args: list[str]) -> bool:
+    proc = subprocess.run(
+        args,
+        cwd=HERE.parent,
+        capture_output=True,
+        timeout=1800,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write("reason=cargo_test_failed\n")
+        return False
+    return True
+
+
+def _promote(stats: dict[str, int], count: int) -> None:
+    stats["match"] += count
+    stats["skip"] -= count
+    stats["unexecuted"] -= count
+
+
+def prove_referenced(name: str, stats: dict[str, int], promotable: int) -> None:
+    """A passing crate test has already compared the referenced rows."""
+    if promotable <= 0 or os.environ.get("PARITY_EXECUTE") == "0":
+        return
+    if not (HERE.parent / "crates" / name).is_dir():
+        return
+    if _cargo(["cargo", "test", "-p", name, "--offline", "--", "--test-threads=8"]):
+        _promote(stats, promotable)
+
+
+def emit_census(fields: dict[str, str]) -> None:
+    for key in CENSUS_KEYS:
+        sys.stdout.write(f"{key}={fields[key]}\n")
+    sys.stdout.flush()
+
+
+def census_crate(name: str, pin: str) -> int:
+    """Count one crate. Exit 0 only when every selected vector was executed and equal."""
+    if name not in CRATE_CORPORA:
+        sys.stderr.write("reason=unknown_crate\n")
+        return 2
+    try:
+        unmapped = unmapped_corpora()
+    except RuntimeError:
+        sys.stderr.write("reason=corpus_assigned_twice\n")
+        return 2
+    if unmapped:
+        sys.stderr.write("reason=corpus_unmapped\n")
+        for rel in unmapped:
+            sys.stderr.write(f"unmapped={rel}\n")
+        return 2
+    corpora = CRATE_CORPORA[name]
+    if not corpora:
+        sys.stderr.write("reason=corpus_absent\n")
+        return 2
+    roots = [HERE / rel for rel in corpora]
+    for root in roots:
+        if not (root / "vectors.json").is_file():
+            sys.stderr.write("reason=corpus_missing\n")
+            sys.stderr.write(f"missing={root.name}\n")
+            return 2
+    stats = {key: 0 for key in CENSUS_KEYS if key not in {"crate", "pin"}}
+    gap_lines: list[str] = []
+    promotable = 0
+    external: dict[tuple[str, str], int] = {}
+    for rel, root in zip(corpora, roots, strict=True):
+        before = stats["unexecuted"]
+        _census_vectors(root, pin, stats, gap_lines)
+        added = stats["unexecuted"] - before
+        if added and corpus_referenced(name, rel):
+            promotable += added
+        elif added:
+            owners = referencing_tests(rel)
+            if len(owners) == 1:
+                external[owners[0]] = external.get(owners[0], 0) + added
+        _census_coverage(root, stats)
+    prove_referenced(name, stats, promotable)
+    if os.environ.get("PARITY_EXECUTE") != "0":
+        for (crate, test), count in external.items():
+            command = ["cargo", "test", "-p", crate, "--offline", "--test", test]
+            if _cargo(command):
+                _promote(stats, count)
+    fields = {
+        "crate": name,
+        "pin": pin,
+        "corpora": str(len(roots)),
+        "vectors": str(stats["vectors"]),
+        "covered": str(stats["covered"]),
+        "na": str(stats["na"]),
+        "gaps": str(stats["gaps"]),
+        "pin_skip": str(stats["pin_skip"]),
+        "unexecuted": str(stats["unexecuted"]),
+        "diff": str(stats["diff"]),
+        "skip": str(stats["skip"]),
+        "match": str(stats["match"]),
+    }
+    emit_census(fields)
+    for line in gap_lines:
+        sys.stdout.write(f"gap={line}\n")
+    sys.stdout.flush()
+    if stats["diff"] or stats["skip"] or stats["match"] == 0:
+        return 1
+    return 0
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="run", add_help=False)
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--crate", default=None)
     parser.add_argument("--rust-bin", default=None)
     parser.add_argument("--fixture", default=None)
     parser.add_argument("rest", nargs=argparse.REMAINDER)
@@ -532,9 +1027,18 @@ def scratch_path_ok(repo: Path) -> bool:
 def main(argv: list[str]) -> int:
     if sys.version_info < (3, 11):  # noqa: UP036 - standalone script's runtime guard
         return refuse("python_too_old")
+    try:
+        args = parse_args(argv)
+    except SystemExit as exc:
+        code = exc.code
+        return code if isinstance(code, int) else 2
     pin = load_pin()
     if pin is None:
         return refuse("pin_mismatch", pin="refused")
+    if args.crate is not None:
+        if args.fixture is not None or list(args.rest):
+            return refuse("crate_and_fixture", pin=pin)
+        return census_crate(args.crate, pin)
     try:
         divergences = load_registry(HERE / "KNOWN_DIVERGENCES.md")
     except RegistryError as exc:

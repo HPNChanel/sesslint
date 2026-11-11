@@ -1,0 +1,61 @@
+{
+  "module": "sesslint",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "test": "tests/test_smoke.py::test_import_version",
+      "status": "not_applicable",
+      "reason": "missing stop: hasattr, isinstance, and a semver-shaped prefix together; an exact constant compare is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_cli_help",
+      "status": "not_applicable",
+      "reason": "missing stop: CLI help text and exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_cli_version",
+      "status": "not_applicable",
+      "reason": "missing stop: CLI version text and exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_cli_bare_invocation",
+      "status": "not_applicable",
+      "reason": "missing stop: a bare CLI invocation exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_cli_unknown_flag",
+      "status": "not_applicable",
+      "reason": "missing stop: an unknown flag exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_subprocess_entrypoint_help",
+      "status": "not_applicable",
+      "reason": "missing stop: a subprocess help exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_subprocess_entrypoint_version",
+      "status": "not_applicable",
+      "reason": "missing stop: a subprocess version exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_subprocess_entrypoint_unknown_flag",
+      "status": "not_applicable",
+      "reason": "missing stop: a subprocess unknown-flag exit together; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_license_present",
+      "status": "not_applicable",
+      "reason": "missing stop: a license file marker check; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_license_adversarial_validation",
+      "status": "not_applicable",
+      "reason": "missing stop: an adversarial license marker check; a version constant is not this"
+    },
+    {
+      "test": "tests/test_smoke.py::test_no_network_imports",
+      "status": "not_applicable",
+      "reason": "missing stop: an import-graph check; a version constant is not this"
+    }
+  ]
+}
