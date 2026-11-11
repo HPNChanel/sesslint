@@ -2,10 +2,10 @@
 
 use repair::planner::{
     compute_events_source_hash, get_plan_schema_path, load_plan_schema, plan, PlanError, PlanKey,
-    PlanPolicy, PlanProfile, PlanSchemaError, PlanStep, PlanValue, RepairPlan,
-    ALL, ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, MAX_STEPS,
-    NON_EVENT_LOSS_CLASSES, PLAN_VERSION, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
-    SCHEMA_PATH_UNAVAILABLE, SYNTHETIC_STEP_FP,
+    PlanPolicy, PlanProfile, PlanSchemaError, PlanStep, PlanValue, RepairPlan, ALL,
+    ALLOWED_LOSS_CLASSES, EMPTY_EVENTS_HASH, EVENT_DROP_RECIPES, MAX_STEPS, NON_EVENT_LOSS_CLASSES,
+    PLAN_VERSION, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE, SCHEMA_PATH_UNAVAILABLE,
+    SYNTHETIC_STEP_FP,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -89,7 +89,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -105,7 +111,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)
@@ -277,7 +284,11 @@ fn assert_schema_path_gap(case: &VectorCase) {
     let err = get_plan_schema_path();
     assert_eq!(err, PlanSchemaError, "{}", case.id);
     assert_eq!(err.to_string(), SCHEMA_PATH_UNAVAILABLE, "{}", case.id);
-    assert!(!err.to_string().contains("sesslint.plan.v1.json"), "{}", case.id);
+    assert!(
+        !err.to_string().contains("sesslint.plan.v1.json"),
+        "{}",
+        case.id
+    );
 }
 
 fn assert_schema_load_gap(case: &VectorCase) {
@@ -330,10 +341,7 @@ fn json_to_plan_value(value: &JsonValue) -> PlanValue {
     }
 }
 
-fn json_field<'a>(
-    obj: &'a [(String, JsonValue)],
-    key: &str,
-) -> Result<&'a JsonValue, ParseError> {
+fn json_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a JsonValue, ParseError> {
     let value = obj
         .iter()
         .find(|(k, _)| k == key)
@@ -345,11 +353,9 @@ fn json_field<'a>(
 
 fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
-        Some((_, JsonValue::Number(raw))) => raw
-            .parse::<i64>()
-            .map_err(|_| ParseError {
-                message: format!("{key} must be int"),
-            }),
+        Some((_, JsonValue::Number(raw))) => raw.parse::<i64>().map_err(|_| ParseError {
+            message: format!("{key} must be int"),
+        }),
         _ => Err(ParseError {
             message: format!("{key} must be number"),
         }),

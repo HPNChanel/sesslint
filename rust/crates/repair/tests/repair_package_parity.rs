@@ -41,9 +41,9 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_REPAIR_INIT_PY_SHA256: &str =
     "7f8ffb2a4432851dd2e2bf1f36ec754bf8d23221e8d8f148456a53ac2d2a9f5d";
 const EXPECTED_REPAIR_LIB_RS_SHA256: &str =
-    "b0a2919bee3bc0b12fb0100cc0d6264e8354086ddc768c017b47ec3e1a622138";
+    "0d57187b4d4c97cf83eceafe3381aa7c6d7b233d25cb71d585db317fe10de765";
 const EXPECTED_VECTORS_SHA256: &str =
-    "6559f562e383d1e0f674d155fbf2705294b530c47716232b266200f1e0aa760f";
+    "10c95812f705f0a719552e97423a25a76b115492c84f222adc48c02cc5a4f2ce";
 
 const STRING_ONLY_BARREL_NAMES: &[&str] = &["PRECONDITION_FUNCS", "REGISTRY", "run_all_checks"];
 
@@ -71,7 +71,10 @@ fn repair_package_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -178,15 +181,27 @@ fn assert_case(case: &VectorCase, meta: &[(String, JsonValue)]) {
     assert_eq!(want, py_meta, "vector names must match document python_all");
     assert_eq!(want.len(), 90, "pinned __all__ length");
 
-    assert_eq!(repair::ALL, want.as_slice(), "repair::ALL must match pin order");
+    assert_eq!(
+        repair::ALL,
+        want.as_slice(),
+        "repair::ALL must match pin order"
+    );
     assert_eq!(
         repair::ALL.first().copied(),
         Some("ALLOWED_LOSS_CLASSES"),
         "ALL[0]"
     );
-    assert_eq!(repair::ALL.get(11).copied(), Some("PRECONDITION_FUNCS"), "ALL[11]");
+    assert_eq!(
+        repair::ALL.get(11).copied(),
+        Some("PRECONDITION_FUNCS"),
+        "ALL[11]"
+    );
     assert_eq!(repair::ALL.get(24).copied(), Some("REGISTRY"), "ALL[24]");
-    assert_eq!(repair::ALL.get(80).copied(), Some("run_all_checks"), "ALL[80]");
+    assert_eq!(
+        repair::ALL.get(80).copied(),
+        Some("run_all_checks"),
+        "ALL[80]"
+    );
     assert_eq!(
         repair::ALL.last().copied(),
         Some("apply_torn_terminal_record_discard"),
@@ -548,7 +563,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -564,7 +585,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().expect("chunk"));
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

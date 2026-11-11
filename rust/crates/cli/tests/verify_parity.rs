@@ -2,8 +2,8 @@
 
 use cli::options::{ArgAction, ArgDefault, ArgumentDecl, DefaultKeyword};
 use cli::verify::{
-    configure, DeclaredDefault, DeclaredHelp, DeclaredType,
-    DefaultKeyword as VerifyDefaultKeyword, LocalArgument, Nargs, RecordedArgument, NAME, TYPE_PATH,
+    configure, DeclaredDefault, DeclaredHelp, DeclaredType, DefaultKeyword as VerifyDefaultKeyword,
+    LocalArgument, Nargs, RecordedArgument, NAME, TYPE_PATH,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -146,8 +146,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter()
-            .any(|item| gap_contains(item, GAP_API_VERIFY)),
+        gaps.iter().any(|item| gap_contains(item, GAP_API_VERIFY)),
         "vectors.json must list {GAP_API_VERIFY}"
     );
 }
@@ -256,7 +255,12 @@ fn assert_local_argument(
         string_field(spec, "action").expect("action"),
         "action[{index}] for {case_id}"
     );
-    assert_verify_nargs(decl.nargs, optional_string_field(spec, "nargs").expect("nargs"), case_id, index);
+    assert_verify_nargs(
+        decl.nargs,
+        optional_string_field(spec, "nargs").expect("nargs"),
+        case_id,
+        index,
+    );
     assert_declared_type(
         decl.ty,
         optional_string_field(spec, "type_name").expect("type_name"),
@@ -298,12 +302,7 @@ fn assert_local_argument(
         bool_field(spec, "required").expect("required"),
         "required[{index}] for {case_id}"
     );
-    assert_required_keyword(
-        decl.required_keyword,
-        spec,
-        case_id,
-        index,
-    );
+    assert_required_keyword(decl.required_keyword, spec, case_id, index);
 }
 
 fn assert_shared_argument(
@@ -361,20 +360,13 @@ fn assert_shared_argument(
     );
 }
 
-fn assert_declared_help(
-    actual: DeclaredHelp,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_help(actual: DeclaredHelp, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DeclaredHelp::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
         (DeclaredHelp::Text(got), JsonValue::Str(want)) => {
             assert_eq!(got, want.as_str(), "help[{index}] for {case_id}");
         }
-        (actual, spec) => panic!(
-            "help[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => panic!("help[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"),
     }
 }
 
@@ -385,10 +377,9 @@ fn assert_required_keyword(
     index: usize,
 ) {
     match spec.iter().find(|(k, _)| k == "required_keyword") {
-        None | Some((_, JsonValue::Null)) => assert_eq!(
-            actual, None,
-            "required_keyword[{index}] for {case_id}"
-        ),
+        None | Some((_, JsonValue::Null)) => {
+            assert_eq!(actual, None, "required_keyword[{index}] for {case_id}")
+        }
         Some((_, JsonValue::Bool(want))) => assert_eq!(
             actual,
             Some(*want),
@@ -398,21 +389,16 @@ fn assert_required_keyword(
     }
 }
 
-fn assert_declared_type(
-    actual: DeclaredType,
-    want: Option<String>,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_type(actual: DeclaredType, want: Option<String>, case_id: &str, index: usize) {
     match (actual, want.as_deref()) {
         (DeclaredType::Absent, None) => {}
         (DeclaredType::Named(got), Some("Path")) => assert_eq!(got, "Path"),
         (DeclaredType::Named(got), Some(label)) if label == TYPE_PATH => {
             assert_eq!(got, TYPE_PATH);
         }
-        (actual, want) => panic!(
-            "type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}"
-        ),
+        (actual, want) => {
+            panic!("type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}")
+        }
     }
 }
 
@@ -443,19 +429,14 @@ fn assert_verify_default_keyword(
     }
 }
 
-fn assert_arg_default(
-    actual: ArgDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_arg_default(actual: ArgDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (ArgDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (ArgDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (ArgDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -473,7 +454,9 @@ fn assert_verify_nargs(actual: Nargs, want: Option<String>, case_id: &str, index
         Some(token) if token == "?" => {
             assert_eq!(actual, Nargs::Optional, "nargs[{index}] for {case_id}")
         }
-        Some(token) if token == "0" => assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}"),
+        Some(token) if token == "0" => {
+            assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}")
+        }
         Some(other) => panic!("unexpected nargs {other} for {case_id} arg {index}"),
     }
 }
@@ -488,15 +471,14 @@ fn assert_optional_string(
     assert_eq!(actual, want.as_deref(), "{field}[{index}] for {case_id}");
 }
 
-fn assert_default_keyword(
-    actual: DefaultKeyword,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: DefaultKeyword, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, DefaultKeyword::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                DefaultKeyword::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => match actual {
             DefaultKeyword::Present(got) => {
@@ -511,19 +493,14 @@ fn assert_default_keyword(
     }
 }
 
-fn assert_declared_default(
-    actual: DeclaredDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_default(actual: DeclaredDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DeclaredDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (DeclaredDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (DeclaredDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -599,11 +576,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -669,10 +646,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)

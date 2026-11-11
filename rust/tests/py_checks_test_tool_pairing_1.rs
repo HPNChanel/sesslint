@@ -47,7 +47,11 @@ struct Row {
 /// records an `"error"` field.
 const TOOL_PAIRING_1_VECTORS: &[(&str, &str, bool)] = &[
     ("empty_input_silent", "tool_pairing_events", false),
-    ("paired_call_and_result_silent", "tool_pairing_events", false),
+    (
+        "paired_call_and_result_silent",
+        "tool_pairing_events",
+        false,
+    ),
     ("one_result_multi_silent", "tool_pairing_events", false),
     ("message_ignored_silent", "tool_pairing_events", false),
     (
@@ -330,7 +334,10 @@ fn covered_vector_ids_are_present_in_tool_pairing_1_vectors() {
     assert!(json.contains("\"module\": \"sesslint.checks.tool_pairing_1\""));
 
     let ids = vector_ids(&json);
-    let expected: Vec<&str> = TOOL_PAIRING_1_VECTORS.iter().map(|(id, _, _)| *id).collect();
+    let expected: Vec<&str> = TOOL_PAIRING_1_VECTORS
+        .iter()
+        .map(|(id, _, _)| *id)
+        .collect();
     assert_eq!(ids, expected);
     let id_set: BTreeSet<&str> = ids.iter().copied().collect();
     assert_eq!(id_set.len(), ids.len());

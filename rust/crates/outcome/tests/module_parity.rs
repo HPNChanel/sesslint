@@ -80,9 +80,7 @@ fn pinned_outcome_module_vectors_match_exact_bytes() {
     );
     let provenance = std::fs::read_to_string(root.join("PROVENANCE.json")).expect("PROVENANCE");
     let provenance = parse_object_only(&provenance).expect("PROVENANCE");
-    assert!(
-        !bool_field(&provenance, "contains_real_data").expect("contains_real_data")
-    );
+    assert!(!bool_field(&provenance, "contains_real_data").expect("contains_real_data"));
     let coverage = std::fs::read_to_string(root.join("coverage.json")).expect("coverage");
     let coverage = parse_object_only(&coverage).expect("coverage");
     assert_eq!(i64_field(&coverage, "covered_count").expect("covered"), 0);
@@ -92,12 +90,17 @@ fn pinned_outcome_module_vectors_match_exact_bytes() {
     );
     let rows = array_field(&coverage, "rows").expect("rows");
     assert_eq!(rows.len(), 59);
-  for row in rows {
+    for row in rows {
         let JsonValue::Object(row) = row else {
             panic!("coverage row must be object");
         };
-        assert_eq!(string_field(row, "status").expect("status"), "not_applicable");
-        assert!(array_field(row, "vector_ids").expect("vector_ids").is_empty());
+        assert_eq!(
+            string_field(row, "status").expect("status"),
+            "not_applicable"
+        );
+        assert!(array_field(row, "vector_ids")
+            .expect("vector_ids")
+            .is_empty());
     }
     let text = std::str::from_utf8(&raw).expect("utf8");
     let parsed = parse_vectors(text).expect("parse vectors");
@@ -128,8 +131,8 @@ fn run_case(fixtures: &Path, input: &[(String, JsonValue)]) -> String {
     let contract_path = fixtures.join(&contract_name);
     let source_path = fixtures.join(&source_name);
     let target_path = fixtures.join(&target_name);
-    let owned_contract = loaded[0]
-        .then(|| contract::load_contract(&contract_path).expect("contract"));
+    let owned_contract =
+        loaded[0].then(|| contract::load_contract(&contract_path).expect("contract"));
     let owned_source = loaded[1].then(|| {
         snapshot::load_snapshot(&source_path, &LoadOptions::new("source")).expect("source")
     });
@@ -174,11 +177,7 @@ fn run_case(fixtures: &Path, input: &[(String, JsonValue)]) -> String {
             fail_os: session == "os",
         };
         wire_verify(outcome::verify_outcome_with(
-            contract,
-            source,
-            target,
-            options,
-            &backend,
+            contract, source, target, options, &backend,
         ))
     }
 }
@@ -188,11 +187,7 @@ struct LinkedBackend {
 }
 
 impl SessionBackend for LinkedBackend {
-    fn check_file(
-        &self,
-        _: &Path,
-        limit: i64,
-    ) -> Result<SessionCheck, SessionCheckError> {
+    fn check_file(&self, _: &Path, limit: i64) -> Result<SessionCheck, SessionCheckError> {
         assert_eq!(limit, DEFAULT_MAX_FILE_BYTES);
         if self.fail_os {
             return Err(SessionCheckError::Os);
@@ -213,7 +208,10 @@ fn wire_verify(result: Result<outcome::OutcomeReport<'_>, VerifyError>) -> Strin
         Ok(report) => wire_object(&[(
             "ok",
             JsonValue::Object(vec![
-                ("exit".into(), JsonValue::Number(report.exit_code().to_string())),
+                (
+                    "exit".into(),
+                    JsonValue::Number(report.exit_code().to_string()),
+                ),
                 (
                     "human".into(),
                     JsonValue::Str(report.render_human().expect("human")),
@@ -222,10 +220,7 @@ fn wire_verify(result: Result<outcome::OutcomeReport<'_>, VerifyError>) -> Strin
                     "json".into(),
                     JsonValue::Str(report.to_json().expect("json")),
                 ),
-                (
-                    "outcome".into(),
-                    JsonValue::Str(report.outcome().into()),
-                ),
+                ("outcome".into(), JsonValue::Str(report.outcome().into())),
             ]),
         )]),
         Err(err) => wire_error(&err),
@@ -236,9 +231,8 @@ fn wire_error(err: &VerifyError) -> String {
     let (name, message) = match err {
         VerifyError::Contract(contract::LoadError::Io(_)) => ("OSError", "io".to_string()),
         VerifyError::Contract(e) => ("ContractError", e.to_string()),
-        VerifyError::Source(snapshot::LoadError::Io(_)) | VerifyError::Target(snapshot::LoadError::Io(_)) => {
-            ("OSError", "io".to_string())
-        }
+        VerifyError::Source(snapshot::LoadError::Io(_))
+        | VerifyError::Target(snapshot::LoadError::Io(_)) => ("OSError", "io".to_string()),
         VerifyError::Source(e) | VerifyError::Target(e) => ("SnapshotError", e.to_string()),
         VerifyError::Evaluation(e) => ("EvaluationError", e.0.clone()),
         VerifyError::Session(e) => ("EvaluationError", e.to_string()),
@@ -322,7 +316,11 @@ fn parse_vectors(input: &str) -> Result<ParsedVectors, ParseError> {
         let id = usize_field(obj, "id")?;
         let input = object_field(obj, "input")?;
         let expected = string_field(obj, "expected_json")?;
-        cases.push(VectorCase { id, input, expected });
+        cases.push(VectorCase {
+            id,
+            input,
+            expected,
+        });
     }
     Ok(ParsedVectors { cases })
 }
@@ -389,7 +387,10 @@ fn array_field<'a>(
     }
 }
 
-fn object_field(obj: &[(String, JsonValue)], key: &str) -> Result<Vec<(String, JsonValue)>, ParseError> {
+fn object_field(
+    obj: &[(String, JsonValue)],
+    key: &str,
+) -> Result<Vec<(String, JsonValue)>, ParseError> {
     match lookup(obj, key) {
         Some(JsonValue::Object(items)) => Ok(items.clone()),
         _ => Err(ParseError {
@@ -482,10 +483,7 @@ fn parse_number(input: &str) -> Result<(JsonValue, &str), ParseError> {
             message: "invalid number".into(),
         });
     }
-    Ok((
-        JsonValue::Number(input[..end].to_string()),
-        &input[end..],
-    ))
+    Ok((JsonValue::Number(input[..end].to_string()), &input[end..]))
 }
 
 fn parse_array(input: &str) -> Result<(JsonValue, &str), ParseError> {
@@ -569,11 +567,7 @@ fn parse_string(input: &str) -> Result<(String, &str), ParseError> {
                     'r' => '\r',
                     't' => '\t',
                     'u' => {
-                        let hex: String = chars
-                            .by_ref()
-                            .take(4)
-                            .map(|(_, c)| c)
-                            .collect();
+                        let hex: String = chars.by_ref().take(4).map(|(_, c)| c).collect();
                         if hex.len() != 4 {
                             return Err(ParseError {
                                 message: "short unicode escape".into(),

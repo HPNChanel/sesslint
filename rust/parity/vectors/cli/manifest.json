@@ -3,9 +3,9 @@
   "module": "sesslint.cli",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "cli_init_py_sha256": "aa32db5fee47d314773622038ef164bd83175c83584361d0aa34e9f2ae17c4c9",
-  "cli_lib_rs_sha256": "9595b34b7546aebaf9425795ef44e3b886c03011fbe7783fe818fb03a3e82c64",
+  "cli_lib_rs_sha256": "402412fec3c027e84f41879c53ee9602b905fda6093645bddc7c4c3f32529d30",
   "vector_count": 33,
-  "vectors_sha256": "903287de8d1d4116dc5581ce585ae5ab861be958b28fd433b7b70a258ee91617",
+  "vectors_sha256": "0d2ea35df9ea52c98e9fc752aab7d56bb9bb02ab6f51c8d0e1fa3956e2accffc",
   "generator": "rust/parity/vectors/cli/generate",
   "known_parity_gaps": [
     "GAP-cli-init-create-parser: Python create_parser() returns an argparse.ArgumentParser with subcommands; Rust create_parser() stops with sesslint.cli.check.configure is not available and does not register subparsers.",

@@ -3,8 +3,8 @@
 #![allow(clippy::redundant_closure)]
 
 use repair::errors::{
-    Abstained, ManifestCollision, OutputInvalid, PlanSourceMismatch, PlanTampered,
-    PolicyMismatch, RepairError, RepairRefused, VendorProjectionRefused, VendorRepairRefused, ALL,
+    Abstained, ManifestCollision, OutputInvalid, PlanSourceMismatch, PlanTampered, PolicyMismatch,
+    RepairError, RepairRefused, VendorProjectionRefused, VendorRepairRefused, ALL,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -65,22 +65,18 @@ fn build_error(construct: &[(String, JsonValue)]) -> RepairError {
             |m| RepairRefused::new(m),
             |m, c| RepairRefused::with_code(m, c),
         )),
-        "VendorRepairRefused" => RepairError::from(RepairRefused::from(
-            with_optional_code_plan(
-                message,
-                code.as_deref(),
-                |m| VendorRepairRefused::new(m),
-                |m, c| VendorRepairRefused::with_code(m, c),
-            ),
-        )),
-        "ManifestCollision" => RepairError::from(RepairRefused::from(
-            with_optional_code_plan(
-                message,
-                code.as_deref(),
-                |m| ManifestCollision::new(m),
-                |m, c| ManifestCollision::with_code(m, c),
-            ),
-        )),
+        "VendorRepairRefused" => RepairError::from(RepairRefused::from(with_optional_code_plan(
+            message,
+            code.as_deref(),
+            |m| VendorRepairRefused::new(m),
+            |m, c| VendorRepairRefused::with_code(m, c),
+        ))),
+        "ManifestCollision" => RepairError::from(RepairRefused::from(with_optional_code_plan(
+            message,
+            code.as_deref(),
+            |m| ManifestCollision::new(m),
+            |m, c| ManifestCollision::with_code(m, c),
+        ))),
         "VendorProjectionRefused" => {
             let inner = match reason.as_deref() {
                 None => VendorProjectionRefused::new(message),

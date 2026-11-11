@@ -44,7 +44,10 @@ struct Row {
 const PLANNER_VECTORS: &[(&str, &str)] = &[
     ("module_all_export_order", "module_all"),
     ("module_constants_snapshot", "module_constants"),
-    ("compute_events_source_hash_empty", "compute_events_source_hash"),
+    (
+        "compute_events_source_hash_empty",
+        "compute_events_source_hash",
+    ),
     ("plan_step_from_dict_not_object", "plan_step_from_dict"),
     ("plan_step_invalid_loss_class", "plan_step_from_dict"),
     ("plan_policy_aggressive", "plan_call"),
@@ -56,9 +59,18 @@ const PLANNER_VECTORS: &[(&str, &str)] = &[
     ("get_plan_schema_path_gap", "get_plan_schema_path"),
     ("load_plan_schema_gap", "load_plan_schema"),
     ("repair_plan_from_dict_missing_seq", "repair_plan_from_dict"),
-    ("repair_plan_from_dict_missing_recipe", "repair_plan_from_dict"),
-    ("repair_plan_from_dict_missing_min_policy", "repair_plan_from_dict"),
-    ("repair_plan_from_dict_missing_recipe_version", "repair_plan_from_dict"),
+    (
+        "repair_plan_from_dict_missing_recipe",
+        "repair_plan_from_dict",
+    ),
+    (
+        "repair_plan_from_dict_missing_min_policy",
+        "repair_plan_from_dict",
+    ),
+    (
+        "repair_plan_from_dict_missing_recipe_version",
+        "repair_plan_from_dict",
+    ),
 ];
 
 const EXECUTOR_VECTORS: &[(&str, &str)] = &[
@@ -71,14 +83,29 @@ const EXECUTOR_VECTORS: &[(&str, &str)] = &[
     ("load_session_missing_path", "load_session_not_found"),
     ("load_session_empty_path", "load_session_not_found"),
     ("load_session_directory_path", "load_session_not_found"),
-    ("load_session_broken_symlink", "load_session_with_findings_not_found"),
-    ("load_session_symlink_file_seam", "load_session_snapshot_seam"),
-    ("load_source_for_format_import_seam", "load_source_for_format_gap"),
+    (
+        "load_session_broken_symlink",
+        "load_session_with_findings_not_found",
+    ),
+    (
+        "load_session_symlink_file_seam",
+        "load_session_snapshot_seam",
+    ),
+    (
+        "load_source_for_format_import_seam",
+        "load_source_for_format_gap",
+    ),
     ("execute_cap_257", "execute_cap"),
     ("execute_fingerprint_import_seam", "execute_fingerprint_gap"),
-    ("source_positions_duplicate_origin", "source_positions_duplicate"),
+    (
+        "source_positions_duplicate_origin",
+        "source_positions_duplicate",
+    ),
     ("relocate_step_removed_target", "relocate_step_removed"),
-    ("load_plan_salvage_under_conservative", "load_plan_salvage_policy_mismatch"),
+    (
+        "load_plan_salvage_under_conservative",
+        "load_plan_salvage_policy_mismatch",
+    ),
 ];
 
 const ROWS: &[Row] = &[

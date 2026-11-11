@@ -1889,8 +1889,7 @@ const MSG_INVALID_SEQ: &str = "Invalid sequence number on line {line} for record
 const MSG_INVALID_ID: &str = "Invalid event id on line {line} for record {record_id}";
 const MSG_INVALID_KIND: &str = "Invalid kind on line {line} for record {record_id}";
 const MSG_INVALID_ACTOR: &str = "Invalid actor on line {line} for record {record_id}";
-const MSG_UNKNOWN_CRITICAL: &str =
-    "Unknown critical record on line {line} for record {record_id}";
+const MSG_UNKNOWN_CRITICAL: &str = "Unknown critical record on line {line} for record {record_id}";
 const EPOCH_TS: &str = "1970-01-01T00:00:00Z";
 
 /// Failure from [`parse_canonical_event_record`].
@@ -2073,13 +2072,8 @@ impl Emit<'_> {
         let source = SourceRef::try_new(self.path, Some(SourceLine::Int(self.line)), record_id)?;
         let base = evidence()?;
         let evidence = with_coordinates(base, self.coords)?;
-        let related_ids = EvidenceValue::tuple(
-            related
-                .iter()
-                .copied()
-                .map(EvidenceValue::string)
-                .collect(),
-        );
+        let related_ids =
+            EvidenceValue::tuple(related.iter().copied().map(EvidenceValue::string).collect());
         let finding = make_finding(&MakeFindingInput {
             code: EvidenceValue::string(code),
             severity: EvidenceValue::severity(Severity::Error),
@@ -2117,9 +2111,7 @@ fn lookup(raw: &Payload, key: &str) -> Result<FieldLookup, ParseCanonicalEventEr
     match raw.map_string(key) {
         MapLookup::Present(value) => Ok(FieldLookup::Present(value)),
         MapLookup::Absent => Ok(FieldLookup::Absent),
-        MapLookup::Borrowed => Err(ParseCanonicalEventError::failed(
-            "map entries are borrowed",
-        )),
+        MapLookup::Borrowed => Err(ParseCanonicalEventError::failed("map entries are borrowed")),
         MapLookup::NotAMap => Err(ParseCanonicalEventError::failed(format!(
             "'{}' object has no attribute 'get'",
             payload_class_name(raw)
@@ -2332,18 +2324,12 @@ fn resolve_actor(
     } else {
         reject_unhashable(&value)?;
     }
-    emit.finding(
-        SL001,
-        MSG_INVALID_ACTOR,
-        record_id,
-        &[],
-        move || {
-            Ok(vec![
-                evidence_pair("reason", EvidenceValue::string("invalid_actor")),
-                evidence_pair("actor", EvidenceValue::string(payload_text(&value)?)),
-            ])
-        },
-    )?;
+    emit.finding(SL001, MSG_INVALID_ACTOR, record_id, &[], move || {
+        Ok(vec![
+            evidence_pair("reason", EvidenceValue::string("invalid_actor")),
+            evidence_pair("actor", EvidenceValue::string(payload_text(&value)?)),
+        ])
+    })?;
     Ok("system".to_owned())
 }
 
@@ -2387,26 +2373,20 @@ fn unknown_fields(
             };
             let (safe_key, _) = safe_discriminator(PyValue::Str(&key));
             let record = py_record(record_id);
-            emit.finding(
-                SL302,
-                MSG_UNKNOWN_CRITICAL,
-                record_id,
-                &[],
-                move || {
-                    let mut pairs = vec![
-                        evidence_pair("field_path", EvidenceValue::string(safe_key)),
-                        evidence_pair("type_value", EvidenceValue::string(type_value)),
-                        evidence_pair("record_id", record),
-                    ];
-                    if truncated {
-                        pairs.push(evidence_pair(
-                            "type_truncated",
-                            EvidenceValue::bool_value(true),
-                        ));
-                    }
-                    Ok(pairs)
-                },
-            )?;
+            emit.finding(SL302, MSG_UNKNOWN_CRITICAL, record_id, &[], move || {
+                let mut pairs = vec![
+                    evidence_pair("field_path", EvidenceValue::string(safe_key)),
+                    evidence_pair("type_value", EvidenceValue::string(type_value)),
+                    evidence_pair("record_id", record),
+                ];
+                if truncated {
+                    pairs.push(evidence_pair(
+                        "type_truncated",
+                        EvidenceValue::bool_value(true),
+                    ));
+                }
+                Ok(pairs)
+            })?;
             emitted = true;
         }
         extra.push((Payload::string(key), value));
@@ -2519,10 +2499,7 @@ fn resolve_side_effects(
     Ok(None)
 }
 
-fn lowered_tool_name(
-    raw: &Payload,
-    payload: &Payload,
-) -> Result<String, ParseCanonicalEventError> {
+fn lowered_tool_name(raw: &Payload, payload: &Payload) -> Result<String, ParseCanonicalEventError> {
     let from_payload = first_truthy(payload, &["name", "tool_name"])?;
     let mut tool_name = payload_text(&from_payload)?.to_lowercase();
     if tool_name.is_empty() && key_present(raw, "name")? {
@@ -2560,10 +2537,7 @@ fn chosen_parent(raw: &Payload) -> Result<Option<String>, ParseCanonicalEventErr
     }
 }
 
-fn stringified_field(
-    raw: &Payload,
-    key: &str,
-) -> Result<Option<String>, ParseCanonicalEventError> {
+fn stringified_field(raw: &Payload, key: &str) -> Result<Option<String>, ParseCanonicalEventError> {
     let FieldLookup::Present(value) = lookup(raw, key)? else {
         return Ok(None);
     };
@@ -2712,18 +2686,16 @@ fn container_len(value: &Payload) -> Result<usize, ParseCanonicalEventError> {
         let walk = value.walk_list_items(|_, _| len += 1);
         return match walk {
             ListWalk::Done => Ok(len),
-            ListWalk::Borrowed | ListWalk::NotAList => {
-                Err(ParseCanonicalEventError::failed("list items are not visible"))
-            }
+            ListWalk::Borrowed | ListWalk::NotAList => Err(ParseCanonicalEventError::failed(
+                "list items are not visible",
+            )),
         };
     }
     let mut len = 0usize;
     let walk = value.walk_string_entries(|_, _| len += 1);
     match walk {
         MapWalk::Done => Ok(len),
-        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed(
-            "map entries are borrowed",
-        )),
+        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed("map entries are borrowed")),
         MapWalk::NotAMap => Err(ParseCanonicalEventError::failed(
             "map entries are not visible",
         )),
@@ -2737,9 +2709,7 @@ fn string_entries(raw: &Payload) -> Result<Vec<(String, Payload)>, ParseCanonica
     });
     match walk {
         MapWalk::Done => Ok(entries),
-        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed(
-            "map entries are borrowed",
-        )),
+        MapWalk::Borrowed => Err(ParseCanonicalEventError::failed("map entries are borrowed")),
         MapWalk::NotAMap => Err(ParseCanonicalEventError::failed(format!(
             "'{}' object has no attribute 'get'",
             payload_class_name(raw)
@@ -2759,9 +2729,7 @@ fn is_critical_unknown(key: &str) -> bool {
 
 fn is_allowed_text(value: &Payload, allowed: &[&str]) -> Result<bool, ParseCanonicalEventError> {
     reject_unhashable(value)?;
-    Ok(value
-        .as_str()
-        .is_some_and(|text| allowed.contains(&text)))
+    Ok(value.as_str().is_some_and(|text| allowed.contains(&text)))
 }
 
 fn reject_unhashable(value: &Payload) -> Result<(), ParseCanonicalEventError> {
@@ -4558,9 +4526,15 @@ mod tests {
         .expect_err("partial");
         assert_eq!(partial.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
 
-        let passed =
-            parse_at(&raw, 1, "a.json", (Some(0), Some(0), Some(1)), None, &mut seen)
-            .expect_err("passed");
+        let passed = parse_at(
+            &raw,
+            1,
+            "a.json",
+            (Some(0), Some(0), Some(1)),
+            None,
+            &mut seen,
+        )
+        .expect_err("passed");
         assert_eq!(passed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
         assert_eq!(seen, 0);
     }
@@ -4635,8 +4609,8 @@ mod tests {
         items.retain(|(key, _)| *key != "kind");
         items.push(("kind", Payload::list(vec![Payload::string("message")])));
         let mut seen = 0usize;
-        let err = parse_at(&fields(items), 1, "", (None, None, None), None, &mut seen)
-            .expect_err("kind");
+        let err =
+            parse_at(&fields(items), 1, "", (None, None, None), None, &mut seen).expect_err("kind");
         assert_eq!(err.to_string(), "unhashable type: 'list'");
         assert!(!err.to_string().contains("SourceRef"));
         assert!(!err.to_string().contains("SL001"));
@@ -4717,7 +4691,10 @@ mod tests {
             canonical_source_label(CanonicalSource::Bytes(b"C:/synth")),
             "<bytes>"
         );
-        assert_eq!(canonical_source_label(CanonicalSource::Bytes(b"")), "<bytes>");
+        assert_eq!(
+            canonical_source_label(CanonicalSource::Bytes(b"")),
+            "<bytes>"
+        );
     }
 
     #[test]
@@ -4803,9 +4780,11 @@ mod tests {
         assert!(!err.to_string().contains("<bytes>"));
         assert_ne!(err.to_string(), canonical_source_label(path));
 
-        let bytes = load_canonical(CanonicalSource::Bytes(br"synth\leaf"), None).expect_err("bytes");
+        let bytes =
+            load_canonical(CanonicalSource::Bytes(br"synth\leaf"), None).expect_err("bytes");
         assert_eq!(bytes.to_string(), tracker);
-        let streamed = load_canonical(CanonicalSource::Stream { name: None }, None).expect_err("stream");
+        let streamed =
+            load_canonical(CanonicalSource::Stream { name: None }, None).expect_err("stream");
         assert_eq!(streamed.to_string(), tracker);
         assert_eq!(
             canonical_source_label(CanonicalSource::Stream { name: None }),

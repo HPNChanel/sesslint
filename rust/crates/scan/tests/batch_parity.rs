@@ -2,7 +2,7 @@
 
 use scan::batch::{
     _output_for, _plan_detail, get_batch_schema_path, load_batch_schema, repair_many,
-    resolve_scan_report_files, BatchRepairReport, BatchRow, BatchValue, ApiUnavailable,
+    resolve_scan_report_files, ApiUnavailable, BatchRepairReport, BatchRow, BatchValue,
     FormatCanonicalUnavailable, ResolveScanReportError, API_UNAVAILABLE,
     FORMAT_CANONICAL_UNAVAILABLE, JSON_LOADS_UNAVAILABLE,
 };
@@ -236,12 +236,7 @@ fn assert_dict_matches(
     );
 }
 
-fn assert_batch_value_matches(
-    got: &BatchValue,
-    want: &JsonValue,
-    case_id: &str,
-    field: &str,
-) {
+fn assert_batch_value_matches(got: &BatchValue, want: &JsonValue, case_id: &str, field: &str) {
     match (got, want) {
         (BatchValue::Text(g), JsonValue::Str(w)) => {
             assert_eq!(g, w, "{field} for {case_id}");
@@ -469,11 +464,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 

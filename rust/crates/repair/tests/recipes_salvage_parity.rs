@@ -7,10 +7,10 @@ use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHE
 use repair::preconditions::PreconditionContext;
 use repair::recipes_salvage::{
     affected_region_orphan_result_drop, apply_orphan_result_drop,
-    apply_torn_compaction_project, apply_torn_record_excision, apply_torn_record_excision_with_loss,
-    apply_side_effect_unknown_truncate, apply_unresolvable_branch_amputate, register_all,
-    sl001_excisable, IndexValue, ParamMap, SalvageError, SalvageStep, ALL,
-    AFFECTED_REGION_UNAVAILABLE,
+    apply_side_effect_unknown_truncate, apply_torn_compaction_project, apply_torn_record_excision,
+    apply_torn_record_excision_with_loss, apply_unresolvable_branch_amputate, register_all,
+    sl001_excisable, IndexValue, ParamMap, SalvageError, SalvageStep, AFFECTED_REGION_UNAVAILABLE,
+    ALL,
 };
 use repair::registry::{clear_registry, get_recipe, list_recipes, recipes_for, Recipe};
 use std::fmt;
@@ -46,9 +46,21 @@ fn read_lf(path: &PathBuf) -> String {
     let raw = std::fs::read_to_string(path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(!raw.contains('\r'), "{} contains CR", path.display());
-    assert!(!raw.contains(SEAM), "{} stores the Rust seam sentence", path.display());
-    assert!(!raw.contains("sesslint-wt"), "{} stores a worktree path", path.display());
-    assert!(!raw.contains("FOR_WORK"), "{} stores a checkout path", path.display());
+    assert!(
+        !raw.contains(SEAM),
+        "{} stores the Rust seam sentence",
+        path.display()
+    );
+    assert!(
+        !raw.contains("sesslint-wt"),
+        "{} stores a worktree path",
+        path.display()
+    );
+    assert!(
+        !raw.contains("FOR_WORK"),
+        "{} stores a checkout path",
+        path.display()
+    );
     assert!(!contains_sbp(&raw), "{} stores an sbp hash", path.display());
     raw
 }
@@ -95,7 +107,6 @@ fn recipes_salvage_module_parity_vectors() {
         assert_case(case);
     }
 }
-
 
 fn assert_case(case: &VectorCase) {
     let kind = string_field(&case.construct, "type").expect("construct type");
@@ -162,7 +173,11 @@ fn assert_recipe_meta(case_id: &str, name: &str, recipe: &Recipe, meta: &[(Strin
     let handles = string_array(meta, "handles").expect("handles");
     assert_eq!(recipe.handles().to_vec(), handles, "{case_id} {name}");
     let preconds = string_array(meta, "preconditions").expect("preconditions");
-    assert_eq!(recipe.preconditions().to_vec(), preconds, "{case_id} {name}");
+    assert_eq!(
+        recipe.preconditions().to_vec(),
+        preconds,
+        "{case_id} {name}"
+    );
     assert_eq!(
         recipe.lossy(),
         bool_field(meta, "lossy").expect("lossy"),
@@ -177,7 +192,10 @@ fn assert_recipe_meta(case_id: &str, name: &str, recipe: &Recipe, meta: &[(Strin
 
 fn assert_recipes_for(obj: &[(String, JsonValue)], key: &str, code: &str, case_id: &str) {
     let want = string_array(obj, key).expect(key);
-    let got: Vec<String> = recipes_for(code).iter().map(|r| r.name().to_owned()).collect();
+    let got: Vec<String> = recipes_for(code)
+        .iter()
+        .map(|r| r.name().to_owned())
+        .collect();
     assert_eq!(got, want, "{case_id} recipes_for {code}");
 }
 
@@ -194,16 +212,23 @@ fn sl001_excisable_checks() -> Vec<bool> {
     let mut out = vec![
         sl001_excisable(&sl001_ctx(&f, &events)),
         sl001_excisable(&sl001_ctx(
-            &sl001_finding(None, None, Some(evidence_map(&[
-                ("reason", PyValue::string("size_limit_exceeded")),
-                ("limit", PyValue::int(10)),
-            ]))),
+            &sl001_finding(
+                None,
+                None,
+                Some(evidence_map(&[
+                    ("reason", PyValue::string("size_limit_exceeded")),
+                    ("limit", PyValue::int(10)),
+                ])),
+            ),
             &events,
         )),
         sl001_excisable(&sl001_ctx(&sl001_finding(Some(None), None, None), &events)),
     ];
     for bad in [
-        evidence_map(&[("byte_end", PyValue::int(10)), ("record_ordinal", PyValue::int(1))]),
+        evidence_map(&[
+            ("byte_end", PyValue::int(10)),
+            ("record_ordinal", PyValue::int(1)),
+        ]),
         evidence_map(&[
             ("byte_offset", PyValue::int(5)),
             ("record_ordinal", PyValue::int(1)),
@@ -224,9 +249,16 @@ fn sl001_excisable_checks() -> Vec<bool> {
             ("record_ordinal", PyValue::int(1)),
         ]),
     ] {
-        out.push(sl001_excisable(&sl001_ctx(&sl001_finding(None, None, Some(bad)), &events)));
+        out.push(sl001_excisable(&sl001_ctx(
+            &sl001_finding(None, None, Some(bad)),
+            &events,
+        )));
     }
-    let dependent = vec![sl001_msg(0, None), sl001_msg(2, None), sl001_msg(3, Some("msg-torn"))];
+    let dependent = vec![
+        sl001_msg(0, None),
+        sl001_msg(2, None),
+        sl001_msg(3, Some("msg-torn")),
+    ];
     out.push(sl001_excisable(&sl001_ctx(&f, &dependent)));
     let f_other = parity_finding(
         SL006,
@@ -259,14 +291,8 @@ fn sl001_ctx<'a>(finding: &'a Finding, events: &'a [EventValue]) -> Precondition
 fn sl001_msg(seq: i64, parent: Option<&str>) -> EventValue {
     let mut entries = vec![
         ("id", EventField::Str(format!("msg-{seq}"))),
-        (
-            "kind",
-            EventField::Str("message".into()),
-        ),
-        (
-            "seq",
-            EventField::Int(seq),
-        ),
+        ("kind", EventField::Str("message".into())),
+        ("seq", EventField::Int(seq)),
     ];
     if let Some(parent_id) = parent {
         entries.push(("parent_id", EventField::Str(parent_id.to_owned())));
@@ -319,7 +345,8 @@ fn parity_finding(
     record_id: Option<&str>,
     evidence: PyValue,
 ) -> Finding {
-    let source = SourceRef::try_new("sess.jsonl", line.map(SourceLine::Int), record_id).expect("source");
+    let source =
+        SourceRef::try_new("sess.jsonl", line.map(SourceLine::Int), record_id).expect("source");
     Finding::try_new(FindingInput {
         code: PyValue::string(code),
         severity: PyValue::severity(severity),
@@ -360,7 +387,12 @@ fn assert_excision_validation(case: &VectorCase) {
     let step = torn_excision_step();
     let (out, loss) = apply_torn_record_excision_with_loss(&events, &step)
         .unwrap_or_else(|err| panic!("{} success: {err}", case.id));
-    assert_eq!(loss.entries(), &[("torn-record".to_owned(), 1)], "{}", case.id);
+    assert_eq!(
+        loss.entries(),
+        &[("torn-record".to_owned(), 1)],
+        "{}",
+        case.id
+    );
     let want_ids = string_array(success, "ids").expect("ids");
     let got_ids: Vec<String> = out
         .iter()
@@ -472,7 +504,10 @@ fn run_amputate_refusals() -> Vec<String> {
         params: pmap(vec![]),
     };
     let mut messages = Vec::new();
-    push_precondition(&mut messages, apply_unresolvable_branch_amputate(&[], &step));
+    push_precondition(
+        &mut messages,
+        apply_unresolvable_branch_amputate(&[], &step),
+    );
     let ev = EventValue::from_session(SessionEvent::new(
         "m0",
         None,
@@ -584,7 +619,10 @@ fn run_truncate_refusals() -> Vec<String> {
         params: pmap(vec![]),
     };
     let mut messages = Vec::new();
-    push_precondition(&mut messages, apply_side_effect_unknown_truncate(&[], &step));
+    push_precondition(
+        &mut messages,
+        apply_side_effect_unknown_truncate(&[], &step),
+    );
     let ev = EventValue::from_session(SessionEvent::new(
         "m0",
         None,
@@ -621,13 +659,21 @@ fn assert_orphan_resolves(case: &VectorCase) {
         )]),
     };
     let out = apply_orphan_result_drop(events.clone(), by_corr.clone()).expect("corr");
-    assert_event_ids(&out, &string_array(pin, "ids_by_corr").expect("ids_by_corr"), &case.id);
+    assert_event_ids(
+        &out,
+        &string_array(pin, "ids_by_corr").expect("ids_by_corr"),
+        &case.id,
+    );
     let by_id = SalvageStep {
         target_index: IndexValue::None,
         params: pmap(vec![("result_id", EventField::Str("tr_orph".into()))]),
     };
     let out2 = apply_orphan_result_drop(events.clone(), by_id).expect("id");
-    assert_event_ids(&out2, &string_array(pin, "ids_by_id").expect("ids_by_id"), &case.id);
+    assert_event_ids(
+        &out2,
+        &string_array(pin, "ids_by_id").expect("ids_by_id"),
+        &case.id,
+    );
     let mut amb = events.clone();
     amb.push(orphan_tool_result("tr_orph2", "m0", 4));
     let err = apply_orphan_result_drop(amb, by_corr.clone()).expect_err("ambiguous");
@@ -667,12 +713,7 @@ fn run_orphan_refusals() -> Vec<String> {
         apply_orphan_result_drop(events.clone(), base(IndexValue::Int(2))),
     );
     let mut with_child = events.clone();
-    with_child.push(orphan_mapping(
-        "message",
-        "ch1",
-        Some("tr_orph"),
-        None,
-    ));
+    with_child.push(orphan_mapping("message", "ch1", Some("tr_orph"), None));
     push_precondition(
         &mut messages,
         apply_orphan_result_drop(with_child, base(IndexValue::Int(3))),
@@ -742,15 +783,15 @@ fn orphan_session_events() -> Vec<EventValue> {
 }
 
 fn orphan_mapping(kind: &str, id: &str, parent: Option<&str>, corr: Option<&str>) -> EventValue {
-    let mut entries = vec![("kind", EventField::Str(kind.to_owned())), ("id", EventField::Str(id.to_owned()))];
+    let mut entries = vec![
+        ("kind", EventField::Str(kind.to_owned())),
+        ("id", EventField::Str(id.to_owned())),
+    ];
     if let Some(parent_id) = parent {
         entries.push(("parent_id", EventField::Str(parent_id.to_owned())));
     }
     if let Some(correlation_id) = corr {
-        entries.push((
-            "correlation_id",
-            EventField::Str(correlation_id.to_owned()),
-        ));
+        entries.push(("correlation_id", EventField::Str(correlation_id.to_owned())));
     }
     EventValue::Mapping(EventMapping::new(
         entries
@@ -975,7 +1016,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -991,7 +1038,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

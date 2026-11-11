@@ -21,9 +21,9 @@ const EXPECTED_MAIN_PY_SHA256: &str =
 const EXPECTED_MAIN_RS_SHA256: &str =
     "373706ccb88b2cee397e6d1c41117b335519356f44938d63b66b6639eee55b71";
 const EXPECTED_CLI_LIB_RS_SHA256: &str =
-    "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66";
+    "402412fec3c027e84f41879c53ee9602b905fda6093645bddc7c4c3f32529d30";
 const EXPECTED_VECTORS_SHA256: &str =
-    "1f44c49500f209c6709225d3573346dd30524ed7e6ff183bfecbab70229f5e22";
+    "9c9aa019da35d06dd415aa942ca75cf90cbea06f14b71471b09166477e783b56";
 
 const GAP_SYS_FROZEN: &str = "GAP-__main__-sys-frozen";
 const GAP_UNPARSED: &str = "GAP-__main__-unparsed-command";
@@ -120,8 +120,7 @@ fn main_module_parity_vectors() {
 }
 
 fn assert_main_rs_unchanged() {
-    let bytes = std::fs::read(main_rs_path())
-        .unwrap_or_else(|err| panic!("read main__.rs: {err}"));
+    let bytes = std::fs::read(main_rs_path()).unwrap_or_else(|err| panic!("read main__.rs: {err}"));
     assert_eq!(
         sha256_hex(&bytes),
         EXPECTED_MAIN_RS_SHA256,
@@ -216,7 +215,11 @@ fn assert_non_frozen_main(case: &VectorCase) {
             "{}",
             case.id
         );
-        assert!(want_stderr.windows(6).any(|w| w == b"usage:"), "{}", case.id);
+        assert!(
+            want_stderr.windows(6).any(|w| w == b"usage:"),
+            "{}",
+            case.id
+        );
         let rust_message =
             string_field(&case.expected, "rust_message").expect("rust_message for gap");
         let err = package_main(Some(&refs)).expect_err("unparsed must error");
@@ -349,7 +352,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
         .filter(|(k, _)| *k != "vectors")
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 

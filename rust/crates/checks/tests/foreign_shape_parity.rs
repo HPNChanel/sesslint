@@ -110,8 +110,7 @@ fn assert_case(case: &VectorCase) {
         "foreign_shape_check" => {
             let events = decode_session_event_list(&case.construct, "events").expect("events");
             let count = usize_field(&case.expected, "findings_count").expect("findings_count");
-            let record_none =
-                bool_field(&case.expected, "record_is_none").expect("record_is_none");
+            let record_none = bool_field(&case.expected, "record_is_none").expect("record_is_none");
 
             let record = foreign_shape_record(&events, None)
                 .unwrap_or_else(|err| panic!("{}: foreign_shape_record: {err}", case.id));

@@ -1,0 +1,16 @@
+{
+  "module": "sesslint.preview.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_json_shape",
+      "status": "not_applicable",
+      "reason": "missing stop: CLI preview JSON shape and exit together; one document check is not this"
+    },
+    {
+      "test": "tests/cli/test_repair_preview.py::test_preview_lists_delta_rows",
+      "status": "not_applicable",
+      "reason": "missing stop: preview delta rows from a fixture run; one document check is not this"
+    }
+  ]
+}

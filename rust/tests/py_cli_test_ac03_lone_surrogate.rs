@@ -355,10 +355,7 @@ fn covered_vector_ids_are_present_in_cli_vectors() {
     assert_eq!(id_set.len(), ids.len());
     let names: BTreeSet<&str> = ROWS.iter().map(|row| row.name).collect();
     for id in &id_set {
-        assert!(
-            !names.contains(id),
-            "cli id {id} equals a pinned test name"
-        );
+        assert!(!names.contains(id), "cli id {id} equals a pinned test name");
     }
 
     for row in ROWS {
@@ -408,10 +405,7 @@ fn api_corpus_python_commit_equals_pin_when_every_row_is_not_applicable() {
     assert_eq!(id_set.len(), 77);
     let names: BTreeSet<&str> = ROWS.iter().map(|row| row.name).collect();
     for id in &id_set {
-        assert!(
-            !names.contains(id),
-            "api id {id} equals a pinned test name"
-        );
+        assert!(!names.contains(id), "api id {id} equals a pinned test name");
     }
     for row in ROWS {
         let Disposition::Covered { vector_id, needles } = row.disposition else {

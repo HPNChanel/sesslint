@@ -1,0 +1,102 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.plan.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-plan-emitter: planner emission and CLI plan export are not this validator. One synthetic document is not that sweep."
+  ],
+  "vectors": [
+    {
+      "id": "minimal_ok",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[],\"version\":\"sesslint.plan/v1\"}",
+      "expected": {
+        "result": "ok"
+      },
+      "rust": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "step_ok",
+      "document": "{\"blocked\":[{\"code\":\"SL001\",\"finding_fp\":\"fp\",\"reason\":\"blocked\"}],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{\"events\":0},\"total_kept\":1,\"total_lost\":0},\"policy\":\"conservative\",\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[{\"loss\":{\"events\":0},\"lossy\":false,\"min_policy\":\"conservative\",\"params\":{\"keep\":1},\"recipe\":\"drop\",\"recipe_version\":\"1\",\"seq\":0,\"target_finding_fp\":\"fp\",\"target_index\":null}],\"version\":\"sesslint.plan/v1\"}",
+      "expected": {
+        "result": "ok"
+      },
+      "rust": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "missing_version",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[]}",
+      "expected": {
+        "result": "reject",
+        "keyword": "required"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "required"
+      }
+    },
+    {
+      "id": "bad_hash",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"neutral\",\"source_hash\":\"ABCDEF\",\"steps\":[],\"version\":\"sesslint.plan/v1\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "pattern"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "pattern"
+      }
+    },
+    {
+      "id": "empty_profile",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[],\"version\":\"sesslint.plan/v1\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "minLength"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "minLength"
+      }
+    },
+    {
+      "id": "bad_policy",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[],\"version\":\"sesslint.plan/v1\",\"policy\":\"other\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "enum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "enum"
+      }
+    },
+    {
+      "id": "negative_seq",
+      "document": "{\"blocked\":[{\"code\":\"SL001\",\"finding_fp\":\"fp\",\"reason\":\"blocked\"}],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{\"events\":0},\"total_kept\":1,\"total_lost\":0},\"policy\":\"conservative\",\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[{\"loss\":{\"events\":0},\"lossy\":false,\"min_policy\":\"conservative\",\"params\":{\"keep\":1},\"recipe\":\"drop\",\"recipe_version\":\"1\",\"seq\":-1,\"target_finding_fp\":\"fp\",\"target_index\":null}],\"version\":\"sesslint.plan/v1\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "minimum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "minimum"
+      }
+    },
+    {
+      "id": "extra_key",
+      "document": "{\"blocked\":[],\"fingerprint\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"loss_accounting\":{\"preview\":{}},\"profile\":\"neutral\",\"source_hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"steps\":[],\"version\":\"sesslint.plan/v1\",\"extra\":1}",
+      "expected": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      }
+    }
+  ]
+}

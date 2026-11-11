@@ -1,7 +1,7 @@
 //! Parity for `sesslint.adapters.detect` against pinned Python vectors.
 
 use adapters::detect::{
-    detect_format, resolve_format, to_source_block, DetectionResult, DetectError,
+    detect_format, resolve_format, to_source_block, DetectError, DetectionResult,
     ResolveFormatError, ThresholdInput, CONFIDENCE_MIN, EPSILON, FORMAT_AUTO, FORMAT_CANONICAL,
     FORMAT_CLAUDE_CODE, FORMAT_CODEX_ROLLOUT, FORMAT_OPENAI_AGENTS, MARGIN_MIN,
     REASON_CLEAR_WINNER, REASON_EMPTY, REASON_EXPLICIT_OVERRIDE, REASON_LOW_CONFIDENCE,
@@ -15,7 +15,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.detect/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 38;
 const EXPECTED_VECTORS_SHA256: &str =
-    "5e74a5c5f4d1ce299e17968dd4f16fa6f0cc488432ad75011ef675f761871e1f";
+    "e98977e0af45d3afdcdde932447ebe91066a848ba848db6955277ada1db101d2";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.detect";
@@ -23,7 +23,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_DETECT_PY_SHA256: &str =
     "14d8f8f0947082529e98702ea2ea3d7bb99b2cd5091349e1314054dcf38136d1";
 const EXPECTED_DETECT_RS_SHA256: &str =
-    "d1bd8cbcac85b367a49e45ffbfcadd389f025dafb21c599bb9fda4a9e7e84954";
+    "4647ecf866da12f942e61584016fca61c3806fc3dd2eeb3087fe39703c717922";
 
 const BANNED_CHECKOUT_MARK: &str = "FOR_WORK";
 const BANNED_SUPABASE_SHAPE: &str = "sbp_";
@@ -104,7 +104,11 @@ fn assert_module_constants(case: &VectorCase) {
         case.id
     );
     assert_sorted_strings(case, "supported_formats", sorted_const(&SUPPORTED_FORMATS));
-    assert_sorted_strings(case, "valid_format_options", sorted_const(&VALID_FORMAT_OPTIONS));
+    assert_sorted_strings(
+        case,
+        "valid_format_options",
+        sorted_const(&VALID_FORMAT_OPTIONS),
+    );
     assert_eq!(
         string_field(&case.expected, "reason_clear_winner").expect("r"),
         REASON_CLEAR_WINNER,
@@ -224,7 +228,12 @@ fn assert_detect_format(case: &VectorCase) {
         let got = err.to_string().replace('\\', "/");
         let want = message.replace('\\', "/");
         if let Some((prefix, suffix)) = want.split_once(": ") {
-            assert!(got.starts_with(&format!("{prefix}: ")), "{} {}", got, case.id);
+            assert!(
+                got.starts_with(&format!("{prefix}: ")),
+                "{} {}",
+                got,
+                case.id
+            );
             assert!(got.ends_with(suffix), "{} {}", got, case.id);
         } else {
             assert_eq!(got, want, "{}", case.id);
@@ -244,7 +253,12 @@ fn assert_detect_format(case: &VectorCase) {
     let expected = object_field(&case.expected, "result").expect("result");
     assert_detection_object(case, &got, expected);
     if let Ok(want_fmt) = string_field(&case.expected, "assert_format") {
-        assert_eq!(got.format.as_deref(), Some(want_fmt.as_str()), "{}", case.id);
+        assert_eq!(
+            got.format.as_deref(),
+            Some(want_fmt.as_str()),
+            "{}",
+            case.id
+        );
     }
 }
 
@@ -295,11 +309,7 @@ fn assert_detect_compare_thresholds(case: &VectorCase) {
     );
 }
 
-fn assert_detection_object(
-    case: &VectorCase,
-    got: &DetectionResult,
-    spec: &[(String, JsonValue)],
-) {
+fn assert_detection_object(case: &VectorCase, got: &DetectionResult, spec: &[(String, JsonValue)]) {
     let want_fmt = optional_string_field(spec, "format").expect("format field");
     assert_eq!(got.format.as_deref(), want_fmt.as_deref(), "{}", case.id);
     assert_eq!(
@@ -323,7 +333,13 @@ fn assert_detection_object(
         let score = f64_from_json(&cols[1]).expect("score");
         let (got_key, got_score) = &got.confidences[index];
         assert_eq!(key, got_key, "key {} {}", index, case.id);
-        assert_eq!(score.to_bits(), got_score.to_bits(), "score {} {}", index, case.id);
+        assert_eq!(
+            score.to_bits(),
+            got_score.to_bits(),
+            "score {} {}",
+            index,
+            case.id
+        );
     }
 }
 
@@ -395,17 +411,12 @@ fn assert_to_source_block(case: &VectorCase, method: bool) {
     assert_source_block(case, &got, want_block);
 }
 
-fn detection_result_from_construct(
-    construct: &[(String, JsonValue)],
-) -> Option<DetectionResult> {
+fn detection_result_from_construct(construct: &[(String, JsonValue)]) -> Option<DetectionResult> {
     match construct.iter().find(|(k, _)| k == "result") {
         None | Some((_, JsonValue::Null)) => None,
         Some((_, value)) => {
             let spec = as_object(value, "result").expect("result object");
-            Some(
-                decode_detection_result(spec)
-                    .unwrap_or_else(|err| panic!("decode result: {err}")),
-            )
+            Some(decode_detection_result(spec).unwrap_or_else(|err| panic!("decode result: {err}")))
         }
     }
 }
@@ -422,7 +433,12 @@ fn assert_source_block(
         case.id
     );
     let want_resolved = optional_string_field(want, "resolved").expect("resolved");
-    assert_eq!(got.resolved.as_deref(), want_resolved.as_deref(), "{}", case.id);
+    assert_eq!(
+        got.resolved.as_deref(),
+        want_resolved.as_deref(),
+        "{}",
+        case.id
+    );
     assert_eq!(
         string_field(want, "reason").expect("reason"),
         got.reason,
@@ -464,7 +480,12 @@ fn assert_resolve_format(case: &VectorCase) {
         let err = resolve_format(explicit, &path, confidence, margin).expect_err("gap");
         match err {
             ResolveFormatError::Finding(inner) => {
-                assert_eq!(inner.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+                assert_eq!(
+                    inner.to_string(),
+                    FINGERPRINT_CODEC_UNAVAILABLE,
+                    "{}",
+                    case.id
+                );
             }
             other => panic!("expected finding gap, got {other:?} in {}", case.id),
         }
@@ -507,7 +528,10 @@ fn detect_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -651,7 +675,10 @@ fn as_object<'a>(value: &'a JsonValue, ctx: &str) -> Result<&'a [(String, JsonVa
     }
 }
 
-fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(String, JsonValue)], ParseError> {
+fn object_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [(String, JsonValue)], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Object(items))) => Ok(items),
         Some((_, JsonValue::Null)) => Err(ParseError {
@@ -663,7 +690,10 @@ fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(S
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Array(items))) => Ok(items),
         _ => Err(ParseError {

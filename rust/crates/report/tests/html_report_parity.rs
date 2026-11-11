@@ -4,11 +4,11 @@
 use model::codes::{Repairability, Severity, SL003};
 use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 use report::html_report::{
-    render_html, scan_report_html, RenderHtmlError, ScanReportUnavailable, HTML_REPORT_ALL, MAX_ROWS,
-    SCAN_REPORT_UNAVAILABLE,
+    render_html, scan_report_html, RenderHtmlError, ScanReportUnavailable, HTML_REPORT_ALL,
+    MAX_ROWS, SCAN_REPORT_UNAVAILABLE,
 };
 use report::report::{
-    CountKey, CountValue, Counts, Coverage, CoverageInput, CountsInput, FindingElem, FindingsInput,
+    CountKey, CountValue, Counts, CountsInput, Coverage, CoverageInput, FindingElem, FindingsInput,
     InputKey, InputValue, RefusalRationaleUnavailable, Report, ReportParts, SkipSeq,
     REPORT_SCHEMA_VERSION,
 };
@@ -50,7 +50,10 @@ fn html_report_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -64,15 +67,25 @@ fn html_report_module_parity_vectors() {
 
     let doc = parse_document_with_meta(&normalized).expect("parse vectors.json");
     assert_root_meta(&doc.meta);
-    assert_eq!(doc.cases.len(), EXPECTED_VECTOR_COUNT, "unexpected vector count");
+    assert_eq!(
+        doc.cases.len(),
+        EXPECTED_VECTOR_COUNT,
+        "unexpected vector count"
+    );
     for case in &doc.cases {
         assert_case(case);
     }
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT
@@ -108,7 +121,12 @@ fn assert_module_exports(case: &VectorCase) {
         let JsonValue::Str(name) = item else {
             panic!("python_all[{index}] must be string");
         };
-        assert_eq!(HTML_REPORT_ALL[index], name.as_str(), "ALL[{index}] {}", case.id);
+        assert_eq!(
+            HTML_REPORT_ALL[index],
+            name.as_str(),
+            "ALL[{index}] {}",
+            case.id
+        );
     }
 }
 
@@ -185,7 +203,12 @@ fn assert_scan_report_html_gap(case: &VectorCase) {
     );
     let err = scan_report_html().expect_err("scan seam");
     assert_eq!(err, ScanReportUnavailable);
-    assert_eq!(ScanReportUnavailable.to_string(), SCAN_REPORT_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        ScanReportUnavailable.to_string(),
+        SCAN_REPORT_UNAVAILABLE,
+        "{}",
+        case.id
+    );
     let _pin = object_field(&case.expected, "pin").expect("pin");
 }
 
@@ -224,8 +247,12 @@ fn pin_html_escape(text: &str) -> String {
 }
 
 fn html_warning_finding() -> Finding {
-    let source = SourceRef::try_new(".._abc123/sess.jsonl", Some(SourceLine::Int(4)), Some("evt_2"))
-        .expect("source");
+    let source = SourceRef::try_new(
+        ".._abc123/sess.jsonl",
+        Some(SourceLine::Int(4)),
+        Some("evt_2"),
+    )
+    .expect("source");
     let evidence = PyValue::map(vec![
         (PyValue::string("byte_offset"), PyValue::int(10)),
         (PyValue::string("byte_end"), PyValue::int(42)),
@@ -245,10 +272,7 @@ fn html_warning_finding() -> Finding {
     .expect("finding")
 }
 
-fn build_report_from_construct(
-    construct: &[(String, JsonValue)],
-    findings: &[Finding],
-) -> Report {
+fn build_report_from_construct(construct: &[(String, JsonValue)], findings: &[Finding]) -> Report {
     let session = string_field(construct, "session_id").expect("session_id");
     let fp = string_field(construct, "source_fingerprint").expect("fp");
     let tool = string_field(construct, "tool_version").expect("tool");
@@ -288,11 +312,7 @@ fn build_report_from_construct(
         source_fingerprint: &InputValue::str_value(fp),
         tool_version: &InputValue::str_value(tool),
         findings: &FindingsInput::Tuple(
-            findings
-                .iter()
-                .cloned()
-                .map(FindingElem::Finding)
-                .collect(),
+            findings.iter().cloned().map(FindingElem::Finding).collect(),
         ),
         counts: &CountsInput::Value(counts),
         assurance: &InputValue::str_value(assurance),
@@ -444,7 +464,10 @@ fn as_object<'a>(value: &'a JsonValue, ctx: &str) -> Result<&'a [(String, JsonVa
     }
 }
 
-fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(String, JsonValue)], ParseError> {
+fn object_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [(String, JsonValue)], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Object(items))) => Ok(items),
         Some((_, JsonValue::Null)) => Err(ParseError {
@@ -456,7 +479,10 @@ fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(S
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Array(items))) => Ok(items),
         _ => Err(ParseError {

@@ -65,10 +65,7 @@ fn scan_args_module_parity_vectors() {
 
     let path = vectors_path();
     let raw = std::fs::read(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-    assert!(
-        !raw.contains(&b'\r'),
-        "vectors.json must be LF-only"
-    );
+    assert!(!raw.contains(&b'\r'), "vectors.json must be LF-only");
     assert_eq!(
         sha256_hex(&raw),
         EXPECTED_VECTORS_SHA256,
@@ -200,8 +197,8 @@ fn assert_build_gap(case: &VectorCase, defaults_kwargs: &[(String, JsonValue)]) 
             assert_kwargs_match(&kwargs, defaults_kwargs, &case.id, false);
         }
         GAP_JOBS_I64 => {
-            let err =
-                run_build_scan_kwargs(case).expect_err(&format!("expected i64 gap error for {}", case.id));
+            let err = run_build_scan_kwargs(case)
+                .expect_err(&format!("expected i64 gap error for {}", case.id));
             assert_eq!(err, ScanArgsError::JobsMagnitude);
             assert_eq!(
                 err.to_string(),
@@ -262,8 +259,18 @@ fn assert_kwargs_match(
         case_id,
         "max_findings_per_code",
     );
-    assert_optional_scalar(&actual.newest, optional_scalar(spec, "newest"), case_id, "newest");
-    assert_optional_scalar(&actual.since, optional_scalar(spec, "since"), case_id, "since");
+    assert_optional_scalar(
+        &actual.newest,
+        optional_scalar(spec, "newest"),
+        case_id,
+        "newest",
+    );
+    assert_optional_scalar(
+        &actual.since,
+        optional_scalar(spec, "since"),
+        case_id,
+        "since",
+    );
     assert_arg_value(
         &actual.format,
         scalar_field(spec, "format").expect("format"),
@@ -288,22 +295,41 @@ fn assert_kwargs_match(
         case_id,
         "margin_min",
     );
-    assert_progress_cb(actual, object_field(spec, "progress_cb").expect("progress_cb"), case_id);
+    assert_progress_cb(
+        actual,
+        object_field(spec, "progress_cb").expect("progress_cb"),
+        case_id,
+    );
     assert_arg_value(
         &actual.skip_undetected,
         scalar_field(spec, "skip_undetected").expect("skip_undetected"),
         case_id,
         "skip_undetected",
     );
-    assert_rule_codes(&actual.select, optional_string_list(spec, "select"), case_id, "select");
-    assert_rule_codes(&actual.ignore, optional_string_list(spec, "ignore"), case_id, "ignore");
+    assert_rule_codes(
+        &actual.select,
+        optional_string_list(spec, "select"),
+        case_id,
+        "select",
+    );
+    assert_rule_codes(
+        &actual.ignore,
+        optional_string_list(spec, "ignore"),
+        case_id,
+        "ignore",
+    );
     assert_rule_codes(
         &actual.baseline,
         optional_string_list(spec, "baseline"),
         case_id,
         "baseline",
     );
-    assert_optional_scalar(&actual.exclude, optional_scalar(spec, "exclude"), case_id, "exclude");
+    assert_optional_scalar(
+        &actual.exclude,
+        optional_scalar(spec, "exclude"),
+        case_id,
+        "exclude",
+    );
     assert_optional_scalar(&actual.ext, optional_scalar(spec, "ext"), case_id, "ext");
     assert_arg_value(
         &actual.incremental,
@@ -326,20 +352,22 @@ fn assert_kwargs_match(
     }
 }
 
-fn assert_progress_cb(
-    actual: &ScanKwargs<Vec<u8>>,
-    spec: &[(String, JsonValue)],
-    case_id: &str,
-) {
+fn assert_progress_cb(actual: &ScanKwargs<Vec<u8>>, spec: &[(String, JsonValue)], case_id: &str) {
     let kind = string_field(spec, "kind").expect("progress_cb.kind");
     match kind.as_str() {
         "none" => assert!(actual.progress_cb.is_none(), "progress_cb for {case_id}"),
         "ndjson" => assert!(
-            matches!(actual.progress_cb, Some(cli::context::ProgressCallback::Ndjson(_))),
+            matches!(
+                actual.progress_cb,
+                Some(cli::context::ProgressCallback::Ndjson(_))
+            ),
             "progress_cb for {case_id}"
         ),
         "tty" => assert!(
-            matches!(actual.progress_cb, Some(cli::context::ProgressCallback::Tty(_))),
+            matches!(
+                actual.progress_cb,
+                Some(cli::context::ProgressCallback::Tty(_))
+            ),
             "progress_cb for {case_id}"
         ),
         other => panic!("unknown progress_cb {other} for {case_id}"),
@@ -410,10 +438,7 @@ fn common_args_from_object(spec: &[(String, JsonValue)]) -> CommonArgs {
     args
 }
 
-fn optional_string_list_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Option<Vec<String>> {
+fn optional_string_list_field(obj: &[(String, JsonValue)], key: &str) -> Option<Vec<String>> {
     match obj.iter().find(|(k, _)| k == key).map(|(_, v)| v) {
         None | Some(JsonValue::Null) => None,
         Some(JsonValue::Array(items)) => Some(
@@ -431,10 +456,7 @@ fn optional_string_list_field(
     }
 }
 
-fn optional_string_list(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Option<Vec<String>> {
+fn optional_string_list(obj: &[(String, JsonValue)], key: &str) -> Option<Vec<String>> {
     match obj.iter().find(|(k, _)| k == key).map(|(_, v)| v) {
         None | Some(JsonValue::Null) => None,
         Some(JsonValue::Array(items)) => Some(
@@ -535,7 +557,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
                     message: "vectors must be array".into(),
                 });
             };
-            cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+            cases = items
+                .iter()
+                .map(parse_vector_case)
+                .collect::<Result<_, _>>()?;
         } else {
             meta.push((key.clone(), item.clone()));
         }
@@ -552,7 +577,10 @@ fn parse_vector_case(value: &JsonValue) -> Result<VectorCase, ParseError> {
     })
 }
 
-fn as_object_value<'a>(value: &'a JsonValue, label: &str) -> Result<&'a [(String, JsonValue)], ParseError> {
+fn as_object_value<'a>(
+    value: &'a JsonValue,
+    label: &str,
+) -> Result<&'a [(String, JsonValue)], ParseError> {
     match value {
         JsonValue::Object(items) => Ok(items),
         _ => Err(ParseError {
@@ -573,7 +601,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key).map(|(_, v)| v) {
         Some(JsonValue::Array(items)) => Ok(items),
         _ => Err(ParseError {

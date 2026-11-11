@@ -54,7 +54,8 @@ fn registry_module_parity_vectors() {
         digest, EXPECTED_VECTORS_SHA256,
         "vectors.json sha256 must match generator"
     );
-    let cases = parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
+    let cases =
+        parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
     assert_eq!(
         cases.len(),
         EXPECTED_VECTOR_COUNT,
@@ -216,7 +217,8 @@ fn assert_insertion_order(case: &VectorCase) {
     let got: Vec<String> = list_recipes().iter().map(|r| r.name().to_owned()).collect();
     assert_eq!(got, names, "{}", case.id);
     let shared = string_field(&case.construct, "shared_code").expect("shared_code");
-    let want_shared = string_array(&case.expected, "recipes_for_shared").expect("recipes_for_shared");
+    let want_shared =
+        string_array(&case.expected, "recipes_for_shared").expect("recipes_for_shared");
     let got_shared: Vec<String> = recipes_for(&shared)
         .iter()
         .map(|r| r.name().to_owned())
@@ -289,7 +291,8 @@ fn assert_recipe_snapshot(case_id: &str, recipe: &Recipe, expected: &[(String, J
     );
     assert_eq!(
         recipe.excludes_execution_dependence(),
-        bool_field(expected, "excludes_execution_dependence").expect("excludes_execution_dependence"),
+        bool_field(expected, "excludes_execution_dependence")
+            .expect("excludes_execution_dependence"),
         "{case_id}"
     );
     let apply_obj = object_field(expected, "apply").expect("apply");
@@ -297,7 +300,11 @@ fn assert_recipe_snapshot(case_id: &str, recipe: &Recipe, expected: &[(String, J
     assert_eq!(recipe.apply().is_some(), apply_present, "{case_id}");
     let region_obj = object_field(expected, "affected_region").expect("affected_region");
     let region_present = bool_field(region_obj, "present").expect("affected_region.present");
-    assert_eq!(recipe.affected_region().is_some(), region_present, "{case_id}");
+    assert_eq!(
+        recipe.affected_region().is_some(),
+        region_present,
+        "{case_id}"
+    );
 }
 
 fn recipes_expected_array(
@@ -398,7 +405,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -414,7 +427,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

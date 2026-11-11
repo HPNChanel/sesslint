@@ -3,8 +3,8 @@
 use scan::state_db::{
     is_state_db_name, migration_skip_reason_hash, read_codex_state, rollout_uuid_from_name,
     table_columns, CodexStateSnapshot, ReadCodexStateError, ShortHashUnavailable,
-    SqliteConnectUnavailable, MAX_STATE_DB_BYTES, MAX_STATE_QUERY_STEPS,
-    MAX_STATE_ROWS, SKIP_COLS, SPAWN_COLS, STATE_DB_GLOB, THREADS_COLS,
+    SqliteConnectUnavailable, MAX_STATE_DB_BYTES, MAX_STATE_QUERY_STEPS, MAX_STATE_ROWS, SKIP_COLS,
+    SPAWN_COLS, STATE_DB_GLOB, THREADS_COLS,
 };
 use std::collections::BTreeSet;
 use std::fmt;
@@ -110,7 +110,11 @@ fn state_db_module_parity_vectors() {
     );
     let (meta, cases) = parse_document_with_meta(&normalized).expect("parse vectors.json");
     assert_root_meta(&meta);
-    assert_eq!(cases.len(), EXPECTED_VECTOR_COUNT, "unexpected vector count");
+    assert_eq!(
+        cases.len(),
+        EXPECTED_VECTOR_COUNT,
+        "unexpected vector count"
+    );
     for case in &cases {
         assert_case(case);
     }
@@ -158,9 +162,19 @@ fn assert_case(case: &VectorCase) {
 
 fn assert_module_exports(case: &VectorCase) {
     let names = string_list(&case.expected, "python_all").expect("python_all");
-    assert_eq!(names.len(), PYTHON_ALL.len(), "python_all length {}", case.id);
+    assert_eq!(
+        names.len(),
+        PYTHON_ALL.len(),
+        "python_all length {}",
+        case.id
+    );
     for (index, name) in names.iter().enumerate() {
-        assert_eq!(PYTHON_ALL[index], name.as_str(), "export[{index}] {}", case.id);
+        assert_eq!(
+            PYTHON_ALL[index],
+            name.as_str(),
+            "export[{index}] {}",
+            case.id
+        );
     }
 }
 
@@ -207,7 +221,12 @@ fn assert_rollout_uuid(case: &VectorCase) {
 fn assert_is_state_db_name(case: &VectorCase) {
     let name = string_field(&case.construct, "name").expect("name");
     let want = bool_field(&case.expected, "value").expect("value");
-    assert_eq!(is_state_db_name(&name), want, "is_state_db_name {}", case.id);
+    assert_eq!(
+        is_state_db_name(&name),
+        want,
+        "is_state_db_name {}",
+        case.id
+    );
 }
 
 fn assert_membership_complete(case: &VectorCase) {
@@ -238,7 +257,12 @@ fn assert_membership_complete(case: &VectorCase) {
         },
         other => panic!("unknown membership variant {other} in {}", case.id),
     };
-    assert_eq!(snapshot.membership_complete(), want, "membership {}", case.id);
+    assert_eq!(
+        snapshot.membership_complete(),
+        want,
+        "membership {}",
+        case.id
+    );
 }
 
 fn assert_read_codex_state(case: &VectorCase) {
@@ -300,7 +324,10 @@ fn assert_sqlite_gap(
 }
 
 fn assert_sqlite_seam(err: ReadCodexStateError, case_id: &str) {
-    assert!(matches!(err, ReadCodexStateError::SqliteConnect), "{case_id}");
+    assert!(
+        matches!(err, ReadCodexStateError::SqliteConnect),
+        "{case_id}"
+    );
     assert_eq!(err.to_string(), SQLITE_SEAM, "sqlite seam text {case_id}");
     assert_eq!(
         err.to_string(),
@@ -317,7 +344,12 @@ fn assert_migration_skip_reason(case: &VectorCase) {
     assert_eq!(mode, "gap_short_hash", "mode {}", case.id);
     let err = migration_skip_reason_hash(reason.as_deref()).expect_err("short_hash seam");
     assert_eq!(err, ShortHashUnavailable, "variant {}", case.id);
-    assert_eq!(err.to_string(), SHORT_HASH_SEAM, "short_hash text {}", case.id);
+    assert_eq!(
+        err.to_string(),
+        SHORT_HASH_SEAM,
+        "short_hash text {}",
+        case.id
+    );
 }
 
 fn optional_migration_reason(construct: &[(String, JsonValue)]) -> Option<String> {
@@ -393,16 +425,15 @@ fn assert_snapshot_eq(got: &CodexStateSnapshot, want: &SnapshotExpect, case_id: 
         got.spawn_edge_orphans, want.spawn_edge_orphans,
         "spawn_edge_orphans {case_id}"
     );
-    assert_eq!(got.migration_skips, want.migration_skips, "migration_skips {case_id}");
+    assert_eq!(
+        got.migration_skips, want.migration_skips,
+        "migration_skips {case_id}"
+    );
     assert_eq!(
         got.migration_skip_reason_hashes, want.migration_skip_reason_hashes,
         "migration_skip_reason_hashes {case_id}"
     );
-    let pairs: Vec<(String, String)> = got
-        .thread_rollout_pairs
-        .iter()
-        .cloned()
-        .collect();
+    let pairs: Vec<(String, String)> = got.thread_rollout_pairs.iter().cloned().collect();
     assert_eq!(pairs, want.thread_rollout_pairs, "pairs {case_id}");
     assert_eq!(
         got.membership_complete(),
@@ -567,7 +598,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
     };
     let mut meta = root.clone();
     meta.retain(|(key, _)| key != "vectors");
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok((meta, cases))
 }
 

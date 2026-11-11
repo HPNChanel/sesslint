@@ -429,7 +429,10 @@ fn identical_duplicate_collapse_payload_kind_check_is_not_coverage() {
 }
 
 fn assert_payload_still_refuses(cases: &[VectorCase], vector_id: &str, test_name: &str) {
-    let case = cases.iter().find(|item| item.id == vector_id).expect(vector_id);
+    let case = cases
+        .iter()
+        .find(|item| item.id == vector_id)
+        .expect(vector_id);
     assert!(!bool_field(&case.construct, "entire_test").expect("entire"));
     let message = string_field(&case.expected, "message").expect("message");
     let events = decode_events(array_field(&case.construct, "events").expect("events"))
@@ -453,7 +456,10 @@ fn assert_payload_still_refuses(cases: &[VectorCase], vector_id: &str, test_name
         .map(|item| as_object(item, "row").expect("row"))
         .find(|row| string_field(row, "test").expect("test") == test_name)
         .expect(test_name);
-    assert_eq!(string_field(row, "status").expect("status"), "not_applicable");
+    assert_eq!(
+        string_field(row, "status").expect("status"),
+        "not_applicable"
+    );
     assert!(matches!(field_ref(row, "vector_id"), JsonValue::Null));
 }
 

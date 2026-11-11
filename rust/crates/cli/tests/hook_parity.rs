@@ -213,7 +213,12 @@ fn assert_configure_case(case: &VectorCase) {
     }
 
     let want_groups = array_field(&case.expected, "groups").expect("groups");
-    assert_eq!(spec.groups.len(), want_groups.len(), "groups for {}", case.id);
+    assert_eq!(
+        spec.groups.len(),
+        want_groups.len(),
+        "groups for {}",
+        case.id
+    );
     for (index, item) in want_groups.iter().enumerate() {
         let obj = as_object(item, "group").expect("group object");
         let Some(group) = spec.groups.get(index) else {
@@ -254,8 +259,16 @@ fn assert_argument_decl(
         index,
     );
     let want_metavar = optional_string_field(spec, "metavar").expect("metavar");
-    assert_eq!(decl.metavar, want_metavar.as_deref(), "metavar[{index}] for {case_id}");
-    assert_eq!(decl.help, string_field(spec, "help").expect("help"), "help[{index}] for {case_id}");
+    assert_eq!(
+        decl.metavar,
+        want_metavar.as_deref(),
+        "metavar[{index}] for {case_id}"
+    );
+    assert_eq!(
+        decl.help,
+        string_field(spec, "help").expect("help"),
+        "help[{index}] for {case_id}"
+    );
     assert_default_keyword(
         decl.default_keyword,
         &object_or_string_field(spec, "default_keyword").expect("default_keyword"),
@@ -294,7 +307,11 @@ fn assert_group(
         .filter_map(|member| spec.arguments.get(*member))
         .map(|decl| decl.dest.as_str())
         .collect();
-    assert_eq!(got_dests, want_dests.iter().map(String::as_str).collect::<Vec<_>>(), "member_dests[{index}] for {case_id}");
+    assert_eq!(
+        got_dests,
+        want_dests.iter().map(String::as_str).collect::<Vec<_>>(),
+        "member_dests[{index}] for {case_id}"
+    );
 }
 
 fn assert_run_gap_case(case: &VectorCase) {
@@ -325,11 +342,8 @@ fn assert_run_gap_case(case: &VectorCase) {
     match gap_id.as_str() {
         GAP_INIT_HOOKS_DOC => {
             assert!(
-                bool_field(
-                    object_field(&case.construct, "args").expect("args"),
-                    "init"
-                )
-                .expect("init"),
+                bool_field(object_field(&case.construct, "args").expect("args"), "init")
+                    .expect("init"),
                 "init for {}",
                 case.id
             );
@@ -383,15 +397,14 @@ fn action_token(action: ArgAction) -> &'static str {
     }
 }
 
-fn assert_default_keyword(
-    actual: DefaultKeyword,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: DefaultKeyword, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, DefaultKeyword::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                DefaultKeyword::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => {
             let present = object_field_vec(obj, "present").expect("present");
@@ -408,12 +421,7 @@ fn assert_default_keyword(
     }
 }
 
-fn assert_effective_default(
-    actual: ArgDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_effective_default(actual: ArgDefault, spec: &JsonValue, case_id: &str, index: usize) {
     assert_arg_default_matches(actual, spec, "effective_default", case_id, index);
 }
 
@@ -537,11 +545,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -607,10 +615,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)
@@ -669,10 +674,7 @@ fn optional_string_field(
     }
 }
 
-fn optional_bool_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<bool>, ParseError> {
+fn optional_bool_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<bool>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Null)) => Ok(None),
         Some((_, JsonValue::Bool(value))) => Ok(Some(*value)),

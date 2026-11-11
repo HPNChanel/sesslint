@@ -419,7 +419,8 @@ fn assert_pin_results_absent(dir: &Path, rel: &str) {
         if path.is_dir() {
             assert_pin_results_absent(&path, &child);
         } else if name_str == "vectors.json" {
-            let json = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
+            let json =
+                fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
             for needle in ABSENT_PIN_RESULTS {
                 assert!(
                     !json.contains(needle),
@@ -549,11 +550,7 @@ fn covered_vector_ids_are_present_in_published_vectors() {
             cited.construct
         );
         for needle in cited.extra {
-            assert!(
-                slice.contains(needle),
-                "{} is missing {needle}",
-                cited.id
-            );
+            assert!(slice.contains(needle), "{} is missing {needle}", cited.id);
         }
     }
 

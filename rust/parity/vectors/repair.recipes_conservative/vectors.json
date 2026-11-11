@@ -3,7 +3,7 @@
   "module": "sesslint.repair.recipes_conservative",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
-  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "recipes_conservative_rs_sha256": "69981810065940902863ee14dce7816d78db56886c822ca515d24e73897e9ef8",
   "known_parity_gaps": [
     "GAP-recipes-conservative-affected-region: Python affected_region_* returns sesslint.policy.abstention.AffectedRegion. Rust returns AffectedRegionUnavailable; parity asserts the seam only."
   ],

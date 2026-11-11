@@ -5,9 +5,7 @@
 //! not asserted: those fields are private, and `into_findings` does not return
 //! them.
 
-use adapters::drift::{
-    DriftTracker, ALL, FOREIGN_SIGNATURE_TYPES, MAX_DRIFT_TRANSITIONS,
-};
+use adapters::drift::{DriftTracker, ALL, FOREIGN_SIGNATURE_TYPES, MAX_DRIFT_TRANSITIONS};
 use adapters::safe_value::PyValue as SafeValue;
 use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
@@ -405,7 +403,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -547,12 +548,9 @@ fn optional_string_field(
 fn optional_i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<i64>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         None | Some((_, JsonValue::Null)) => Ok(None),
-        Some((_, JsonValue::Number(raw))) => raw
-            .parse::<i64>()
-            .map(Some)
-            .map_err(|_| ParseError {
-                message: format!("{key} must be i64"),
-            }),
+        Some((_, JsonValue::Number(raw))) => raw.parse::<i64>().map(Some).map_err(|_| ParseError {
+            message: format!("{key} must be i64"),
+        }),
         _ => Err(ParseError {
             message: format!("{key} must be number or null"),
         }),

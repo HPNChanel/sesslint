@@ -2,9 +2,7 @@
 
 use model::codes::{Repairability, Severity};
 use model::events::{EventField, EventMapping, EventValue};
-use model::finding::{
-    Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
-};
+use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 use repair::preconditions::{
     _find_component_indices, _find_torn_compaction_dropped_indices, acknowledge_side_effects,
     adjacent_identical_duplicate, branch_has_no_checkpoint, check_preconditions,
@@ -50,7 +48,8 @@ fn preconditions_module_parity_vectors() {
         digest, EXPECTED_VECTORS_SHA256,
         "vectors.json sha256 must match generator"
     );
-    let cases = parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
+    let cases =
+        parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
     assert_eq!(
         cases.len(),
         EXPECTED_VECTOR_COUNT,
@@ -99,7 +98,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -115,7 +120,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)
@@ -234,7 +240,12 @@ fn assert_case(case: &VectorCase) {
             match lookup(&case.expected, "failed") {
                 Some(JsonValue::Null) | None => assert!(result.1.is_none(), "{}", case.id),
                 Some(JsonValue::Str(name)) => {
-                    assert_eq!(result.1.map(|s| s.to_string()), Some(name.clone()), "{}", case.id);
+                    assert_eq!(
+                        result.1.map(|s| s.to_string()),
+                        Some(name.clone()),
+                        "{}",
+                        case.id
+                    );
                 }
                 other => panic!("{} bad failed field: {other:?}", case.id),
             }
@@ -265,8 +276,7 @@ fn assert_case(case: &VectorCase) {
 
 fn assert_predicate(case: &VectorCase) {
     let name = string_field(&case.construct, "predicate").expect("predicate");
-    let owned =
-        OwnedContext::from_spec(object_field(&case.construct, "context").expect("context"));
+    let owned = OwnedContext::from_spec(object_field(&case.construct, "context").expect("context"));
     let ctx = owned.context();
     let mode = string_field(&case.expected, "mode").expect("mode");
     match mode.as_str() {
@@ -555,7 +565,9 @@ fn i64_set_from_expected(expected: &[(String, JsonValue)]) -> Result<Vec<i64>, P
         .collect()
 }
 
-fn usize_set_from_expected(expected: &[(String, JsonValue)]) -> Result<BTreeSet<usize>, ParseError> {
+fn usize_set_from_expected(
+    expected: &[(String, JsonValue)],
+) -> Result<BTreeSet<usize>, ParseError> {
     let items = array_field(expected, "sorted")?;
     let mut out = BTreeSet::new();
     for v in items {
@@ -603,7 +615,10 @@ fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> 
     }
 }
 
-fn optional_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<String>, ParseError> {
+fn optional_string_field(
+    obj: &[(String, JsonValue)],
+    key: &str,
+) -> Result<Option<String>, ParseError> {
     match lookup(obj, key) {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Str(s)) => Ok(Some(s.clone())),
@@ -778,11 +793,9 @@ fn parse_number(input: &str) -> Result<(JsonValue, &str), ParseError> {
             message: "invalid number".into(),
         });
     }
-    let num = input[..end]
-        .parse::<i64>()
-        .map_err(|_| ParseError {
-            message: "invalid int".into(),
-        })?;
+    let num = input[..end].parse::<i64>().map_err(|_| ParseError {
+        message: "invalid int".into(),
+    })?;
     Ok((JsonValue::Number(num), &input[end..]))
 }
 

@@ -210,8 +210,18 @@ fn assert_dataclass_serialization(case: &VectorCase) {
         ok: bool_field(check_obj, "ok").expect("check ok"),
         detail: string_field(check_obj, "detail").expect("check detail"),
     };
-    assert_eq!(check.name, string_field(check_obj, "name").expect("name"), "{}", case.id);
-    assert_eq!(check.ok, bool_field(check_obj, "ok").expect("ok"), "{}", case.id);
+    assert_eq!(
+        check.name,
+        string_field(check_obj, "name").expect("name"),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        check.ok,
+        bool_field(check_obj, "ok").expect("ok"),
+        "{}",
+        case.id
+    );
     assert_eq!(
         check.detail,
         string_field(check_obj, "detail").expect("detail"),
@@ -241,10 +251,20 @@ fn assert_dataclass_serialization(case: &VectorCase) {
         "{}",
         case.id
     );
-    assert_eq!(verdict.ok, bool_field(verdict_obj, "ok").expect("ok"), "{}", case.id);
+    assert_eq!(
+        verdict.ok,
+        bool_field(verdict_obj, "ok").expect("ok"),
+        "{}",
+        case.id
+    );
     for (idx, row) in rows.iter().enumerate() {
         let got = &verdict.checks[idx];
-        assert_eq!(got.name, string_field(row, "name").expect("name"), "{}", case.id);
+        assert_eq!(
+            got.name,
+            string_field(row, "name").expect("name"),
+            "{}",
+            case.id
+        );
         assert_eq!(got.ok, bool_field(row, "ok").expect("ok"), "{}", case.id);
         assert_eq!(
             got.detail,
@@ -347,9 +367,7 @@ fn assert_parse_session_events(case: &VectorCase) {
             }
         }
         "error" => {
-            let err = parse_session_events(&raw)
-                .unwrap_err()
-                .to_string();
+            let err = parse_session_events(&raw).unwrap_err().to_string();
             assert_eq!(
                 err,
                 string_field(&case.expected, "message").expect("message"),
@@ -399,7 +417,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;

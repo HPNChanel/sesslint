@@ -184,9 +184,8 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
         "GAP-checks-export-order",
     ] {
         assert!(
-            gaps.iter().any(|item| {
-                matches!(item, JsonValue::Str(s) if s.starts_with(prefix))
-            }),
+            gaps.iter()
+                .any(|item| { matches!(item, JsonValue::Str(s) if s.starts_with(prefix)) }),
             "expected gap {prefix}"
         );
     }
@@ -224,7 +223,10 @@ fn assert_case(case: &VectorCase, meta: &[(String, JsonValue)]) {
         "policy TOOL_KINDS and tool_pairing_2 TOOL_KINDS are the same three kinds"
     );
 
-    assert_ne!(want, RUST_CHECKS_BARREL, "export order differs (see GAP-checks-export-order)");
+    assert_ne!(
+        want, RUST_CHECKS_BARREL,
+        "export order differs (see GAP-checks-export-order)"
+    );
     assert_eq!(
         RUST_CHECKS_BARREL.len() + PYTHON_ONLY_BARREL_NAMES.len(),
         want.len(),

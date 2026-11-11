@@ -164,8 +164,8 @@ fn every_pinned_docs_consistency_test_has_one_disposition() {
 
 #[test]
 fn covered_dispositions_name_real_detect_vector_ids() {
-    let text =
-        fs::read_to_string(vectors_path()).expect("read parity/vectors/adapters.detect/vectors.json");
+    let text = fs::read_to_string(vectors_path())
+        .expect("read parity/vectors/adapters.detect/vectors.json");
     let needle = format!("\"python_commit\": \"{PIN}\"");
     assert!(
         text.contains(needle.as_str()),
@@ -173,11 +173,7 @@ fn covered_dispositions_name_real_detect_vector_ids() {
     );
     assert!(text.contains("\"module\": \"sesslint.adapters.detect\""));
     let ids = vector_ids(&text);
-    assert_eq!(
-        ids,
-        DETECT_VECTOR_IDS,
-        "parser missed a vector id: {ids:?}"
-    );
+    assert_eq!(ids, DETECT_VECTOR_IDS, "parser missed a vector id: {ids:?}");
     let mut sorted = ids.clone();
     sorted.sort_unstable();
     for pair in sorted.windows(2) {

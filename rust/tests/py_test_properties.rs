@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use sesslint_rust_workspace::PACKAGE_NAME;
 
 const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+/// `canonical.py` is the same blob at `PIN` and at this corpus commit.
+const CANONICAL_CORPUS_PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 3;
 const FINDING_VECTOR_COUNT: usize = 22;
 const FINDING_VECTORS_REL: &str = "parity/vectors/finding/vectors.json";
@@ -110,8 +112,8 @@ fn assert_canonical_vectors_pinned() {
     let json =
         fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(
-        json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "canonical vectors are pinned to {PIN}"
+        json.contains(&format!("\"python_commit\": \"{CANONICAL_CORPUS_PIN}\"")),
+        "canonical vectors are pinned to {CANONICAL_CORPUS_PIN}"
     );
     assert!(json.contains("\"module\": \"sesslint.canonical\""));
 }

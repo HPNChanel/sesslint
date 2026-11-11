@@ -75,9 +75,11 @@ fn options_module_parity_vectors() {
         !bool_field(&provenance, "contains_real_data").expect("contains_real_data"),
         "PROVENANCE must declare contains_real_data false"
     );
-  let gaps = array_field(&provenance, "known_parity_gaps").expect("PROVENANCE gaps");
+    let gaps = array_field(&provenance, "known_parity_gaps").expect("PROVENANCE gaps");
     assert!(
-        gaps.iter().any(|item| matches!(item, JsonValue::Str(text) if text.contains(GAP_POSITIVE_INT_I64))),
+        gaps.iter().any(
+            |item| matches!(item, JsonValue::Str(text) if text.contains(GAP_POSITIVE_INT_I64))
+        ),
         "PROVENANCE must document i64 gap"
     );
 
@@ -136,7 +138,9 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter().any(|item| matches!(item, JsonValue::Str(text) if text.contains(GAP_POSITIVE_INT_I64))),
+        gaps.iter().any(
+            |item| matches!(item, JsonValue::Str(text) if text.contains(GAP_POSITIVE_INT_I64))
+        ),
         "vectors.json must list i64 gap"
     );
 }
@@ -177,8 +181,7 @@ fn assert_positive_int_ok(case: &VectorCase) {
 
 fn assert_positive_int_error(case: &VectorCase) {
     let text = input_text(case);
-    let err = validate_positive_int(&text)
-        .expect_err(&format!("expected error for {}", case.id));
+    let err = validate_positive_int(&text).expect_err(&format!("expected error for {}", case.id));
     let message = string_field(&case.expected, "message").expect("message");
     assert_eq!(err.to_string(), message, "message for {}", case.id);
     match message.starts_with("Invalid integer value:") {
@@ -194,10 +197,7 @@ fn assert_positive_int_gap(case: &VectorCase) {
         GAP_POSITIVE_INT_I64
     );
     let pin = object_field(&case.expected, "pin").expect("pin");
-    assert_eq!(
-        string_field(pin, "result").expect("pin result"),
-        "ok"
-    );
+    assert_eq!(string_field(pin, "result").expect("pin result"), "ok");
     assert_eq!(
         string_field(pin, "value_kind").expect("pin value_kind"),
         "int"
@@ -237,8 +237,8 @@ fn assert_unit_interval_ok(case: &VectorCase) {
 
 fn assert_unit_interval_error(case: &VectorCase) {
     let text = input_text(case);
-    let err = validate_unit_interval_float(&text)
-        .expect_err(&format!("expected error for {}", case.id));
+    let err =
+        validate_unit_interval_float(&text).expect_err(&format!("expected error for {}", case.id));
     let message = string_field(&case.expected, "message").expect("message");
     assert_eq!(err.to_string(), message, "message for {}", case.id);
     match message.starts_with("Invalid float value:") {
@@ -266,12 +266,8 @@ fn assert_adapter_option(case: &VectorCase) {
         string_field(&case.expected, "default").expect("default"),
         "argparse.SUPPRESS"
     );
-    assert!(
-        bool_field(&case.expected, "default_distinct_from_none").expect("distinct none")
-    );
-    assert!(
-        bool_field(&case.expected, "default_distinct_from_false").expect("distinct false")
-    );
+    assert!(bool_field(&case.expected, "default_distinct_from_none").expect("distinct none"));
+    assert!(bool_field(&case.expected, "default_distinct_from_false").expect("distinct false"));
 
     let mut parser = OptionParser::new();
     add_adapter_option(&mut parser);
@@ -369,7 +365,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
                     message: "vectors must be array".into(),
                 });
             };
-            cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+            cases = items
+                .iter()
+                .map(parse_vector_case)
+                .collect::<Result<_, _>>()?;
         } else {
             meta.push((key.clone(), item.clone()));
         }
@@ -410,7 +409,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key).map(|(_, v)| v) {
         Some(JsonValue::Array(items)) => Ok(items),
         _ => Err(ParseError {
@@ -438,9 +440,11 @@ fn bool_field(obj: &[(String, JsonValue)], key: &str) -> Result<bool, ParseError
 }
 
 fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> {
-    number_field(obj, key)?.parse::<i64>().map_err(|_| ParseError {
-        message: format!("{key} must fit i64"),
-    })
+    number_field(obj, key)?
+        .parse::<i64>()
+        .map_err(|_| ParseError {
+            message: format!("{key} must fit i64"),
+        })
 }
 
 fn number_field(obj: &[(String, JsonValue)], key: &str) -> Result<String, ParseError> {

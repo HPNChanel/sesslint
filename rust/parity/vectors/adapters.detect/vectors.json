@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.detect",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "detect_py_sha256": "14d8f8f0947082529e98702ea2ea3d7bb99b2cd5091349e1314054dcf38136d1",
-  "detect_rs_sha256": "d1bd8cbcac85b367a49e45ffbfcadd389f025dafb21c599bb9fda4a9e7e84954",
+  "detect_rs_sha256": "4647ecf866da12f942e61584016fca61c3806fc3dd2eeb3087fe39703c717922",
   "known_parity_gaps": [
     "GAP-detect-finding-fingerprint: resolve_format and resolve_format_bytes call _resolve_failure_finding when detection abstains. The pin builds a Finding via make_finding without fingerprint. Rust stops at sesslint.determinism.canonical_json_bytes and does not return a Finding.",
     "GAP-detect-cli: test_detect.py CLI smoke tests invoke sesslint.cli.main, which is outside this adapters.detect parity surface.",

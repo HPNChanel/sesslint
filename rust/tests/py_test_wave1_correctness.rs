@@ -140,7 +140,7 @@ const ROWS: &[Row] = &[
     Row {
         name: "test_deterministic_python_codec_wording_and_bytes_are_stable",
         disposition: Disposition::NotApplicable(
-            "canonical_json_bytes of a, x, n 0.0, and z true/null with newline false, plus a docstring without RFC 8785; canonical_flat_object is a different object, and content_identity_bytes_unsupported returns Unsupported",
+            "canonical_json_bytes of a, x, n 0.0, and z true/null with newline false, plus a docstring without RFC 8785; canonical_flat_object is a different object, and content_identity_bytes_minimal compares one synthetic event",
         ),
     },
 ];
@@ -317,7 +317,7 @@ fn hygiene_vectors_are_not_the_secret_tests() {
 #[test]
 fn canonical_dump_and_reader_vectors_are_not_the_pinned_calls() {
     let canonical = read_rel(CANONICAL_REL);
-    assert_module(&canonical, "sesslint.canonical", ANCESTOR_PIN);
+    assert_module(&canonical, "sesslint.canonical", PIN);
     assert!(canonical.contains(
         "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error"
     ));
@@ -492,7 +492,7 @@ fn sarif_codec_and_discriminator_vectors_are_not_the_pinned_calls() {
     assert_absent(gap, "scan_report_sarif_gap", "\"artifact_uri\"");
 
     let codec = read_rel(CODEC_REL);
-    assert_module(&codec, "sesslint._canonical_codec", ANCESTOR_PIN);
+    assert_module(&codec, "sesslint._canonical_codec", PIN);
     let flat = vector_slice(&codec, "canonical_flat_object");
     assert_needles(
         flat,
@@ -505,14 +505,14 @@ fn sarif_codec_and_discriminator_vectors_are_not_the_pinned_calls() {
             "\"result\": \"ok\"",
         ],
     );
-    let identity = vector_slice(&codec, "content_identity_bytes_unsupported");
+    let identity = vector_slice(&codec, "content_identity_bytes_minimal");
     assert_needles(
         identity,
-        "content_identity_bytes_unsupported",
+        "content_identity_bytes_minimal",
         &[
             "\"type\": \"content_identity_bytes\"",
-            "\"result\": \"error\"",
-            "\"raises\": \"Unsupported\"",
+            "\"result\": \"ok\"",
+            "\"id\": \"evt-synthetic\"",
         ],
     );
     assert_absent(&codec, "codec vectors", "RFC 8785");

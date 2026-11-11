@@ -1,20 +1,20 @@
 //! Parity for `sesslint.adapters.openai_agents` against pinned Python vectors.
 
 use adapters::openai_agents::{
-    detect_openai_agents, load_openai_agents, load_openai_agents_json,
-    load_openai_agents_jsonl, load_openai_agents_session, normalize_version, process_openai_item,
-    project_run_state, safe_type_value, AgentsDocumentKind, FindingGate, MapKey,
-    MapValue, MaxFileBytes, MetaValue, OpenAiAgentsSource, ProcessOpenAiItemError, RunProjection,
-    RunSource, SourceMetadata, SuppliedSecretScanTracker, ALL, CRITICAL_KEYS, ITEM_TYPE_MAP,
-    KNOWN_RECORD_KEYS,
-    MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS, MALFORMED_TAIL_TRACKER_UNAVAILABLE,
-    SECRET_SCAN_FEED_BLOB_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SUPPORTED_OPENAI_AGENTS_VERSIONS,
+    detect_openai_agents, load_openai_agents, load_openai_agents_json, load_openai_agents_jsonl,
+    load_openai_agents_session, normalize_version, process_openai_item, project_run_state,
+    safe_type_value, AgentsDocumentKind, FindingGate, MapKey, MapValue, MaxFileBytes, MetaValue,
+    OpenAiAgentsSource, ProcessOpenAiItemError, RunProjection, RunSource, SourceMetadata,
+    SuppliedSecretScanTracker, ALL, CRITICAL_KEYS, ITEM_TYPE_MAP, KNOWN_RECORD_KEYS,
+    MALFORMED_TAIL_TRACKER_UNAVAILABLE, MAX_PROJECTED_CHECKPOINTS, MAX_PROJECTED_RUN_STATE_KEYS,
+    SECRET_SCAN_FEED_BLOB_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE,
+    SUPPORTED_OPENAI_AGENTS_VERSIONS,
 };
 use adapters::safe_value::PyValue;
-use model::canonical::CanonicalUnavailable;
-use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use adapters::source::SuppliedReaderLimits;
+use model::canonical::CanonicalUnavailable;
 use model::canonical::SessionEvent;
+use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
 use std::fmt;
 use std::path::PathBuf;
@@ -51,13 +51,23 @@ fn assert_case(case: &VectorCase) {
         "normalize_version" => {
             let text = string_field(&case.construct, "text").expect("text");
             let want = string_field(&case.expected, "text").expect("expected text");
-            assert_eq!(normalize_version(&text), want, "normalize_version {}", case.id);
+            assert_eq!(
+                normalize_version(&text),
+                want,
+                "normalize_version {}",
+                case.id
+            );
         }
         "detect_openai_agents" => {
             let bytes = bytes_from_hex_field(&case.construct, "bytes_hex").expect("bytes");
             let filename = string_field(&case.construct, "filename").expect("filename");
             let want = f64_field(&case.expected, "score").expect("score");
-            assert_eq!(detect_openai_agents(&bytes, &filename), want, "detect {}", case.id);
+            assert_eq!(
+                detect_openai_agents(&bytes, &filename),
+                want,
+                "detect {}",
+                case.id
+            );
         }
         "project_run_state" => assert_project_run_state(case),
         "safe_type_value" => {
@@ -108,10 +118,9 @@ fn assert_module_constants(case: &VectorCase) {
         let key = string_field(obj, "key").expect("key");
         let actor = string_field(obj, "actor").expect("actor");
         let kind = string_field(obj, "kind").expect("kind");
-        let Some((want_actor, want_kind)) =
-            ITEM_TYPE_MAP
-                .iter()
-                .find_map(|(name, a, k)| (*name == key).then_some((*a, *k)))
+        let Some((want_actor, want_kind)) = ITEM_TYPE_MAP
+            .iter()
+            .find_map(|(name, a, k)| (*name == key).then_some((*a, *k)))
         else {
             panic!("unknown item type {key} in {}", case.id);
         };
@@ -174,10 +183,20 @@ fn assert_projection(case: &VectorCase, want: &[(String, JsonValue)], got: &RunP
         let JsonValue::Str(text) = want_shape else {
             panic!("shape must be string");
         };
-        assert_eq!(got.shape(key), Some(text.as_str()), "shape {key} {}", case.id);
+        assert_eq!(
+            got.shape(key),
+            Some(text.as_str()),
+            "shape {key} {}",
+            case.id
+        );
     }
     let want_chks = array_field(want, "checkpoints").expect("checkpoints");
-    assert_eq!(got.checkpoints.len(), want_chks.len(), "chk len {}", case.id);
+    assert_eq!(
+        got.checkpoints.len(),
+        want_chks.len(),
+        "chk len {}",
+        case.id
+    );
 }
 
 fn decode_source_metadata(spec: &[(String, JsonValue)]) -> Result<SourceMetadata, ParseError> {
@@ -225,7 +244,9 @@ fn decode_meta_value(spec: &[(String, JsonValue)]) -> Result<MetaValue, ParseErr
     }
 }
 
-fn decode_map_entries(spec: &[(String, JsonValue)]) -> Result<Vec<(MapKey, MetaValue)>, ParseError> {
+fn decode_map_entries(
+    spec: &[(String, JsonValue)],
+) -> Result<Vec<(MapKey, MetaValue)>, ParseError> {
     let entries = array_field(spec, "entries")?;
     let mut out = Vec::with_capacity(entries.len());
     for entry in entries {
@@ -261,11 +282,7 @@ fn assert_load_openai_agents(case: &VectorCase) {
     let bytes = bytes_from_hex_field(source, "hex").expect("bytes");
     let limit = optional_max_file_bytes(&case.construct);
     if let Ok(message) = string_field(&case.expected, "message") {
-        let err = load_openai_agents(
-            OpenAiAgentsSource::Bytes(&bytes),
-            limit,
-        )
-        .expect_err("error");
+        let err = load_openai_agents(OpenAiAgentsSource::Bytes(&bytes), limit).expect_err("error");
         assert_eq!(err.to_string(), message, "message {}", case.id);
         return;
     }
@@ -283,7 +300,12 @@ fn assert_load_openai_agents(case: &VectorCase) {
     let err = load_openai_agents(OpenAiAgentsSource::Bytes(&bytes), limit).expect_err("gap");
     match mode.as_str() {
         "gap_secret_scan_tracker" => {
-            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                SECRET_SCAN_TRACKER_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             let kind = string_field(assertion, "document_kind").expect("kind");
             let want = match kind.as_str() {
                 "json" => AgentsDocumentKind::Json,
@@ -293,7 +315,12 @@ fn assert_load_openai_agents(case: &VectorCase) {
             assert_eq!(err.document_kind(), Some(want), "{}", case.id);
         }
         "gap_fingerprint_codec" => {
-            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                FINGERPRINT_CODEC_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             let gate = string_field(assertion, "gate").expect("gate");
             let want = match gate.as_str() {
                 "size" => FindingGate::Size,
@@ -325,7 +352,12 @@ fn assert_load_json_gap(case: &VectorCase) {
         SuppliedSecretScanTracker,
     )
     .expect_err("feed_blob");
-    assert_eq!(err.to_string(), SECRET_SCAN_FEED_BLOB_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        err.to_string(),
+        SECRET_SCAN_FEED_BLOB_UNAVAILABLE,
+        "{}",
+        case.id
+    );
 }
 
 fn assert_load_jsonl_gap(case: &VectorCase) {
@@ -337,7 +369,12 @@ fn assert_load_jsonl_gap(case: &VectorCase) {
         SuppliedSecretScanTracker,
     )
     .expect_err("tail");
-    assert_eq!(err.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        err.to_string(),
+        MALFORMED_TAIL_TRACKER_UNAVAILABLE,
+        "{}",
+        case.id
+    );
 }
 
 fn assert_load_session_gap(case: &VectorCase) {
@@ -349,7 +386,12 @@ fn assert_load_session_gap(case: &VectorCase) {
     .expect("bytes");
     let err =
         load_openai_agents_session(OpenAiAgentsSource::Bytes(&bytes), None).expect_err("session");
-    assert_eq!(err.to_string(), MALFORMED_TAIL_TRACKER_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        err.to_string(),
+        MALFORMED_TAIL_TRACKER_UNAVAILABLE,
+        "{}",
+        case.id
+    );
 }
 
 fn assert_process_item_gap(case: &VectorCase) {
@@ -574,7 +616,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 

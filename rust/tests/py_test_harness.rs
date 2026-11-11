@@ -43,6 +43,7 @@ struct Catalog {
     rel: &'static str,
     module: &'static str,
     count: usize,
+    commit: &'static str,
 }
 
 const CATALOGS: &[Catalog] = &[
@@ -50,21 +51,25 @@ const CATALOGS: &[Catalog] = &[
         rel: "parity/vectors/codes/vectors.json",
         module: "sesslint.codes",
         count: 46,
+        commit: PIN,
     },
     Catalog {
         rel: "parity/vectors/canonical/vectors.json",
         module: "sesslint.canonical",
         count: 12,
+        commit: "02694d537104659df66cdd084354739f3cccc440",
     },
     Catalog {
         rel: "parity/vectors/determinism/vectors.json",
         module: "sesslint.determinism",
         count: 8,
+        commit: "02694d537104659df66cdd084354739f3cccc440",
     },
     Catalog {
         rel: "parity/vectors/discovery/vectors.json",
         module: "sesslint.discovery",
         count: 12,
+        commit: PIN,
     },
 ];
 
@@ -183,9 +188,10 @@ fn read_catalog(catalog: &Catalog) -> String {
     let json =
         fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(
-        json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "{} vectors are pinned to {PIN}",
-        catalog.rel
+        json.contains(&format!("\"python_commit\": \"{}\"", catalog.commit)),
+        "{} vectors are pinned to {}",
+        catalog.rel,
+        catalog.commit
     );
     assert!(
         json.contains(&format!("\"module\": \"{}\"", catalog.module)),

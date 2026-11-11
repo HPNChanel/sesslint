@@ -3,9 +3,9 @@
 use cli::completion::{
     bash_script, clean_help, command_words, fish_script, generate_completion, harvest_parser,
     powershell_script, profile_choices, ps_quote, zsh_script, Command, FixedChoices, Flag,
-    FlagAction, GenerateCompletionError, OptionAction, ParserSurface,
-    RawHelp, SubcommandBody, SubcommandGroup, SubcommandName, SurfaceAction, COMPLETION_SHELLS,
-    CREATE_PARSER_UNAVAILABLE, LIST_PROFILES_UNAVAILABLE, PROG,
+    FlagAction, GenerateCompletionError, OptionAction, ParserSurface, RawHelp, SubcommandBody,
+    SubcommandGroup, SubcommandName, SurfaceAction, COMPLETION_SHELLS, CREATE_PARSER_UNAVAILABLE,
+    LIST_PROFILES_UNAVAILABLE, PROG,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -144,12 +144,13 @@ fn assert_module_constants(case: &VectorCase) {
     let want_shells = string_list(&case.expected, "completion_shells").expect("shells");
     assert_eq!(
         COMPLETION_SHELLS,
-        want_shells.iter().map(String::as_str).collect::<Vec<_>>().as_slice()
+        want_shells
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
     );
-    assert_eq!(
-        PROG,
-        string_field(&case.expected, "prog").expect("prog")
-    );
+    assert_eq!(PROG, string_field(&case.expected, "prog").expect("prog"));
     let _ = case.id;
 }
 
@@ -177,7 +178,10 @@ fn assert_ps_quote(case: &VectorCase) {
 fn assert_harvest_parser(case: &VectorCase) {
     let surface = surface_from_construct(case);
     let got = harvest_parser(&surface).unwrap_or_else(|err| {
-        panic!("{}: harvest_parser must succeed on fixed surface, got {err}", case.id)
+        panic!(
+            "{}: harvest_parser must succeed on fixed surface, got {err}",
+            case.id
+        )
     });
     let want = commands_from_expected(&case.expected);
     assert_eq!(got, want, "{}", case.id);
@@ -210,9 +214,8 @@ fn assert_shell_script(case: &VectorCase, kind: &str) {
 fn assert_generate_completion_script(case: &VectorCase) {
     let shell = string_field(&case.construct, "shell").expect("shell");
     let commands = commands_from_construct(case);
-    let got = generate_completion(&shell, Some(&commands)).unwrap_or_else(|err| {
-        panic!("{}: generate_completion must succeed, got {err}", case.id)
-    });
+    let got = generate_completion(&shell, Some(&commands))
+        .unwrap_or_else(|err| panic!("{}: generate_completion must succeed, got {err}", case.id));
     assert_eq!(
         got,
         string_field(&case.expected, "script").expect("script"),
@@ -226,7 +229,11 @@ fn assert_generate_completion_error(case: &VectorCase) {
     let commands = commands_from_construct(case);
     let want = string_field(&case.expected, "message").expect("message");
     match generate_completion(&shell, Some(&commands)) {
-        Ok(script) => panic!("{}: expected error, got script len {}", case.id, script.len()),
+        Ok(script) => panic!(
+            "{}: expected error, got script len {}",
+            case.id,
+            script.len()
+        ),
         Err(err) => {
             assert_eq!(err.to_string(), want, "{}", case.id);
             assert!(matches!(err, GenerateCompletionError::UnsupportedShell(_)));
@@ -265,10 +272,17 @@ fn assert_create_parser_gap(case: &VectorCase) {
     );
     let shell = string_field(&case.construct, "shell").expect("shell");
     match generate_completion(&shell, None) {
-        Ok(script) => panic!("{}: expected seam, got script len {}", case.id, script.len()),
+        Ok(script) => panic!(
+            "{}: expected seam, got script len {}",
+            case.id,
+            script.len()
+        ),
         Err(err) => {
             assert_eq!(err.to_string(), CREATE_PARSER_UNAVAILABLE);
-            assert!(matches!(err, GenerateCompletionError::CreateParserUnavailable));
+            assert!(matches!(
+                err,
+                GenerateCompletionError::CreateParserUnavailable
+            ));
         }
     }
 }
@@ -308,11 +322,7 @@ fn synthetic_main_surface() -> ParserSurface {
                     body_id: 2,
                     actions: vec![
                         FlagAction::Option(OptionAction {
-                            option_strings: vec![
-                                "--zeta".into(),
-                                "-z".into(),
-                                "--alpha".into(),
-                            ],
+                            option_strings: vec!["--zeta".into(), "-z".into(), "--alpha".into()],
                             choices: FixedChoices::Strings(vec![
                                 "mid".into(),
                                 "aaa".into(),
@@ -384,7 +394,9 @@ fn surface_from_json(obj: &[(String, JsonValue)]) -> ParserSurface {
                                 choices: fixed_choices_from_json(
                                     object_field(act_obj, "choices").expect("choices"),
                                 ),
-                                help: raw_help_from_kind(object_field(act_obj, "help").expect("help")),
+                                help: raw_help_from_kind(
+                                    object_field(act_obj, "help").expect("help"),
+                                ),
                             }),
                             other => panic!("unknown flag action {other}"),
                         }

@@ -1,0 +1,16 @@
+{
+  "module": "sesslint.doctor.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "test": "tests/cli/test_doctor.py::test_doctor_json_schema",
+      "status": "not_applicable",
+      "reason": "missing stop: CLI doctor JSON against the schema together; one document check is not this"
+    },
+    {
+      "test": "tests/cli/test_doctor.py::test_doctor_index_state_words_are_closed_enum",
+      "status": "not_applicable",
+      "reason": "missing stop: the closed index-state words from the emitter; one document check is not this"
+    }
+  ]
+}

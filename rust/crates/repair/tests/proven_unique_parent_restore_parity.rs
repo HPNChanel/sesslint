@@ -382,8 +382,16 @@ fn proven_unique_parent_restore_non_int_index_matches_invalid() {
     let message = refusal_message(&cases, "restore_refusal_missing_index");
     assert_eq!(message, INVALID_TARGET);
     let events = events_of(&cases, "restore_refusal_missing_index");
-    for target in [IndexValue::Bool(true), IndexValue::Bool(false), IndexValue::Other] {
-        let err = expect_precondition(&events, target, ParamMap::Mapping(EventMapping::new(Vec::new())));
+    for target in [
+        IndexValue::Bool(true),
+        IndexValue::Bool(false),
+        IndexValue::Other,
+    ] {
+        let err = expect_precondition(
+            &events,
+            target,
+            ParamMap::Mapping(EventMapping::new(Vec::new())),
+        );
         assert_eq!(err, message);
     }
     let hidden = expect_precondition(
@@ -475,10 +483,7 @@ fn proven_unique_parent_restore_unrenderable_parent_is_not_claimed() {
     let list_param = expect_event(
         &events,
         IndexValue::Int(0),
-        params(&[(
-            "parent_id",
-            EventField::List(vec![EventField::Int(1)]),
-        )]),
+        params(&[("parent_id", EventField::List(vec![EventField::Int(1)]))]),
     );
     assert_eq!(list_param, PYTHON_STR_UNREPRESENTABLE);
     let float_event = vec![message_event("evt-float", Some(EventField::Float(1.5)))];
@@ -496,12 +501,18 @@ fn load_cases() -> Vec<VectorCase> {
 }
 
 fn refusal_message(cases: &[VectorCase], vector_id: &str) -> String {
-    let case = cases.iter().find(|item| item.id == vector_id).expect(vector_id);
+    let case = cases
+        .iter()
+        .find(|item| item.id == vector_id)
+        .expect(vector_id);
     string_field(&case.expected, "message").expect("message")
 }
 
 fn events_of(cases: &[VectorCase], vector_id: &str) -> Vec<EventValue> {
-    let case = cases.iter().find(|item| item.id == vector_id).expect(vector_id);
+    let case = cases
+        .iter()
+        .find(|item| item.id == vector_id)
+        .expect(vector_id);
     decode_events(array_field(&case.construct, "events").expect("events"))
 }
 
@@ -727,7 +738,9 @@ fn assert_gap_list(obj: &[(String, JsonValue)]) {
         saw_payload |= text.contains(GAP_PAYLOAD);
         saw_sweep |= text.contains(GAP_SWEEP);
     }
-    assert!(saw_region && saw_candidates && saw_canonical && saw_render && saw_payload && saw_sweep);
+    assert!(
+        saw_region && saw_candidates && saw_canonical && saw_render && saw_payload && saw_sweep
+    );
 }
 
 fn decode_events(items: &[JsonValue]) -> Vec<EventValue> {

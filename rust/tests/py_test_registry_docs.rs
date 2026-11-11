@@ -927,6 +927,11 @@ fn cited_registry_doc_vectors_are_not_entire_pin_tests() {
             !json.contains("tests/test_registry_docs.py"),
             "{rel} names the pinned module"
         );
+        // Schema cases reuse `entire_test` for validator coverage. They are not
+        // recipe-registry pins and do not carry `"fn"` / `"recipe"`.
+        if rel.starts_with("parity/schemas/") {
+            continue;
+        }
         let count = json.matches("\"entire_test\": true").count();
         if count == 0 {
             continue;

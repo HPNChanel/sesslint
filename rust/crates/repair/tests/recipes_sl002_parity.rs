@@ -5,7 +5,7 @@ use model::events::{EventField, EventMapping, EventValue};
 use repair::recipes_sl002::{
     affected_region_torn_terminal_record_discard, apply_torn_terminal_record_discard,
     recipe_torn_terminal_record_discard, register_all, StepParams, StepScalar, TornDiscardError,
-    TornTerminalStep, ALL, AFFECTED_REGION_UNAVAILABLE,
+    TornTerminalStep, AFFECTED_REGION_UNAVAILABLE, ALL,
 };
 use repair::registry::{clear_registry, get_recipe, list_recipes, CallableId, Recipe};
 use std::fmt;
@@ -72,8 +72,8 @@ fn assert_case(case: &VectorCase) {
             assert_eq!(ALL.as_ref(), want.as_slice(), "{}", case.id);
         }
         "recipe_constant" => {
-            let recipe =
-                recipe_torn_terminal_record_discard().unwrap_or_else(|err| panic!("{}: {err}", case.id));
+            let recipe = recipe_torn_terminal_record_discard()
+                .unwrap_or_else(|err| panic!("{}: {err}", case.id));
             assert_recipe_snapshot(&case.id, &recipe, &case.expected);
         }
         "register_all" => {
@@ -149,7 +149,9 @@ fn assert_recipe_snapshot(case_id: &str, recipe: &Recipe, expected: &[(String, J
     );
     assert_eq!(
         recipe.affected_region(),
-        Some(CallableId::from_fn(affected_region_torn_terminal_record_discard))
+        Some(CallableId::from_fn(
+            affected_region_torn_terminal_record_discard
+        ))
     );
     assert_ne!(recipe.apply(), recipe.affected_region());
 }
@@ -201,12 +203,7 @@ fn assert_affected_region(case: &VectorCase) {
     let events = decode_events(case);
     let step = decode_step(case);
     let err = affected_region_torn_terminal_record_discard(step, events).expect_err(&case.id);
-    assert_eq!(
-        err.to_string(),
-        AFFECTED_REGION_UNAVAILABLE,
-        "{}",
-        case.id
-    );
+    assert_eq!(err.to_string(), AFFECTED_REGION_UNAVAILABLE, "{}", case.id);
     assert_eq!(err.message(), AFFECTED_REGION_UNAVAILABLE);
 }
 
@@ -292,7 +289,10 @@ fn decode_step(case: &VectorCase) -> TornTerminalStep {
         .map(|(_, v)| v)
         .expect("params");
     let params = decode_step_params(params_node).expect("params");
-    TornTerminalStep { target_index: target, params }
+    TornTerminalStep {
+        target_index: target,
+        params,
+    }
 }
 
 fn decode_step_scalar(value: &JsonValue) -> StepScalar {
@@ -432,7 +432,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -448,7 +454,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

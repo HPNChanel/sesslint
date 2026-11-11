@@ -152,7 +152,10 @@ fn package_name_matches_workspace_crate() {
 fn every_pinned_adapters_canonical_fast_path_test_has_one_disposition() {
     assert_eq!(ROWS.len(), PINNED_TEST_COUNT);
     assert_eq!(PINNED_NAMES.len(), PINNED_TEST_COUNT);
-    assert_eq!(ADAPTERS_CANONICAL_VECTORS.len(), ADAPTERS_CANONICAL_VECTOR_COUNT);
+    assert_eq!(
+        ADAPTERS_CANONICAL_VECTORS.len(),
+        ADAPTERS_CANONICAL_VECTOR_COUNT
+    );
     let actual: Vec<&str> = ROWS.iter().map(|row| row.name).collect();
     assert_eq!(actual.as_slice(), PINNED_NAMES);
 

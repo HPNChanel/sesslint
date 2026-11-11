@@ -2,9 +2,9 @@
 
 use cli::options::ArgAction;
 use cli::watch::{
-    configure, run, DeclaredDefault, DefaultKeyword, DiscoverSessionRootsUnavailable,
-    DISCOVER_SESSION_ROOTS_UNAVAILABLE, IMPORT_DISCOVER_SESSION_ROOTS, IMPORT_JSON, NAME, Nargs,
-    WatchArgs,
+    configure, run, DeclaredDefault, DefaultKeyword, DiscoverSessionRootsUnavailable, Nargs,
+    WatchArgs, DISCOVER_SESSION_ROOTS_UNAVAILABLE, IMPORT_DISCOVER_SESSION_ROOTS, IMPORT_JSON,
+    NAME,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -147,8 +147,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter()
-            .any(|item| gap_contains(item, GAP_DISCOVER)),
+        gaps.iter().any(|item| gap_contains(item, GAP_DISCOVER)),
         "vectors.json must list {GAP_DISCOVER}"
     );
 }
@@ -188,7 +187,7 @@ fn assert_configure_case(case: &VectorCase) {
         "description must keep U+2014 for {}",
         case.id
     );
-  assert!(
+    assert!(
         spec.description.contains("Pure observer \u{2014} never"),
         "description em dash phrase for {}",
         case.id
@@ -238,7 +237,12 @@ fn assert_watch_argument(
         string_field(spec, "action").expect("action"),
         "action[{index}] for {case_id}"
     );
-    assert_nargs(decl.nargs, optional_string_field(spec, "nargs").expect("nargs"), case_id, index);
+    assert_nargs(
+        decl.nargs,
+        optional_string_field(spec, "nargs").expect("nargs"),
+        case_id,
+        index,
+    );
     assert_optional_string(
         decl.type_name,
         optional_string_field(spec, "type_name").expect("type_name"),
@@ -301,7 +305,13 @@ fn assert_run_seam_case(case: &VectorCase) {
     assert_eq!(seam, DISCOVER_SESSION_ROOTS_UNAVAILABLE, "{}", case.id);
 
     let imports = string_list_field(&case.expected, "imports_evaluated").expect("imports");
-    assert_eq!(imports, vec![IMPORT_JSON.to_string(), IMPORT_DISCOVER_SESSION_ROOTS.to_string()]);
+    assert_eq!(
+        imports,
+        vec![
+            IMPORT_JSON.to_string(),
+            IMPORT_DISCOVER_SESSION_ROOTS.to_string()
+        ]
+    );
 
     let pin = object_field(&case.expected, "pin").expect("pin");
     let pin_exit = i64_field(pin, "exit_code").expect("pin exit_code");
@@ -323,7 +333,12 @@ fn assert_run_seam_case(case: &VectorCase) {
         Ok(never) => match never {},
         Err(err) => {
             assert_eq!(err, DiscoverSessionRootsUnavailable, "{}", case.id);
-            assert_eq!(err.to_string(), DISCOVER_SESSION_ROOTS_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                DISCOVER_SESSION_ROOTS_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert_eq!(err.to_string(), seam, "{}", case.id);
         }
     }
@@ -370,7 +385,9 @@ fn assert_nargs(actual: Nargs, want: Option<String>, case_id: &str, index: usize
         Some(token) if token == "*" => {
             assert_eq!(actual, Nargs::ZeroOrMore, "nargs[{index}] for {case_id}")
         }
-        Some(token) if token == "0" => assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}"),
+        Some(token) if token == "0" => {
+            assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}")
+        }
         Some(other) => panic!("unexpected nargs {other} for {case_id} arg {index}"),
     }
 }
@@ -405,15 +422,14 @@ fn assert_optional_string_list(
     }
 }
 
-fn assert_default_keyword(
-    actual: DefaultKeyword,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: DefaultKeyword, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, DefaultKeyword::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                DefaultKeyword::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => match actual {
             DefaultKeyword::Present(got) => {
@@ -428,12 +444,7 @@ fn assert_default_keyword(
     }
 }
 
-fn assert_declared_default(
-    actual: DeclaredDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_default(actual: DeclaredDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DeclaredDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (DeclaredDefault::False, JsonValue::Str(text)) if text == "false" => {}
@@ -446,12 +457,16 @@ fn assert_declared_default(
         }
         (DeclaredDefault::Float(got), JsonValue::Object(obj)) => {
             let want = f64_field(obj, "float").expect("float");
-            assert_eq!(got.to_bits(), want.to_bits(), "float[{index}] for {case_id}");
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "float[{index}] for {case_id}"
+            );
         }
         (DeclaredDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -538,11 +553,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -608,10 +623,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)

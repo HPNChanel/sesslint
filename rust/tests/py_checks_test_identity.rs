@@ -52,11 +52,7 @@ struct Row {
 const IDENTITY_VECTORS: &[(&str, &str, bool)] = &[
     ("empty_list_silent", "identity_events", false),
     ("two_distinct_string_ids_silent", "identity_events", false),
-    (
-        "empty_and_whitespace_ids_ignored",
-        "identity_events",
-        false,
-    ),
+    ("empty_and_whitespace_ids_ignored", "identity_events", false),
     (
         "spaced_and_trimmed_distinct_silent",
         "identity_events",

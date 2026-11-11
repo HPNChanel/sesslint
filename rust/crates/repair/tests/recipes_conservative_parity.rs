@@ -16,7 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 const VECTORS_REL: &str = "../../parity/vectors/repair.recipes_conservative/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 12;
 const EXPECTED_VECTORS_SHA256: &str =
-    "56d83b9843c19d8a11a75c1167918d66d870e3f534af6e1569b876957cd36b40";
+    "a911b2b54f52f3fcf4f6ed1f8a259f5e52a177c5753de9d3d0fd51f5f3239b73";
 const GAP_AFFECTED_REGION: &str = "GAP-recipes-conservative-affected-region";
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,12 @@ fn assert_registration_matrix(case: &VectorCase) {
         let handles = string_array(meta, "handles").expect("handles");
         assert_eq!(recipe.handles().to_vec(), handles, "{} {name}", case.id);
         let preconds = string_array(meta, "preconditions").expect("preconditions");
-        assert_eq!(recipe.preconditions().to_vec(), preconds, "{} {name}", case.id);
+        assert_eq!(
+            recipe.preconditions().to_vec(),
+            preconds,
+            "{} {name}",
+            case.id
+        );
         assert_eq!(
             recipe.lossy(),
             bool_field(meta, "lossy").expect("lossy"),
@@ -129,14 +134,12 @@ fn assert_registration_matrix(case: &VectorCase) {
     assert_recipes_for(rf, "SL101", SL101, &case.id);
 }
 
-fn assert_recipes_for(
-    obj: &[(String, JsonValue)],
-    key: &str,
-    code: &str,
-    case_id: &str,
-) {
+fn assert_recipes_for(obj: &[(String, JsonValue)], key: &str, code: &str, case_id: &str) {
     let want = string_array(obj, key).expect(key);
-    let got: Vec<String> = recipes_for(code).iter().map(|r| r.name().to_owned()).collect();
+    let got: Vec<String> = recipes_for(code)
+        .iter()
+        .map(|r| r.name().to_owned())
+        .collect();
     assert_eq!(got, want, "{case_id} recipes_for {code}");
 }
 
@@ -156,11 +159,14 @@ fn assert_register_all(case: &VectorCase) {
 fn assert_fixture_apply(case: &VectorCase) {
     let rel = string_field(&case.construct, "fixture").expect("fixture");
     let data = load_fixture_json(&rel).unwrap_or_else(|err| panic!("{}: {err}", case.id));
-    let events = plain_events_from_json(fixture_field(&data, "input_events").expect("input_events"))
-        .expect("input_events");
-    let step = recipe_step_from_fixture_step(fixture_field(&data, "step").expect("step")).expect("step");
+    let events =
+        plain_events_from_json(fixture_field(&data, "input_events").expect("input_events"))
+            .expect("input_events");
+    let step =
+        recipe_step_from_fixture_step(fixture_field(&data, "step").expect("step")).expect("step");
     let fn_name = string_field(&case.construct, "fn").expect("fn");
-    let out = dispatch_apply(&fn_name, &events, &step).unwrap_or_else(|err| panic!("{}: {err}", case.id));
+    let out =
+        dispatch_apply(&fn_name, &events, &step).unwrap_or_else(|err| panic!("{}: {err}", case.id));
     let pin = object_field(&case.expected, "pin").expect("pin");
     assert_pin_ok(&case.id, &out, pin);
     if bool_field(&case.construct, "loss").unwrap_or(false) {
@@ -178,9 +184,11 @@ fn assert_fixture_parent_restore(case: &VectorCase) {
     let data = load_fixture_json(&rel).unwrap_or_else(|err| panic!("{}: {err}", case.id));
     let pin = object_field(&case.expected, "pin").expect("pin");
     let happy = object_field(&data, "happy_path").expect("happy_path");
-    let events = plain_events_from_json(fixture_field(happy, "input_events").expect("input_events"))
-        .expect("happy input");
-    let step = recipe_step_from_fixture_step(fixture_field(happy, "step").expect("step")).expect("happy step");
+    let events =
+        plain_events_from_json(fixture_field(happy, "input_events").expect("input_events"))
+            .expect("happy input");
+    let step = recipe_step_from_fixture_step(fixture_field(happy, "step").expect("step"))
+        .expect("happy step");
     let out = apply_proven_unique_parent_restore(&events, &step)
         .unwrap_or_else(|err| panic!("{} happy: {err}", case.id));
     let happy_pin = object_field(pin, "happy").expect("happy");
@@ -210,13 +218,17 @@ fn assert_apply(case: &VectorCase) {
             return;
         }
     }
-    let out = dispatch_apply(&fn_name, &events, &step).unwrap_or_else(|err| panic!("{}: {err}", case.id));
+    let out =
+        dispatch_apply(&fn_name, &events, &step).unwrap_or_else(|err| panic!("{}: {err}", case.id));
     assert_pin_ok(&case.id, &out, pin);
 }
 
 fn assert_precondition_display(err: &ConservativeError, want: &str, case_id: &str) {
     assert_eq!(err.to_string(), want, "{case_id}");
-    assert!(matches!(err, ConservativeError::Precondition(_)), "{case_id}");
+    assert!(
+        matches!(err, ConservativeError::Precondition(_)),
+        "{case_id}"
+    );
 }
 
 fn assert_pin_ok(case_id: &str, out: &[EventMapping], pin: &[(String, JsonValue)]) {
@@ -274,9 +286,9 @@ fn dispatch_apply(
         "apply_proven_unique_parent_restore" => apply_proven_unique_parent_restore(events, step),
         "apply_compaction_projection_reunion" => apply_compaction_projection_reunion(events, step),
         "apply_duplicate_projection_removal" => apply_duplicate_projection_removal(events, step),
-        other => Err(ConservativeError::Precondition(repair::recipes_conservative::PreconditionFailed::new(
-            format!("unknown fn {other}"),
-        ))),
+        other => Err(ConservativeError::Precondition(
+            repair::recipes_conservative::PreconditionFailed::new(format!("unknown fn {other}")),
+        )),
     }
 }
 
@@ -327,7 +339,9 @@ fn decode_plain_event(value: &JsonValue) -> Result<EventValue, ParseError> {
     Ok(EventValue::Mapping(EventMapping::new(pairs)))
 }
 
-fn json_object_to_fields(obj: &[(String, JsonValue)]) -> Result<Vec<(String, EventField)>, ParseError> {
+fn json_object_to_fields(
+    obj: &[(String, JsonValue)],
+) -> Result<Vec<(String, EventField)>, ParseError> {
     let mut pairs = Vec::new();
     for (key, value) in obj {
         pairs.push((key.clone(), json_scalar_to_field(value)?));
@@ -387,7 +401,10 @@ fn recipe_step_from_fixture_step(value: &JsonValue) -> Result<RecipeStep, ParseE
         .map(|(_, v)| v)
         .unwrap_or(&empty_params);
     let params = decode_plain_params(params_node)?;
-    Ok(RecipeStep { target_index: target, params })
+    Ok(RecipeStep {
+        target_index: target,
+        params,
+    })
 }
 
 fn decode_plain_params(value: &JsonValue) -> Result<ParamMap, ParseError> {
@@ -417,7 +434,10 @@ fn recipe_step_from_tagged(obj: &[(String, JsonValue)]) -> Result<RecipeStep, Pa
             message: "params".into(),
         })?;
     let params = decode_params(params_node)?;
-    Ok(RecipeStep { target_index: target, params })
+    Ok(RecipeStep {
+        target_index: target,
+        params,
+    })
 }
 
 fn decode_index_value(value: &JsonValue) -> Result<IndexValue, ParseError> {
@@ -447,7 +467,9 @@ fn decode_params(value: &JsonValue) -> Result<ParamMap, ParseError> {
     })
 }
 
-fn decode_tagged_mapping_entries(entries: &[JsonValue]) -> Result<Vec<(String, EventField)>, ParseError> {
+fn decode_tagged_mapping_entries(
+    entries: &[JsonValue],
+) -> Result<Vec<(String, EventField)>, ParseError> {
     let mut out = Vec::new();
     for row in entries {
         let JsonValue::Array(pair) = row else {
@@ -528,7 +550,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -544,7 +572,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

@@ -71,8 +71,14 @@ const REGISTRY_VECTORS: &[(&str, &str)] = &[
         "registration_lookup",
     ),
     ("planner_duplicate_name_rejected", "duplicate_name"),
-    ("planner_unknown_precondition_rejected", "unknown_precondition"),
-    ("empty_precondition_list_skips_table", "empty_preconditions_register"),
+    (
+        "planner_unknown_precondition_rejected",
+        "unknown_precondition",
+    ),
+    (
+        "empty_precondition_list_skips_table",
+        "empty_preconditions_register",
+    ),
     ("clear_registry_isolation", "clear_registry"),
     ("recipes_for_preserves_insertion_order", "insertion_order"),
 ];
@@ -491,9 +497,7 @@ fn cited_planner_vectors_are_present() {
     let duplicate = vector_slice(&registry, "planner_duplicate_name_rejected");
     assert!(duplicate.contains("\"type\": \"duplicate_name\""));
     assert!(duplicate.contains("duplicate-stub"));
-    assert!(
-        duplicate.contains("Duplicate recipe name: 'duplicate-stub' is already registered")
-    );
+    assert!(duplicate.contains("Duplicate recipe name: 'duplicate-stub' is already registered"));
     assert!(duplicate.contains("\"list_names\""));
     assert!(duplicate.contains("\"first_handles\""));
     assert!(duplicate.contains("\"SL101\""));
@@ -618,9 +622,8 @@ fn cited_planner_vectors_are_present() {
     let aggressive = vector_slice(&planner, "plan_policy_aggressive");
     assert!(aggressive.contains("\"type\": \"plan_call\""));
     assert!(aggressive.contains("\"policy\": \"Aggressive\""));
-    assert!(aggressive.contains(
-        "Invalid repair policy: 'Aggressive'. Must be 'conservative' or 'salvage'"
-    ));
+    assert!(aggressive
+        .contains("Invalid repair policy: 'Aggressive'. Must be 'conservative' or 'salvage'"));
     let plan_empty = vector_slice(&planner, "plan_empty_conservative_success_gap");
     assert!(plan_empty.contains("\"type\": \"plan_call\""));
     assert!(plan_empty.contains("\"gap\": \"register_all\""));
@@ -672,9 +675,13 @@ fn cited_planner_vectors_are_present() {
     assert!(conservative.contains("\"type\": \"compute_plan_fingerprint\""));
     assert!(conservative.contains("\"id\": \"s1\""));
     assert!(conservative.contains("\"policy\": \"conservative\""));
-    assert!(vector_slice(&fingerprint, "module_all_export_order").contains("compute_plan_fingerprint"));
-    assert!(vector_slice(&fingerprint, "canonical_json_non_ascii_newline_true")
-        .contains("\"type\": \"canonical_json_bytes\""));
+    assert!(
+        vector_slice(&fingerprint, "module_all_export_order").contains("compute_plan_fingerprint")
+    );
+    assert!(
+        vector_slice(&fingerprint, "canonical_json_non_ascii_newline_true")
+            .contains("\"type\": \"canonical_json_bytes\"")
+    );
     assert_absent(
         &fingerprint,
         "fingerprint",

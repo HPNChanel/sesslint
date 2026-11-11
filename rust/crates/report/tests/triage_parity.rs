@@ -3,11 +3,11 @@
 
 use model::codes::Severity;
 use report::triage::{
-    file_digest, impact, native_state, preview, triage, DigestError, EvidenceNote, GetProfileUnavailable,
-    ImpactFinding, ImpactRecord, ImpactSource, JsonValue as TriageJson, MAX_FINDINGS, MAX_IMPACT_LINES,
-    MAX_STATE_DB_BYTES, NativeStateError, NextAction, PyInt, TRIAGE_SCHEMA_VERSION, TriageReport,
-    TriageReportParts, GET_PROFILE_UNAVAILABLE, LIMITATION, READ_CODEX_STATE_UNAVAILABLE,
-    SNAPSHOT_LIMIT_EXCEEDED, SOURCE_ASSESSMENT_UNAVAILABLE,
+    file_digest, impact, native_state, preview, triage, DigestError, EvidenceNote,
+    GetProfileUnavailable, ImpactFinding, ImpactRecord, ImpactSource, JsonValue as TriageJson,
+    NativeStateError, NextAction, PyInt, TriageReport, TriageReportParts, GET_PROFILE_UNAVAILABLE,
+    LIMITATION, MAX_FINDINGS, MAX_IMPACT_LINES, MAX_STATE_DB_BYTES, READ_CODEX_STATE_UNAVAILABLE,
+    SNAPSHOT_LIMIT_EXCEEDED, SOURCE_ASSESSMENT_UNAVAILABLE, TRIAGE_SCHEMA_VERSION,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -50,7 +50,8 @@ fn fixture_path(basename: &str) -> PathBuf {
 #[test]
 fn triage_module_parity_vectors() {
     let path = vectors_path();
-    let raw = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
     let digest = sha256_hex(normalized.as_bytes());
     assert_eq!(digest, EXPECTED_VECTORS_SHA256, "vectors.json sha256");
@@ -63,8 +64,14 @@ fn triage_module_parity_vectors() {
 }
 
 fn assert_root_meta(meta: &[(String, VectorJson)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT
@@ -155,10 +162,16 @@ fn bare_report(status: &str) -> TriageReport {
         finding_count: PyInt::Int(0),
         by_code: Vec::new(),
         previews: Vec::new(),
-        impact: TriageJson::object(vec![("status".to_owned(), TriageJson::string("unverified"))]),
+        impact: TriageJson::object(vec![(
+            "status".to_owned(),
+            TriageJson::string("unverified"),
+        )]),
         native_state: vec![
             ("status".to_owned(), "not-provided".to_owned()),
-            ("detail".to_owned(), "Native registry was not inspected.".to_owned()),
+            (
+                "detail".to_owned(),
+                "Native registry was not inspected.".to_owned(),
+            ),
         ],
         missing_evidence: Vec::new(),
         next_actions: Vec::new(),
@@ -221,7 +234,10 @@ fn bare_parts() -> TriageReportParts {
         finding_count: PyInt::Int(0),
         by_code: Vec::new(),
         previews: Vec::new(),
-        impact: TriageJson::object(vec![("status".to_owned(), TriageJson::string("unverified"))]),
+        impact: TriageJson::object(vec![(
+            "status".to_owned(),
+            TriageJson::string("unverified"),
+        )]),
         native_state: vec![("status".to_owned(), "not-provided".to_owned())],
         missing_evidence: Vec::new(),
         next_actions: Vec::new(),
@@ -395,7 +411,12 @@ fn assert_impact(case: &VectorCase) {
         };
         want_unmapped.push((code.clone(), text.parse::<usize>().expect("usize")));
     }
-    assert_eq!(mapped.unmapped_by_code(), want_unmapped.as_slice(), "{}", case.id);
+    assert_eq!(
+        mapped.unmapped_by_code(),
+        want_unmapped.as_slice(),
+        "{}",
+        case.id
+    );
 }
 
 fn assert_file_digest(case: &VectorCase) {
@@ -476,13 +497,12 @@ fn native_paths(setup: &str) -> (Option<PathBuf>, PathBuf) {
             (Some(copy.clone()), copy)
         }
         "membership_db" => {
-            let scratch = std::env::temp_dir().join(format!(
-                "sesslint-triage-membership-{}",
-                std::process::id()
-            ));
+            let scratch = std::env::temp_dir()
+                .join(format!("sesslint-triage-membership-{}", std::process::id()));
             std::fs::write(&scratch, b"SQLite format 3\x00synthetic-membership")
                 .expect("sqlite bytes");
-            let source = vectors_root().join("fixtures/rollout-2026-10-08-synthetic-identity.jsonl");
+            let source =
+                vectors_root().join("fixtures/rollout-2026-10-08-synthetic-identity.jsonl");
             (Some(scratch), source)
         }
         other => panic!("unknown native setup {other}"),
@@ -501,7 +521,12 @@ fn assert_preview_gap(case: &VectorCase) {
         Ok(never) => match never {},
         Err(err) => err,
     };
-    assert_eq!(err.to_string(), SOURCE_ASSESSMENT_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        err.to_string(),
+        SOURCE_ASSESSMENT_UNAVAILABLE,
+        "{}",
+        case.id
+    );
 }
 
 fn assert_triage_gap(case: &VectorCase) {
@@ -552,7 +577,10 @@ fn json_field(obj: &[(String, VectorJson)], key: &str) -> Result<TriageJson, Par
     }
 }
 
-fn json_array_field(obj: &[(String, VectorJson)], key: &str) -> Result<Vec<TriageJson>, ParseError> {
+fn json_array_field(
+    obj: &[(String, VectorJson)],
+    key: &str,
+) -> Result<Vec<TriageJson>, ParseError> {
     let items = array_field(obj, key)?;
     Ok(items.iter().map(vector_to_triage_json).collect())
 }
@@ -563,7 +591,9 @@ fn vector_to_triage_json(value: &VectorJson) -> TriageJson {
         VectorJson::Bool(flag) => TriageJson::Bool(*flag),
         VectorJson::Str(text) => TriageJson::string(text.clone()),
         VectorJson::Number(text) => TriageJson::Int(text.parse().expect("int")),
-        VectorJson::Array(items) => TriageJson::array(items.iter().map(vector_to_triage_json).collect()),
+        VectorJson::Array(items) => {
+            TriageJson::array(items.iter().map(vector_to_triage_json).collect())
+        }
         VectorJson::Object(pairs) => TriageJson::object(
             pairs
                 .iter()
@@ -632,7 +662,10 @@ fn parse_document_with_meta(input: &str) -> Result<(DocumentMeta, Vec<VectorCase
     };
     let mut meta = root.clone();
     meta.retain(|(key, _)| key != "vectors");
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok((meta, cases))
 }
 
@@ -648,7 +681,10 @@ fn parse_vector_case(value: &VectorJson) -> Result<VectorCase, ParseError> {
     })
 }
 
-fn as_object<'a>(value: &'a VectorJson, ctx: &str) -> Result<&'a [(String, VectorJson)], ParseError> {
+fn as_object<'a>(
+    value: &'a VectorJson,
+    ctx: &str,
+) -> Result<&'a [(String, VectorJson)], ParseError> {
     match value {
         VectorJson::Object(obj) => Ok(obj),
         _ => Err(ParseError {
@@ -711,12 +747,9 @@ fn i64_field(obj: &[(String, VectorJson)], key: &str) -> Result<i64, ParseError>
 fn optional_i64_field(obj: &[(String, VectorJson)], key: &str) -> Result<Option<i64>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         None | Some((_, VectorJson::Null)) => Ok(None),
-        Some((_, VectorJson::Number(n))) => n
-            .parse::<i64>()
-            .map(Some)
-            .map_err(|_| ParseError {
-                message: format!("{key} must be i64"),
-            }),
+        Some((_, VectorJson::Number(n))) => n.parse::<i64>().map(Some).map_err(|_| ParseError {
+            message: format!("{key} must be i64"),
+        }),
         _ => Err(ParseError {
             message: format!("{key} must be number or null"),
         }),

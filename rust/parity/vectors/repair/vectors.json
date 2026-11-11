@@ -3,7 +3,7 @@
   "module": "sesslint.repair",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "repair_init_py_sha256": "7f8ffb2a4432851dd2e2bf1f36ec754bf8d23221e8d8f148456a53ac2d2a9f5d",
-  "repair_lib_rs_sha256": "b0a2919bee3bc0b12fb0100cc0d6264e8354086ddc768c017b47ec3e1a622138",
+  "repair_lib_rs_sha256": "0d57187b4d4c97cf83eceafe3381aa7c6d7b233d25cb71d585db317fe10de765",
   "python_all": [
     "ALLOWED_LOSS_CLASSES",
     "ASSURANCE_CEILING_TABLE",

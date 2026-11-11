@@ -3096,8 +3096,7 @@ fn proven_unique_parent_restore_check(
     let Some(target_ev) = events.get(target_idx) else {
         return Err(CheckFailure::Unproven);
     };
-    let parent_id = match restore_region_parent(step, target_ev).map_err(CheckFailure::Exception)?
-    {
+    let parent_id = match restore_region_parent(step, target_ev).map_err(CheckFailure::Exception)? {
         Some(parent) if !parent.is_empty() => parent,
         Some(_) | None => return Err(CheckFailure::Unproven),
     };
@@ -3402,12 +3401,13 @@ fn insert_nonempty(ids: &mut BTreeSet<String>, id: Option<&str>) {
 
 #[cfg(test)]
 mod tests_recipes_03 {
-    use std::error::Error;
     use std::convert::Infallible;
+    use std::error::Error;
 
     use model::canonical::SessionEvent;
     use model::events::{
-        EventError, EventField, EventMapping, EventValue, DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+        EventError, EventField, EventMapping, EventValue,
+        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
     };
 
     use super::{
@@ -3615,10 +3615,7 @@ mod tests_recipes_03 {
         );
         let text_index = make_step(
             IndexValue::None,
-            params_of(vec![
-                ("index", text("1")),
-                ("at_index", EventField::Int(1)),
-            ]),
+            params_of(vec![("index", text("1")), ("at_index", EventField::Int(1))]),
         );
         assert_eq!(
             proven_unique_parent_restore_check(&text_index, &events),
@@ -3628,8 +3625,16 @@ mod tests_recipes_03 {
             proven_unique_parent_restore_check(&target_step(1), &[note("evt-child", None)]),
             unproven()
         );
-        assert_seam(&bool_target, &events, affected_region_proven_unique_parent_restore);
-        assert_seam(&text_index, &events, affected_region_proven_unique_parent_restore);
+        assert_seam(
+            &bool_target,
+            &events,
+            affected_region_proven_unique_parent_restore,
+        );
+        assert_seam(
+            &text_index,
+            &events,
+            affected_region_proven_unique_parent_restore,
+        );
         assert_eq!(before, snapshot(&events));
     }
 
@@ -3690,8 +3695,16 @@ mod tests_recipes_03 {
             proven_unique_parent_restore_check(&high, &events),
             unproven()
         );
-        assert_seam(&from_at, &events, affected_region_proven_unique_parent_restore);
-        assert_seam(&true_hides, &events, affected_region_proven_unique_parent_restore);
+        assert_seam(
+            &from_at,
+            &events,
+            affected_region_proven_unique_parent_restore,
+        );
+        assert_seam(
+            &true_hides,
+            &events,
+            affected_region_proven_unique_parent_restore,
+        );
     }
 
     #[test]
@@ -3729,11 +3742,7 @@ mod tests_recipes_03 {
         ];
         assert_eq!(
             proven_unique_parent_restore_check(&target_step(1), &prefixed),
-            proven(
-                &[0, 1],
-                &["evt-child", "evt-par", "evt-parent-full"],
-                &[]
-            )
+            proven(&[0, 1], &["evt-child", "evt-par", "evt-parent-full"], &[])
         );
         let exact_wins = vec![
             note("evt-par", None),
@@ -3826,8 +3835,16 @@ mod tests_recipes_03 {
             proven_unique_parent_restore_check(&ignored_prefix, &pair),
             proven(&[0, 1], &["evt-child", "evt-parent"], &[])
         );
-        assert_seam(&target_step(1), &pair, affected_region_proven_unique_parent_restore);
-        assert_seam(&param_parent, &overridden, affected_region_proven_unique_parent_restore);
+        assert_seam(
+            &target_step(1),
+            &pair,
+            affected_region_proven_unique_parent_restore,
+        );
+        assert_seam(
+            &param_parent,
+            &overridden,
+            affected_region_proven_unique_parent_restore,
+        );
         assert_eq!(before, snapshot(&pair));
 
         let parent = session("evt-parent", None, "message");
@@ -3872,7 +3889,10 @@ mod tests_recipes_03 {
         );
         let list_param = make_step(
             IndexValue::Int(1),
-            params_of(vec![("parent_id", EventField::List(vec![text("evt-parent")]))]),
+            params_of(vec![(
+                "parent_id",
+                EventField::List(vec![text("evt-parent")]),
+            )]),
         );
         assert_eq!(
             proven_unique_parent_restore_check(&list_param, &pair),
@@ -3886,9 +3906,21 @@ mod tests_recipes_03 {
             proven_unique_parent_restore_check(&empty_list, &pair),
             proven(&[0, 1], &["evt-child", "evt-parent"], &[])
         );
-        assert_seam(&float_param, &pair, affected_region_proven_unique_parent_restore);
-        assert_seam(&list_param, &pair, affected_region_proven_unique_parent_restore);
-        assert_seam(&target_step(2), &events, affected_region_proven_unique_parent_restore);
+        assert_seam(
+            &float_param,
+            &pair,
+            affected_region_proven_unique_parent_restore,
+        );
+        assert_seam(
+            &list_param,
+            &pair,
+            affected_region_proven_unique_parent_restore,
+        );
+        assert_seam(
+            &target_step(2),
+            &events,
+            affected_region_proven_unique_parent_restore,
+        );
     }
 
     fn reunion() -> Vec<EventValue> {
@@ -3975,8 +4007,16 @@ mod tests_recipes_03 {
                 &[(0, 2)]
             )
         );
-        assert_seam(&bool_target, &events, affected_region_compaction_projection_reunion);
-        assert_seam(&falsy, &events, affected_region_compaction_projection_reunion);
+        assert_seam(
+            &bool_target,
+            &events,
+            affected_region_compaction_projection_reunion,
+        );
+        assert_seam(
+            &falsy,
+            &events,
+            affected_region_compaction_projection_reunion,
+        );
         assert_eq!(before, snapshot(&events));
     }
 
@@ -4061,8 +4101,16 @@ mod tests_recipes_03 {
             compaction_projection_reunion_check(&step, &two_calls),
             unproven()
         );
-        assert_seam(&step, &events, affected_region_compaction_projection_reunion);
-        assert_seam(&step, &adjacent, affected_region_compaction_projection_reunion);
+        assert_seam(
+            &step,
+            &events,
+            affected_region_compaction_projection_reunion,
+        );
+        assert_seam(
+            &step,
+            &adjacent,
+            affected_region_compaction_projection_reunion,
+        );
     }
 
     #[test]
@@ -4107,8 +4155,16 @@ mod tests_recipes_03 {
             compaction_projection_reunion_check(&float_param, &reunion()),
             stopped(EventError::PythonFloatStr)
         );
-        assert_seam(&float_param, &reunion(), affected_region_compaction_projection_reunion);
-        assert_seam(&step, &float_between, affected_region_compaction_projection_reunion);
+        assert_seam(
+            &float_param,
+            &reunion(),
+            affected_region_compaction_projection_reunion,
+        );
+        assert_seam(
+            &step,
+            &float_between,
+            affected_region_compaction_projection_reunion,
+        );
 
         let mut call = session("evt-call", None, "tool_call");
         call.correlation_id = Some("corr-synthetic".to_owned());
@@ -4128,7 +4184,11 @@ mod tests_recipes_03 {
                 &[(0, 2)]
             )
         );
-        assert_seam(&step, &sessions, affected_region_compaction_projection_reunion);
+        assert_seam(
+            &step,
+            &sessions,
+            affected_region_compaction_projection_reunion,
+        );
     }
 
     #[test]
@@ -4213,9 +4273,16 @@ mod tests_recipes_03 {
             duplicate_projection_removal_check(&corr_step("corr-synthetic"), &differ),
             unproven()
         );
-        assert_seam(&corr_step("corr-synthetic"), &events, affected_region_duplicate_projection_removal);
         assert_seam(
-            &make_step(IndexValue::Int(1), params_of(vec![("correlation_id", text("corr-synthetic"))])),
+            &corr_step("corr-synthetic"),
+            &events,
+            affected_region_duplicate_projection_removal,
+        );
+        assert_seam(
+            &make_step(
+                IndexValue::Int(1),
+                params_of(vec![("correlation_id", text("corr-synthetic"))]),
+            ),
             &events,
             affected_region_duplicate_projection_removal,
         );
@@ -4238,13 +4305,7 @@ mod tests_recipes_03 {
             duplicate_projection_removal_check(&step, &events),
             proven(
                 &[0, 1, 2, 3, 5],
-                &[
-                    "evt-call",
-                    "evt-child",
-                    "evt-drop",
-                    "evt-keep",
-                    "evt-use",
-                ],
+                &["evt-call", "evt-child", "evt-drop", "evt-keep", "evt-use",],
                 &[]
             )
         );
@@ -4339,8 +4400,16 @@ mod tests_recipes_03 {
             stopped(EventError::PythonFloatStr)
         );
         assert_seam(&step, &events, affected_region_duplicate_projection_removal);
-        assert_seam(&step, &blocked, affected_region_duplicate_projection_removal);
-        assert_seam(&aimed, &blocked, affected_region_duplicate_projection_removal);
+        assert_seam(
+            &step,
+            &blocked,
+            affected_region_duplicate_projection_removal,
+        );
+        assert_seam(
+            &aimed,
+            &blocked,
+            affected_region_duplicate_projection_removal,
+        );
 
         let mut call = session("evt-call", None, "tool_call");
         call.correlation_id = Some("corr-synthetic".to_owned());
@@ -4359,7 +4428,11 @@ mod tests_recipes_03 {
             duplicate_projection_removal_check(&step, &sessions),
             proven(&[0, 1, 2], &["evt-call", "evt-drop", "evt-keep"], &[])
         );
-        assert_seam(&step, &sessions, affected_region_duplicate_projection_removal);
+        assert_seam(
+            &step,
+            &sessions,
+            affected_region_duplicate_projection_removal,
+        );
     }
 }
 
@@ -4420,11 +4493,9 @@ pub const ALL: [&str; 29] = [
     "terminal_suffix_discard",
 ];
 
-const DROP_VARIANT: &str =
-    "identical-duplicate-drop: finding variant is not identical-duplicate";
+const DROP_VARIANT: &str = "identical-duplicate-drop: finding variant is not identical-duplicate";
 const DROP_INDEXES_MISSING: &str = "identical-duplicate-drop: record_indexes missing";
-const DROP_INDEXES_FEW: &str =
-    "identical-duplicate-drop: fewer than 2 valid occurrence indexes";
+const DROP_INDEXES_FEW: &str = "identical-duplicate-drop: fewer than 2 valid occurrence indexes";
 const DROP_INDEXES_BOUNDS: &str = "identical-duplicate-drop: occurrence index out of bounds";
 
 const EMPTY_NAMES: [&str; 0] = [];
@@ -4488,14 +4559,8 @@ pub fn apply_identical_duplicate_drop(
     }
     let kept_id = event_id(kept)?;
     let kept_fp = event_content_fingerprint(kept)?;
-    let dropped_ids = reject_later_occurrences(
-        events,
-        &idxs,
-        &positions,
-        &kept_kind,
-        &kept_id,
-        &kept_fp,
-    )?;
+    let dropped_ids =
+        reject_later_occurrences(events, &idxs, &positions, &kept_kind, &kept_id, &kept_fp)?;
     let mut out = copy_events_as_dicts(events)?;
     let mut drop_positions: Vec<usize> = positions.iter().skip(1).copied().collect();
     drop_positions.reverse();
@@ -5011,20 +5076,21 @@ mod tests_recipes_04 {
     };
     use model::codes::{SL003, SL004, SL005, SL104, SL108};
     use model::events::{
-        EventError, EventField, EventMapping, EventValue, DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
-        PYTHON_FLOAT_STR_UNREPRESENTABLE, PYTHON_STR_HASH_UNREPRESENTABLE,
+        EventError, EventField, EventMapping, EventValue,
+        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_STR_HASH_UNREPRESENTABLE,
     };
 
     use super::{
-        affected_region_compaction_projection_reunion, affected_region_duplicate_projection_removal,
-        affected_region_identical_duplicate_collapse, affected_region_identical_duplicate_drop,
-        affected_region_proven_unique_parent_restore, affected_region_seq_renumber,
-        apply_compaction_projection_reunion, apply_duplicate_projection_removal,
-        apply_identical_duplicate_collapse, apply_identical_duplicate_drop,
-        apply_proven_unique_parent_restore, apply_seq_renumber, apply_terminal_suffix_discard,
-        identical_duplicate_drop_check, seq_renumber_check, AffectedRegionUnavailable, CheckFailure,
-        CheckSpan, ConservativeError, IndexValue, ParamMap, RecipeStep, ALL,
-        AFFECTED_REGION_UNAVAILABLE, CONSERVATIVE_RECIPES, RECIPES,
+        affected_region_compaction_projection_reunion,
+        affected_region_duplicate_projection_removal, affected_region_identical_duplicate_collapse,
+        affected_region_identical_duplicate_drop, affected_region_proven_unique_parent_restore,
+        affected_region_seq_renumber, apply_compaction_projection_reunion,
+        apply_duplicate_projection_removal, apply_identical_duplicate_collapse,
+        apply_identical_duplicate_drop, apply_proven_unique_parent_restore, apply_seq_renumber,
+        apply_terminal_suffix_discard, identical_duplicate_drop_check, seq_renumber_check,
+        AffectedRegionUnavailable, CheckFailure, CheckSpan, ConservativeError, IndexValue,
+        ParamMap, RecipeStep, AFFECTED_REGION_UNAVAILABLE, ALL, CONSERVATIVE_RECIPES, RECIPES,
     };
     use crate::registry::CallableId;
 
@@ -5209,14 +5275,21 @@ mod tests_recipes_04 {
         );
         assert_precondition(
             &events,
-            &drop_step(IndexValue::None, vec![EventField::Bool(false), EventField::Bool(true)]),
+            &drop_step(
+                IndexValue::None,
+                vec![EventField::Bool(false), EventField::Bool(true)],
+            ),
             "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
         );
         assert_precondition(
             &events,
             &drop_step(
                 IndexValue::None,
-                vec![EventField::Int(0), EventField::Bool(true), EventField::Int(1)],
+                vec![
+                    EventField::Int(0),
+                    EventField::Bool(true),
+                    EventField::Int(1),
+                ],
             ),
             "identical-duplicate-drop: fewer than 2 valid occurrence indexes",
         );
@@ -5316,14 +5389,7 @@ mod tests_recipes_04 {
             &pair,
             PYTHON_STR_HASH_UNREPRESENTABLE,
         );
-        let mut first = SessionEvent::new(
-            "evt-a",
-            None,
-            4,
-            "2026-01-01T00:00:00Z",
-            "user",
-            "note",
-        );
+        let mut first = SessionEvent::new("evt-a", None, 4, "2026-01-01T00:00:00Z", "user", "note");
         let second = first.clone();
         let sessions = vec![
             EventValue::from_session(first.clone()),
@@ -5410,11 +5476,9 @@ mod tests_recipes_04 {
             hashed("note", text("evt-b"), "hash-a"),
             with_parent("evt-child", "hash-c", text("evt-b")),
         ];
-        let output = apply_identical_duplicate_drop(
-            &nameless,
-            &drop_step(IndexValue::None, ints(&[0, 1])),
-        )
-        .expect("empty kept id");
+        let output =
+            apply_identical_duplicate_drop(&nameless, &drop_step(IndexValue::None, ints(&[0, 1])))
+                .expect("empty kept id");
         assert_eq!(output.len(), 2);
         assert_eq!(output[0].get("id"), Some(&text("")));
         assert_eq!(output[1].get("parent_id"), Some(&text("evt-b")));
@@ -5467,7 +5531,10 @@ mod tests_recipes_04 {
             &affected_region_identical_duplicate_drop(&wrong_variant, &events).expect_err("seam"),
         );
         assert_eq!(
-            identical_duplicate_drop_check(&make_step(IndexValue::None, ParamMap::NotMapping), &events),
+            identical_duplicate_drop_check(
+                &make_step(IndexValue::None, ParamMap::NotMapping),
+                &events
+            ),
             unproven()
         );
         assert_eq!(
@@ -5586,10 +5653,7 @@ mod tests_recipes_04 {
             ),
             proven(&[0, 1, 2], &["evt-b", "evt-child"], &[(0, 1)])
         );
-        let blank_dropped = vec![
-            note("evt-a", "hash-a"),
-            hashed("note", text(""), "hash-a"),
-        ];
+        let blank_dropped = vec![note("evt-a", "hash-a"), hashed("note", text(""), "hash-a")];
         assert_eq!(
             identical_duplicate_drop_check(
                 &drop_step(IndexValue::None, ints(&[0, 1])),
@@ -5598,14 +5662,8 @@ mod tests_recipes_04 {
             proven(&[0, 1], &["evt-a"], &[(0, 1)])
         );
 
-        let mut call = SessionEvent::new(
-            "evt-keep",
-            None,
-            0,
-            "2026-01-01T00:00:00Z",
-            "user",
-            "note",
-        );
+        let mut call =
+            SessionEvent::new("evt-keep", None, 0, "2026-01-01T00:00:00Z", "user", "note");
         let mut child = SessionEvent::new(
             "evt-child",
             Some("evt-drop".to_owned()),
@@ -5614,14 +5672,8 @@ mod tests_recipes_04 {
             "user",
             "message",
         );
-        let mut dropped = SessionEvent::new(
-            "evt-drop",
-            None,
-            2,
-            "2026-01-01T00:00:00Z",
-            "user",
-            "note",
-        );
+        let mut dropped =
+            SessionEvent::new("evt-drop", None, 2, "2026-01-01T00:00:00Z", "user", "note");
         call.content_hash = None;
         child.content_hash = None;
         dropped.content_hash = None;
@@ -5633,7 +5685,11 @@ mod tests_recipes_04 {
         let session_step = drop_step(IndexValue::None, ints(&[0, 2]));
         assert_eq!(
             identical_duplicate_drop_check(&session_step, &sessions),
-            proven(&[0, 1, 2], &["evt-child", "evt-drop", "evt-keep"], &[(0, 2)])
+            proven(
+                &[0, 1, 2],
+                &["evt-child", "evt-drop", "evt-keep"],
+                &[(0, 2)]
+            )
         );
         assert_seam(
             &affected_region_identical_duplicate_drop(&session_step, &sessions).expect_err("seam"),
@@ -5674,7 +5730,10 @@ mod tests_recipes_04 {
         );
         assert_eq!(output[1].get("seq"), Some(&EventField::Int(1)));
         assert_eq!(output[1].get("id"), Some(&text("evt-b")));
-        assert!(matches!(output[1].get("payload"), Some(EventField::Mapping(_))));
+        assert!(matches!(
+            output[1].get("payload"),
+            Some(EventField::Mapping(_))
+        ));
         output[0].push("marker", EventField::Int(1));
         assert_eq!(snapshot(&events), before);
         assert_eq!(apply_seq_renumber(&[], &step).expect("empty"), Vec::new());
@@ -5711,7 +5770,10 @@ mod tests_recipes_04 {
         );
         assert_eq!(
             seq_renumber_check(&step, &[]),
-            seq_renumber_check(&make_step(IndexValue::Int(3), ParamMap::NotMapping), &events)
+            seq_renumber_check(
+                &make_step(IndexValue::Int(3), ParamMap::NotMapping),
+                &events
+            )
         );
         let error = affected_region_seq_renumber(&step, &events).expect_err("seam");
         assert_seam(&error);
@@ -5811,7 +5873,9 @@ mod tests_recipes_04 {
             "conservative",
             false,
             Some(CallableId::from_fn(apply_identical_duplicate_drop)),
-            Some(CallableId::from_fn(affected_region_identical_duplicate_drop)),
+            Some(CallableId::from_fn(
+                affected_region_identical_duplicate_drop,
+            )),
         );
         assert_recipe(
             &recipes[6],
@@ -5868,9 +5932,7 @@ mod tests_recipes_04 {
         assert!(!ALL.contains(&"serde_json"));
         assert_eq!(
             CallableId::from_fn(super::affected_region_torn_terminal_record_discard),
-            CallableId::from_fn(
-                crate::recipes_sl002::affected_region_torn_terminal_record_discard
-            )
+            CallableId::from_fn(crate::recipes_sl002::affected_region_torn_terminal_record_discard)
         );
         assert_eq!(
             crate::planner::RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
@@ -5911,7 +5973,10 @@ mod tests_recipes_04 {
 
         clear_registry();
         super::register_all().expect("register");
-        let names: Vec<String> = list_recipes().iter().map(|recipe| recipe.name().to_owned()).collect();
+        let names: Vec<String> = list_recipes()
+            .iter()
+            .map(|recipe| recipe.name().to_owned())
+            .collect();
         assert_eq!(
             names,
             vec![
@@ -5933,7 +5998,10 @@ mod tests_recipes_04 {
         clear_registry();
         register_recipe(&super::recipe_seq_renumber().expect("seq")).expect("seed");
         super::register_all().expect("rest");
-        let names: Vec<String> = list_recipes().iter().map(|recipe| recipe.name().to_owned()).collect();
+        let names: Vec<String> = list_recipes()
+            .iter()
+            .map(|recipe| recipe.name().to_owned())
+            .collect();
         assert_eq!(
             names,
             vec![
@@ -5947,7 +6015,9 @@ mod tests_recipes_04 {
             ]
         );
         assert_eq!(
-            get_recipe("identical-duplicate-drop").expect("drop").apply(),
+            get_recipe("identical-duplicate-drop")
+                .expect("drop")
+                .apply(),
             Some(CallableId::from_fn(apply_identical_duplicate_drop))
         );
         assert!(get_recipe("seq-renumber")

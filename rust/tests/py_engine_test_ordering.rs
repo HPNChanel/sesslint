@@ -17,7 +17,8 @@ use std::path::PathBuf;
 
 use sesslint_rust_workspace::PACKAGE_NAME;
 
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+/// `determinism.py` matches `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` and this commit.
+const CORPUS_PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 3;
 const DETERMINISM_VECTOR_COUNT: usize = 8;
 const VECTORS_REL: &str = "parity/vectors/determinism/vectors.json";
@@ -181,8 +182,8 @@ fn covered_vector_ids_are_present_in_determinism_vectors() {
     let json =
         fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(
-        json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "determinism vectors are pinned to {PIN}"
+        json.contains(&format!("\"python_commit\": \"{CORPUS_PIN}\"")),
+        "determinism vectors are pinned to {CORPUS_PIN}"
     );
     assert!(json.contains("\"module\": \"sesslint.determinism\""));
 

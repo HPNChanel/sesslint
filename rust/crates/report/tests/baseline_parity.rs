@@ -1,9 +1,7 @@
 //! Byte-exact parity for `report::baseline` against pinned Python vectors.
 
 use model::codes::{Repairability, Severity};
-use model::finding::{
-    Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION,
-};
+use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 use report::baseline::{
     compute_v2_key, dump_baseline, file_role, filter_findings, load_baseline, upgrade_baseline,
     DEFAULT_CREATED_BY,
@@ -74,7 +72,8 @@ fn assert_case(case: &VectorCase) {
             for row in rows {
                 let obj = as_object(row, "finding row").expect("finding row");
                 findings.push(
-                    build_finding(obj).unwrap_or_else(|err| panic!("finding in {}: {err}", case.id)),
+                    build_finding(obj)
+                        .unwrap_or_else(|err| panic!("finding in {}: {err}", case.id)),
                 );
             }
             let created_by = string_field(&case.construct, "created_by")
@@ -91,7 +90,8 @@ fn assert_case(case: &VectorCase) {
             for row in rows {
                 let obj = as_object(row, "finding row").expect("finding row");
                 findings.push(
-                    build_finding(obj).unwrap_or_else(|err| panic!("finding in {}: {err}", case.id)),
+                    build_finding(obj)
+                        .unwrap_or_else(|err| panic!("finding in {}: {err}", case.id)),
                 );
             }
             let keys_json = array_field(&case.construct, "baseline_keys").expect("baseline_keys");
@@ -142,7 +142,8 @@ fn assert_load_baseline(case: &VectorCase) {
     match string_field(&case.expected, "raises") {
         Ok(raises) => {
             assert_eq!(raises, "BaselineError");
-            let fragment = string_field(&case.expected, "message_contains").expect("message_contains");
+            let fragment =
+                string_field(&case.expected, "message_contains").expect("message_contains");
             let err = result.unwrap_err();
             assert!(
                 err.to_string().contains(&fragment),
@@ -179,13 +180,19 @@ fn assert_upgrade_baseline(case: &VectorCase) {
     fs::write(&path, text.as_bytes()).unwrap_or_else(|err| {
         panic!("write {}: {err}", path.display());
     });
-    let rows = case.construct.iter().find(|(k, _)| k == "findings").map(|(_, v)| v);
+    let rows = case
+        .construct
+        .iter()
+        .find(|(k, _)| k == "findings")
+        .map(|(_, v)| v);
     let findings = match rows {
         Some(JsonValue::Null) | None => None,
         Some(JsonValue::Array(items)) => {
             let mut built = Vec::with_capacity(items.len());
             for row in items {
-                let obj = as_object(row, "finding row").map_err(|err| err.message).unwrap();
+                let obj = as_object(row, "finding row")
+                    .map_err(|err| err.message)
+                    .unwrap();
                 built.push(build_finding(obj).map_err(|err| err.message).unwrap());
             }
             Some(built)
@@ -203,7 +210,8 @@ fn assert_upgrade_baseline(case: &VectorCase) {
     match string_field(&case.expected, "raises") {
         Ok(raises) => {
             assert_eq!(raises, "BaselineError");
-            let fragment = string_field(&case.expected, "message_contains").expect("message_contains");
+            let fragment =
+                string_field(&case.expected, "message_contains").expect("message_contains");
             let err = result.unwrap_err();
             assert!(
                 err.to_string().contains(&fragment),
@@ -239,14 +247,10 @@ fn build_finding(spec: &[(String, JsonValue)]) -> Result<Finding, ParseError> {
     let path = string_field(source, "path")?;
     let line = optional_i64_field(source, "line")?;
     let record_id = optional_string_field(source, "record_id")?;
-    let source = SourceRef::try_new(
-        &path,
-        line.map(SourceLine::Int),
-        record_id.as_deref(),
-    )
-    .map_err(|err| ParseError {
-        message: err.to_string(),
-    })?;
+    let source = SourceRef::try_new(&path, line.map(SourceLine::Int), record_id.as_deref())
+        .map_err(|err| ParseError {
+            message: err.to_string(),
+        })?;
     let code = string_field(spec, "code").unwrap_or_else(|_| "SL001".to_owned());
     let severity = parse_severity(spec)?;
     let repairability = parse_repairability(spec)?;
@@ -363,10 +367,7 @@ fn baseline_module_parity_vectors() {
     let path = vectors_path();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-    assert!(
-        !raw.contains('\r'),
-        "vectors.json must use LF only"
-    );
+    assert!(!raw.contains('\r'), "vectors.json must use LF only");
     let doc = parse_document_with_meta(&raw).expect("parse vectors.json");
     assert_root_meta(&doc.meta);
     assert_eq!(
@@ -413,9 +414,8 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
         "GAP-baseline-parse-json-messages",
     ] {
         assert!(
-            gaps.iter().any(|item| {
-                matches!(item, JsonValue::Str(s) if s.starts_with(prefix))
-            }),
+            gaps.iter()
+                .any(|item| { matches!(item, JsonValue::Str(s) if s.starts_with(prefix)) }),
             "expected gap {prefix}"
         );
     }
@@ -562,23 +562,17 @@ fn usize_field(obj: &[(String, JsonValue)], key: &str) -> Result<usize, ParseErr
                 message: format!("{key} must be usize"),
             })
     })?;
-    raw.parse::<usize>()
-        .map_err(|_| ParseError {
-            message: format!("{key} must be usize"),
-        })
+    raw.parse::<usize>().map_err(|_| ParseError {
+        message: format!("{key} must be usize"),
+    })
 }
 
-fn optional_i64_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<i64>, ParseError> {
+fn optional_i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<i64>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         None => Ok(None),
         Some((_, JsonValue::Null)) => Ok(None),
-        Some((_, JsonValue::Number(raw))) => raw.parse::<i64>().map(Some).map_err(|_| {
-            ParseError {
-                message: format!("{key} must be i64"),
-            }
+        Some((_, JsonValue::Number(raw))) => raw.parse::<i64>().map(Some).map_err(|_| ParseError {
+            message: format!("{key} must be i64"),
         }),
         _ => Err(ParseError {
             message: format!("{key} must be number or null"),

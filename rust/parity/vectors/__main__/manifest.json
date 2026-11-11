@@ -4,9 +4,9 @@
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "__main___py_sha256": "8417c205b4ef33540fa9ab017c1647889b62fc26056a276e82c99b9658ee19a0",
   "main__rs_sha256": "373706ccb88b2cee397e6d1c41117b335519356f44938d63b66b6639eee55b71",
-  "cli_lib_rs_sha256": "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66",
+  "cli_lib_rs_sha256": "402412fec3c027e84f41879c53ee9602b905fda6093645bddc7c4c3f32529d30",
   "vector_count": 7,
-  "vectors_sha256": "1f44c49500f209c6709225d3573346dd30524ed7e6ff183bfecbab70229f5e22",
+  "vectors_sha256": "9c9aa019da35d06dd415aa942ca75cf90cbea06f14b71471b09166477e783b56",
   "generator": "rust/parity/vectors/__main__/generate",
   "known_parity_gaps": [
     "GAP-__main__-sys-frozen: Python calls multiprocessing.freeze_support() when sys.frozen is true before sesslint.cli.main(); Rust has no PyInstaller frozen flag and no successful frozen path.",

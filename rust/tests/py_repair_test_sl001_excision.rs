@@ -84,7 +84,11 @@ const SALVAGE_VECTORS: &[(&str, &str, bool)] = &[
         "orphan_result_drop_direct_apply_refusals",
         false,
     ),
-    ("affected_region_orphan_gap", "affected_region_orphan_gap", true),
+    (
+        "affected_region_orphan_gap",
+        "affected_region_orphan_gap",
+        true,
+    ),
 ];
 
 const SL001_EXCISABLE_IDS: &[&str] = &["sl001_excisable_precondition"];
@@ -246,6 +250,30 @@ fn vector_slice<'a>(json: &'a str, id: &str) -> &'a str {
     &json[start..end]
 }
 
+/// Export inventories name `load_session_source_with_findings` because it is a
+/// public repair function. That is not the file-repair pin result the e2e test
+/// would record, so those inventories are not part of the absence surface.
+fn pin_result_surface(json: &str) -> String {
+    let mut filtered = json.to_string();
+    const PYTHON_ALL: &str = "\"python_all\": [";
+    if let Some(start) = filtered.find(PYTHON_ALL) {
+        let after = start + PYTHON_ALL.len();
+        if let Some(end) = filtered[after..].find(']') {
+            filtered.replace_range(start..after + end + 1, "\"python_all\": []");
+        }
+    }
+    const DUNDER: &str = "\n      \"id\": \"python_dunder_all\"";
+    if let Some(start) = filtered.find(DUNDER) {
+        let after = start + DUNDER.len();
+        let end = filtered[after..]
+            .find("\n      \"id\": \"")
+            .map(|offset| after + offset)
+            .unwrap_or(filtered.len());
+        filtered.replace_range(start..end, "");
+    }
+    filtered
+}
+
 fn assert_pin_results_absent(dir: &Path, rel: &str) {
     let mut names = Vec::new();
     for entry in fs::read_dir(dir).unwrap_or_else(|err| panic!("read {rel}: {err}")) {
@@ -266,10 +294,12 @@ fn assert_pin_results_absent(dir: &Path, rel: &str) {
         if path.is_dir() {
             assert_pin_results_absent(&path, &child);
         } else if name_str == "vectors.json" {
-            let json = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
+            let json =
+                fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
+            let surface = pin_result_surface(&json);
             for needle in ABSENT_PIN_RESULTS {
                 assert!(
-                    !json.contains(needle),
+                    !surface.contains(needle),
                     "{child} contains pin result {needle}"
                 );
             }
@@ -307,7 +337,10 @@ fn every_pinned_sl001_excision_test_has_one_disposition() {
                 needles,
             } => {
                 let expected = expected_covered_ids(row.name).unwrap_or_else(|| {
-                    panic!("{name} is not one of the two fully covered pin tests", name = row.name)
+                    panic!(
+                        "{name} is not one of the two fully covered pin tests",
+                        name = row.name
+                    )
                 });
                 assert_eq!(vector_ids, expected, "{}", row.name);
                 assert!(!vector_ids.is_empty(), "{}", row.name);

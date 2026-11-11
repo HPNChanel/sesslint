@@ -29,7 +29,8 @@ const EXPECTED_VECTORS_SHA256: &str =
     "1743e796cc6619f3fe5ecf1c60942cb4294ea11bb320751463c48cac6d391958";
 const COVERED_TEST: &str = "tests/repair/test_sl001_excision.py::test_sl001_excisable_precondition";
 const COVERED_VECTOR: &str = "sl001_excisable_precondition";
-const APPLY_TEST: &str = "tests/repair/test_sl001_excision.py::test_apply_torn_record_excision_validation";
+const APPLY_TEST: &str =
+    "tests/repair/test_sl001_excision.py::test_apply_torn_record_excision_validation";
 const REPAIR_TEST: &str = "tests/repair/test_sl001_excision.py::test_repair_torn_record_end_to_end";
 const GAP_REGION: &str = "GAP-torn-record-excision-affected-region";
 const GAP_PLANNER: &str = "GAP-torn-record-excision-planner";
@@ -51,22 +52,39 @@ fn parity_dir() -> PathBuf {
 
 fn read_lf(path: &Path) -> String {
     let raw = std::fs::read(path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    assert!(!raw.contains(&b'\r'), "{} contains CR", path.display());
+    let text =
+        String::from_utf8(raw).unwrap_or_else(|err| panic!("utf-8 {}: {err}", path.display()));
     assert!(
-        !raw.contains(&b'\r'),
-        "{} contains CR",
+        !text.contains(SEAM_REGION),
+        "{} stores the region seam",
         path.display()
     );
-    let text = String::from_utf8(raw).unwrap_or_else(|err| panic!("utf-8 {}: {err}", path.display()));
-    assert!(!text.contains(SEAM_REGION), "{} stores the region seam", path.display());
     assert!(
         !text.contains(SEAM_DETERMINISM),
         "{} stores the determinism seam as an expected value",
         path.display()
     );
-    assert!(!text.contains("sesslint-wt"), "{} stores a worktree path", path.display());
-    assert!(!text.contains("FOR_WORK"), "{} stores a checkout path", path.display());
-    assert!(!text.contains("02694d5"), "{} names the wrong pin", path.display());
-    assert!(!contains_sbp(&text), "{} stores an sbp hash", path.display());
+    assert!(
+        !text.contains("sesslint-wt"),
+        "{} stores a worktree path",
+        path.display()
+    );
+    assert!(
+        !text.contains("FOR_WORK"),
+        "{} stores a checkout path",
+        path.display()
+    );
+    assert!(
+        !text.contains("02694d5"),
+        "{} names the wrong pin",
+        path.display()
+    );
+    assert!(
+        !contains_sbp(&text),
+        "{} stores an sbp hash",
+        path.display()
+    );
     text
 }
 
@@ -121,7 +139,8 @@ fn torn_record_excision_coverage_is_the_whole_precondition_test() {
         10
     );
     let raw = read_lf(&dir.join("coverage.json"));
-    let (value, rest) = parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("coverage: {err}"));
+    let (value, rest) =
+        parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("coverage: {err}"));
     assert!(rest.trim().is_empty(), "coverage trailing");
     let obj = as_object(&value, "coverage").expect("coverage object");
     assert_eq!(string_field(obj, "python_commit").expect("pin"), PIN);
@@ -148,11 +167,17 @@ fn torn_record_excision_coverage_is_the_whole_precondition_test() {
         if status == "covered" {
             covered += 1;
             assert_eq!(test, COVERED_TEST);
-            assert_eq!(string_field(row, "vector_id").expect("vector_id"), COVERED_VECTOR);
+            assert_eq!(
+                string_field(row, "vector_id").expect("vector_id"),
+                COVERED_VECTOR
+            );
             assert_eq!(string_field(row, "note").expect("note"), "");
         } else {
             assert_eq!(status, "not_applicable", "{test}");
-            assert!(matches!(field_ref(row, "vector_id"), JsonValue::Null), "{test}");
+            assert!(
+                matches!(field_ref(row, "vector_id"), JsonValue::Null),
+                "{test}"
+            );
             let note = string_field(row, "note").expect("note");
             assert!(!note.is_empty(), "{test}");
             assert!(!note.contains(SEAM_REGION), "{test}");
@@ -168,20 +193,30 @@ fn torn_record_excision_coverage_is_the_whole_precondition_test() {
             }
             if test.contains("::test_plan_") {
                 assert!(note.contains("not a successful plan"), "{test}");
-                assert!(note.contains("One example inside a sweep is not the whole test"), "{test}");
+                assert!(
+                    note.contains("One example inside a sweep is not the whole test"),
+                    "{test}"
+                );
                 assert!(note.contains("no fixture diff"), "{test}");
                 assert!(note.contains(GAP_PLANNER), "{test}");
             }
         }
     }
     assert_eq!(covered, EXPECTED_COVERED);
-    assert!(vectors.iter().any(|case| case.id == "apply_torn_record_excision_refusals"));
+    assert!(vectors
+        .iter()
+        .any(|case| case.id == "apply_torn_record_excision_refusals"));
     let refusals = vectors
         .iter()
         .find(|case| case.id == "apply_torn_record_excision_refusals")
         .expect("refusals");
     assert!(!bool_field(&refusals.construct, "entire_test").expect("entire"));
-    assert_eq!(array_field(&refusals.construct, "calls").expect("calls").len(), 7);
+    assert_eq!(
+        array_field(&refusals.construct, "calls")
+            .expect("calls")
+            .len(),
+        7
+    );
 }
 
 #[test]
@@ -201,7 +236,10 @@ fn torn_record_excision_session_copy_and_plan_fail_closed() {
             ("record_ordinal".to_owned(), EventField::Int(2)),
             ("byte_offset".to_owned(), EventField::Int(120)),
             ("byte_end".to_owned(), EventField::Int(210)),
-            ("record_id".to_owned(), EventField::Str("msg-torn".to_owned())),
+            (
+                "record_id".to_owned(),
+                EventField::Str("msg-torn".to_owned()),
+            ),
         ])),
     };
     let copied = apply_torn_record_excision(vec![event.clone()], step.clone());
@@ -259,7 +297,8 @@ fn torn_record_excision_region_is_not_constructed() {
 }
 
 fn assert_case(case: &VectorCase) {
-    let kind = string_field(&case.construct, "type").unwrap_or_else(|err| panic!("{}: {err}", case.id));
+    let kind =
+        string_field(&case.construct, "type").unwrap_or_else(|err| panic!("{}: {err}", case.id));
     match kind.as_str() {
         "recipe_constant" => assert_recipe(case),
         "sl001_excisable" => assert_precondition(case),
@@ -277,8 +316,16 @@ fn assert_recipe(case: &VectorCase) {
     let handles = string_array(expected, "handles").expect("handles");
     assert_eq!(recipe.handles(), handles.as_slice(), "{}", case.id);
     let preconditions = string_array(expected, "preconditions").expect("preconditions");
-    assert_eq!(recipe.preconditions(), preconditions.as_slice(), "{}", case.id);
-    assert_eq!(recipe.lossy(), bool_field(expected, "lossy").expect("lossy"));
+    assert_eq!(
+        recipe.preconditions(),
+        preconditions.as_slice(),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        recipe.lossy(),
+        bool_field(expected, "lossy").expect("lossy")
+    );
     assert_eq!(
         recipe.salvage_only(),
         bool_field(expected, "salvage_only").expect("salvage_only")
@@ -311,7 +358,10 @@ fn assert_recipe(case: &VectorCase) {
 }
 
 fn assert_precondition(case: &VectorCase) {
-    assert_eq!(string_field(&case.construct, "fn").expect("fn"), "sl001_excisable");
+    assert_eq!(
+        string_field(&case.construct, "fn").expect("fn"),
+        "sl001_excisable"
+    );
     assert_eq!(string_field(&case.expected, "mode").expect("mode"), "bools");
     let checks = array_field(&case.construct, "checks").expect("checks");
     let values = array_field(&case.expected, "values").expect("values");
@@ -330,10 +380,16 @@ fn assert_precondition(case: &VectorCase) {
         saw_false |= !got;
     }
     if case.id == COVERED_VECTOR {
-        assert!(saw_true && saw_false, "covered sweep collapsed to one outcome");
+        assert!(
+            saw_true && saw_false,
+            "covered sweep collapsed to one outcome"
+        );
     }
     if case.id == "sl001_bool_span_is_not_an_int" {
-        assert!(saw_true && saw_false, "bool span was not distinguished from an int");
+        assert!(
+            saw_true && saw_false,
+            "bool span was not distinguished from an int"
+        );
         assert_bool_span_tags(checks);
     }
 }
@@ -357,8 +413,14 @@ fn assert_bool_span_tags(checks: &[JsonValue]) {
     let EventField::Mapping(mapping) = evidence else {
         panic!("control map");
     };
-    assert!(matches!(mapping.get("byte_offset"), Some(EventField::Int(0))));
-    assert!(matches!(mapping.get("record_ordinal"), Some(EventField::Int(1))));
+    assert!(matches!(
+        mapping.get("byte_offset"),
+        Some(EventField::Int(0))
+    ));
+    assert!(matches!(
+        mapping.get("record_ordinal"),
+        Some(EventField::Int(1))
+    ));
 }
 
 fn run_check(obj: &[(String, JsonValue)]) -> bool {
@@ -435,7 +497,10 @@ fn assert_refusals(case: &VectorCase) {
         string_field(&case.construct, "fn").expect("fn"),
         "apply_torn_record_excision"
     );
-    assert_eq!(string_field(&case.expected, "mode").expect("mode"), "refusals");
+    assert_eq!(
+        string_field(&case.expected, "mode").expect("mode"),
+        "refusals"
+    );
     assert!(!bool_field(&case.construct, "entire_test").expect("entire_test"));
     let calls = array_field(&case.construct, "calls").expect("calls");
     assert!(calls.len() > 1, "{} is one example", case.id);
@@ -457,7 +522,10 @@ fn assert_bool_param_is_not_int(call: &[(String, JsonValue)]) {
     let offset = mapping.get("byte_offset");
     let bool_line = matches!(line, Some(EventField::Bool(true)));
     let bool_span = matches!(offset, Some(EventField::Bool(true)));
-    assert!(bool_line || bool_span, "expected a bool line or a bool span");
+    assert!(
+        bool_line || bool_span,
+        "expected a bool line or a bool span"
+    );
     assert!(!matches!(line, Some(EventField::Int(1))) || !bool_line);
     assert!(!matches!(offset, Some(EventField::Int(1))));
 }
@@ -476,7 +544,10 @@ fn assert_mixed(case: &VectorCase) {
     }
     assert_refusal(refused);
     let kept = as_object(&calls[1], "kept").expect("kept");
-    match param_field(&decode_step(object_field(kept, "step").expect("step")), "record_id") {
+    match param_field(
+        &decode_step(object_field(kept, "step").expect("step")),
+        "record_id",
+    ) {
         Some(EventField::Int(1)) => {}
         other => panic!("int record id {other:?}"),
     }
@@ -491,7 +562,10 @@ fn param_field(step: &SalvageStep, key: &str) -> Option<EventField> {
 }
 
 fn assert_refusal(call: &[(String, JsonValue)]) {
-    assert_eq!(string_field(call, "error_type").expect("error_type"), "PreconditionFailed");
+    assert_eq!(
+        string_field(call, "error_type").expect("error_type"),
+        "PreconditionFailed"
+    );
     let message = string_field(call, "message").expect("message");
     assert!(!message.contains(SEAM_REGION), "{message}");
     assert!(!message.contains(SEAM_DETERMINISM), "{message}");
@@ -543,11 +617,18 @@ fn decode_loss(value: &JsonValue) -> Vec<(String, i64)> {
 }
 
 fn assert_manifest(raw: &str, digest: &str) {
-    let (value, rest) = parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("manifest: {err}"));
+    let (value, rest) =
+        parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("manifest: {err}"));
     assert!(rest.trim().is_empty(), "manifest trailing");
     let obj = as_object(&value, "manifest").expect("manifest object");
-    assert_eq!(usize_field(obj, "vector_count").expect("vector_count"), EXPECTED_VECTOR_COUNT);
-    assert_eq!(string_field(obj, "vectors_sha256").expect("vectors_sha256"), digest);
+    assert_eq!(
+        usize_field(obj, "vector_count").expect("vector_count"),
+        EXPECTED_VECTOR_COUNT
+    );
+    assert_eq!(
+        string_field(obj, "vectors_sha256").expect("vectors_sha256"),
+        digest
+    );
     assert_eq!(
         string_field(obj, "generator").expect("generator"),
         "rust/parity/recipes/torn-record-excision/generate"
@@ -600,7 +681,9 @@ fn decode_session(obj: &[(String, JsonValue)]) -> SessionEvent {
         .as_str()
     {
         "null" => None,
-        "str" => Some(string_field(object_field(obj, "parent_id").expect("parent"), "v").expect("parent str")),
+        "str" => Some(
+            string_field(object_field(obj, "parent_id").expect("parent"), "v").expect("parent str"),
+        ),
         "bool" | "int" => panic!("bool is not an int"),
         other => panic!("parent tag {other}"),
     };
@@ -650,7 +733,9 @@ fn decode_py(value: &JsonValue) -> PyValue {
         "bool" => PyValue::bool_value(bool_field(obj, "v").expect("py bool")),
         "int" => PyValue::int(int_field(obj, "v").expect("py int")),
         "str" => PyValue::string(string_field(obj, "v").expect("py str")),
-        "map" => PyValue::map(decode_py_entries(array_field(obj, "entries").expect("entries"))),
+        "map" => PyValue::map(decode_py_entries(
+            array_field(obj, "entries").expect("entries"),
+        )),
         "list" => {
             let items = array_field(obj, "items")
                 .expect("items")
@@ -848,7 +933,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(name, _)| name == key) {
         Some((_, JsonValue::Array(items))) => Ok(items.as_slice()),
         Some(_) => Err(ParseError {
@@ -1165,7 +1253,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

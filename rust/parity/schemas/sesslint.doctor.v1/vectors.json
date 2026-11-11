@@ -1,0 +1,78 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.doctor.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-doctor-emitter: CLI doctor JSON and the root sweep are not this validator. One synthetic document is not that sweep."
+  ],
+  "vectors": [
+    {
+      "id": "minimal_ok",
+      "document": "{\"adapters\":[{\"default_profile\":\"neutral\",\"description\":\"synthetic\",\"name\":\"synthetic\",\"versions_supported\":[\"1\"]}],\"config_path\":\"synthetic.toml\",\"reader_limits\":{\"max_depth\":1,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":1},\"roots\":[{\"agent\":\"synthetic\",\"checked\":0,\"exists\":true,\"file_count\":0,\"file_count_capped\":false,\"index\":{\"index_entries\":0,\"sessions_on_disk\":0,\"state\":\"ok\"},\"newest_mtime\":null,\"path\":\"synthetic\",\"source\":\"default\",\"top_codes\":[{\"code\":\"SL001\",\"count\":0}],\"verdicts\":{\"healthy\":0}}],\"schema_version\":\"sesslint.doctor/v1\",\"tool_version\":\"0.5.0\"}",
+      "expected": {
+        "result": "ok"
+      },
+      "rust": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "null_config",
+      "document": "{\"adapters\":[],\"config_path\":null,\"reader_limits\":{\"max_depth\":1,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":null},\"roots\":[],\"schema_version\":\"sesslint.doctor/v1\",\"tool_version\":\"0.5.0\"}",
+      "expected": {
+        "result": "ok"
+      },
+      "rust": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "bad_version",
+      "document": "{\"adapters\":[{\"default_profile\":\"neutral\",\"description\":\"synthetic\",\"name\":\"synthetic\",\"versions_supported\":[\"1\"]}],\"config_path\":\"synthetic.toml\",\"reader_limits\":{\"max_depth\":1,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":1},\"roots\":[{\"agent\":\"synthetic\",\"checked\":0,\"exists\":true,\"file_count\":0,\"file_count_capped\":false,\"index\":{\"index_entries\":0,\"sessions_on_disk\":0,\"state\":\"ok\"},\"newest_mtime\":null,\"path\":\"synthetic\",\"source\":\"default\",\"top_codes\":[{\"code\":\"SL001\",\"count\":0}],\"verdicts\":{\"healthy\":0}}],\"schema_version\":\"sesslint.doctor/v0\",\"tool_version\":\"0.5.0\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "const"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "const"
+      }
+    },
+    {
+      "id": "bad_state",
+      "document": "{\"adapters\":[{\"default_profile\":\"neutral\",\"description\":\"synthetic\",\"name\":\"synthetic\",\"versions_supported\":[\"1\"]}],\"config_path\":\"synthetic.toml\",\"reader_limits\":{\"max_depth\":1,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":1},\"roots\":[{\"agent\":\"synthetic\",\"checked\":0,\"exists\":true,\"file_count\":0,\"file_count_capped\":false,\"index\":{\"index_entries\":0,\"sessions_on_disk\":0,\"state\":\"other\"},\"newest_mtime\":null,\"path\":\"synthetic\",\"source\":\"default\",\"top_codes\":[{\"code\":\"SL001\",\"count\":0}],\"verdicts\":{\"healthy\":0}}],\"schema_version\":\"sesslint.doctor/v1\",\"tool_version\":\"0.5.0\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "enum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "enum"
+      }
+    },
+    {
+      "id": "zero_limit",
+      "document": "{\"adapters\":[{\"default_profile\":\"neutral\",\"description\":\"synthetic\",\"name\":\"synthetic\",\"versions_supported\":[\"1\"]}],\"config_path\":\"synthetic.toml\",\"reader_limits\":{\"max_depth\":0,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":1},\"roots\":[{\"agent\":\"synthetic\",\"checked\":0,\"exists\":true,\"file_count\":0,\"file_count_capped\":false,\"index\":{\"index_entries\":0,\"sessions_on_disk\":0,\"state\":\"ok\"},\"newest_mtime\":null,\"path\":\"synthetic\",\"source\":\"default\",\"top_codes\":[{\"code\":\"SL001\",\"count\":0}],\"verdicts\":{\"healthy\":0}}],\"schema_version\":\"sesslint.doctor/v1\",\"tool_version\":\"0.5.0\"}",
+      "expected": {
+        "result": "reject",
+        "keyword": "minimum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "minimum"
+      }
+    },
+    {
+      "id": "extra_key",
+      "document": "{\"adapters\":[{\"default_profile\":\"neutral\",\"description\":\"synthetic\",\"name\":\"synthetic\",\"versions_supported\":[\"1\"]}],\"config_path\":\"synthetic.toml\",\"reader_limits\":{\"max_depth\":1,\"max_file_bytes\":1,\"max_line_bytes\":1,\"max_records\":1},\"roots\":[{\"agent\":\"synthetic\",\"checked\":0,\"exists\":true,\"file_count\":0,\"file_count_capped\":false,\"index\":{\"index_entries\":0,\"sessions_on_disk\":0,\"state\":\"ok\"},\"newest_mtime\":null,\"path\":\"synthetic\",\"source\":\"default\",\"top_codes\":[{\"code\":\"SL001\",\"count\":0}],\"verdicts\":{\"healthy\":0}}],\"schema_version\":\"sesslint.doctor/v1\",\"tool_version\":\"0.5.0\",\"extra\":1}",
+      "expected": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      }
+    }
+  ]
+}

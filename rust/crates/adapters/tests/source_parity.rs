@@ -90,10 +90,7 @@ fn assert_case(case: &VectorCase) {
     }
 }
 
-fn bytes_from_hex_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Vec<u8>, ParseError> {
+fn bytes_from_hex_field(obj: &[(String, JsonValue)], key: &str) -> Result<Vec<u8>, ParseError> {
     let hx = string_field(obj, key)?;
     if hx.is_empty() {
         return Ok(Vec::new());

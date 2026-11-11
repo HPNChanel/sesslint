@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use scan::io::{
     check_nesting_depth, decode_json_dupaware, is_cut_json_object, is_torn_append, iter_events,
     read_header, skip_scalar, EventInput, HeaderInput, RawLine, ReadHeaderError, ReaderLimits,
-    SliceLineCursor, CHUNK_DRAIN_SIZE, DEFAULT_MAX_DEPTH,
-    DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_LINE_BYTES, DEFAULT_READER_LIMITS, MMAP_MIN_BYTES,
-    MMAP_MIN_LINE_BYTES, MMAP_SNIFF_BYTES, MAX_DUP_KEYS_PER_RECORD, PROBE_CHUNK_BYTES,
+    SliceLineCursor, CHUNK_DRAIN_SIZE, DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILE_BYTES,
+    DEFAULT_MAX_LINE_BYTES, DEFAULT_READER_LIMITS, MAX_DUP_KEYS_PER_RECORD, MMAP_MIN_BYTES,
+    MMAP_MIN_LINE_BYTES, MMAP_SNIFF_BYTES, PROBE_CHUNK_BYTES,
 };
 
 const VECTORS_REL: &str = "../../parity/vectors/io/vectors.json";
@@ -34,10 +34,8 @@ impl Scratch {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "sesslint-io-parity-{id}-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("sesslint-io-parity-{id}-{}", std::process::id()));
         std::fs::create_dir_all(&path).expect("scratch dir");
         Self { path }
     }
@@ -239,7 +237,9 @@ fn read_nonempty_records(bytes: &[u8], limits: &ReaderLimits) -> Vec<RawLine> {
 }
 
 fn header_ascii_blank_parity(chunk: &[u8]) -> bool {
-    chunk.iter().all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0b' | b'\x0c'))
+    chunk
+        .iter()
+        .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0b' | b'\x0c'))
 }
 
 fn collect_iter_events(
@@ -321,10 +321,30 @@ fn assert_case(case: &VectorCase) {
             );
             let lim_obj = object_field(&case.expected, "DEFAULT_READER_LIMITS").expect("limits");
             let parsed = limits_from_obj(lim_obj);
-            assert_eq!(DEFAULT_READER_LIMITS.max_line_bytes(), parsed.max_line_bytes(), "{}", case.id);
-            assert_eq!(DEFAULT_READER_LIMITS.max_depth(), parsed.max_depth(), "{}", case.id);
-            assert_eq!(DEFAULT_READER_LIMITS.max_file_bytes(), parsed.max_file_bytes(), "{}", case.id);
-            assert_eq!(DEFAULT_READER_LIMITS.max_records(), parsed.max_records(), "{}", case.id);
+            assert_eq!(
+                DEFAULT_READER_LIMITS.max_line_bytes(),
+                parsed.max_line_bytes(),
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                DEFAULT_READER_LIMITS.max_depth(),
+                parsed.max_depth(),
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                DEFAULT_READER_LIMITS.max_file_bytes(),
+                parsed.max_file_bytes(),
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                DEFAULT_READER_LIMITS.max_records(),
+                parsed.max_records(),
+                "{}",
+                case.id
+            );
         }
         "io_reader_limits" => {
             let lim_obj = object_field(&case.construct, "limits").expect("limits");
@@ -366,8 +386,18 @@ fn assert_case(case: &VectorCase) {
             let text = string_field(&case.construct, "text").expect("text");
             let (_val, dups, truncated) =
                 decode_json_dupaware(&text, None, MAX_DUP_KEYS_PER_RECORD).expect("decode");
-            assert_eq!(dups.len(), usize_field(&case.expected, "dup_count").unwrap(), "{}", case.id);
-            assert_eq!(truncated, bool_field(&case.expected, "truncated").unwrap(), "{}", case.id);
+            assert_eq!(
+                dups.len(),
+                usize_field(&case.expected, "dup_count").unwrap(),
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                truncated,
+                bool_field(&case.expected, "truncated").unwrap(),
+                "{}",
+                case.id
+            );
         }
         "io_check_nesting_depth" => {
             let text = string_field(&case.construct, "json_text").expect("json_text");
@@ -396,7 +426,8 @@ fn assert_case(case: &VectorCase) {
             match outcome.as_str() {
                 "ok" => {
                     let header = result.expect("header ok");
-                    let header_json = string_field(&case.expected, "header_json").expect("header_json");
+                    let header_json =
+                        string_field(&case.expected, "header_json").expect("header_json");
                     assert!(header_json.contains(&header.session_id), "{}", case.id);
                     assert_eq!(header.schema_version, "sesslint.session/v1", "{}", case.id);
                 }
@@ -421,18 +452,14 @@ fn assert_case(case: &VectorCase) {
                         )
                         .expect_err("directory");
                         let prefix = string_field(&case.expected, "prefix").expect("prefix");
-                        assert!(
-                            err.to_string().starts_with(&prefix),
-                            "{}: {}",
-                            case.id,
-                            err
-                        );
-                        assert!(err.to_string().contains(&slash_path(scratch.path.as_path())));
+                        assert!(err.to_string().starts_with(&prefix), "{}: {}", case.id, err);
+                        assert!(err
+                            .to_string()
+                            .contains(&slash_path(scratch.path.as_path())));
                     }
                     "file" => {
                         let scratch = Scratch::new();
-                        let filename =
-                            string_field(&case.construct, "filename").expect("filename");
+                        let filename = string_field(&case.construct, "filename").expect("filename");
                         let path = scratch.path.join(&filename);
                         let file_obj =
                             object_field(&case.construct, "file_bytes").expect("file_bytes");
@@ -442,20 +469,14 @@ fn assert_case(case: &VectorCase) {
                             Ok(obj) => limits_from_obj(obj),
                             Err(_) => DEFAULT_READER_LIMITS,
                         };
-                        let result =
-                            read_header(HeaderInput::Path(&path), &limits, None, None);
+                        let result = read_header(HeaderInput::Path(&path), &limits, None, None);
                         if let Ok(message) = string_field(&case.expected, "message") {
                             let err = result.expect_err("path error");
                             assert_eq!(err.to_string(), message, "{}", case.id);
                         } else if let Ok(suffix) = string_field(&case.expected, "suffix") {
                             let err = result.expect_err("empty file");
                             let shown = slash_path(&path);
-                            assert_eq!(
-                                err.to_string(),
-                                format!("{suffix}{shown}"),
-                                "{}",
-                                case.id
-                            );
+                            assert_eq!(err.to_string(), format!("{suffix}{shown}"), "{}", case.id);
                         }
                     }
                     other => panic!("{}: mode {other}", case.id),
@@ -471,7 +492,9 @@ fn assert_case(case: &VectorCase) {
                 )
                 .expect_err("missing");
                 assert_eq!(err.to_string(), message, "{}", case.id);
-                assert!(matches!(err, ReadHeaderError::Io(ref e) if e.kind() == ErrorKind::NotFound));
+                assert!(
+                    matches!(err, ReadHeaderError::Io(ref e) if e.kind() == ErrorKind::NotFound)
+                );
             }
         }
         "io_iter_events_stream" => {
@@ -494,11 +517,7 @@ fn assert_case(case: &VectorCase) {
                         case.id
                     );
                     let raw = records[0].raw_bytes();
-                    assert!(
-                        !raw.windows(4).any(|w| w == b"WXYZ"),
-                        "{}",
-                        case.id
-                    );
+                    assert!(!raw.windows(4).any(|w| w == b"WXYZ"), "{}", case.id);
                 }
                 if let Ok(count) = usize_field(&case.expected, "record_count") {
                     assert_eq!(records.len(), count, "{}", case.id);
@@ -534,10 +553,17 @@ fn assert_case(case: &VectorCase) {
             if let Ok(events_arr) = array_field(&case.expected, "events") {
                 assert_eq!(events.len(), events_arr.len(), "{}", case.id);
                 for (got, exp) in events.iter().zip(events_arr.iter()) {
-                    let JsonValue::Object(obj) = exp else { panic!("event object") };
+                    let JsonValue::Object(obj) = exp else {
+                        panic!("event object")
+                    };
                     assert_eq!(got.id, string_field(obj, "id").unwrap(), "{}", case.id);
                     assert_eq!(got.seq, i64_field(obj, "seq").unwrap(), "{}", case.id);
-                    assert_eq!(got.actor, string_field(obj, "actor").unwrap(), "{}", case.id);
+                    assert_eq!(
+                        got.actor,
+                        string_field(obj, "actor").unwrap(),
+                        "{}",
+                        case.id
+                    );
                     assert_eq!(got.kind, string_field(obj, "kind").unwrap(), "{}", case.id);
                 }
             }
@@ -547,26 +573,18 @@ fn assert_case(case: &VectorCase) {
                 match mode.as_str() {
                     "directory" => {
                         let scratch = Scratch::new();
-                        let err = match iter_events(
-                            EventInput::Path(scratch.path.as_path()),
-                            None,
-                            None,
-                        ) {
-                            Ok(_) => panic!("{}: directory opened", case.id),
-                            Err(err) => err,
-                        };
+                        let err =
+                            match iter_events(EventInput::Path(scratch.path.as_path()), None, None)
+                            {
+                                Ok(_) => panic!("{}: directory opened", case.id),
+                                Err(err) => err,
+                            };
                         let prefix = string_field(&case.expected, "prefix").expect("prefix");
-                        assert!(
-                            err.to_string().starts_with(&prefix),
-                            "{}: {}",
-                            case.id,
-                            err
-                        );
+                        assert!(err.to_string().starts_with(&prefix), "{}: {}", case.id, err);
                     }
                     "file" => {
                         let scratch = Scratch::new();
-                        let filename =
-                            string_field(&case.construct, "filename").expect("filename");
+                        let filename = string_field(&case.construct, "filename").expect("filename");
                         let path = scratch.path.join(&filename);
                         let file_obj =
                             object_field(&case.construct, "file_bytes").expect("file_bytes");

@@ -1,11 +1,11 @@
 //! Parity for `sesslint.cli` (`cli/__init__.py`) against pinned Python vectors.
 
+use cli::context::{CliContext, Setting, SettingValue};
+use cli::{_removed_command_hint, _removed_flag_hint, _verbose_settings, main};
 use cli::{
     check_exit_epilog, create_parser, version_label, ALLOW_ABBREV, CHECK_EXIT_LINES,
     CHECK_EXIT_NOTES, DESCRIPTION, PROG, VALID_FORMAT_OPTIONS_UNAVAILABLE,
 };
-use cli::{_removed_command_hint, _removed_flag_hint, _verbose_settings, main};
-use cli::context::{CliContext, Setting, SettingValue};
 use std::fmt;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -22,9 +22,9 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CLI_INIT_PY_SHA256: &str =
     "aa32db5fee47d314773622038ef164bd83175c83584361d0aa34e9f2ae17c4c9";
 const EXPECTED_CLI_LIB_RS_SHA256: &str =
-    "3d2f3514bd193b4bc7da61ead816a4cbe82ad57ed7a653013ba719b0947ebc66";
+    "402412fec3c027e84f41879c53ee9602b905fda6093645bddc7c4c3f32529d30";
 const EXPECTED_VECTORS_SHA256: &str =
-    "d7f07d6abe9ef70d8c323bf54bb827adfba5ed96ac9bd54f9ccc03b1dff26cac";
+    "0d2ea35df9ea52c98e9fc752aab7d56bb9bb02ab6f51c8d0e1fa3956e2accffc";
 const EXPECTED_COVERED_COUNT: i64 = 1;
 const EXPECTED_NOT_APPLICABLE_COUNT: i64 = 1141;
 
@@ -146,8 +146,7 @@ fn cli_init_module_parity_vectors() {
 }
 
 fn assert_lib_rs_unchanged() {
-    let bytes = std::fs::read(lib_rs_path())
-        .unwrap_or_else(|err| panic!("read lib.rs: {err}"));
+    let bytes = std::fs::read(lib_rs_path()).unwrap_or_else(|err| panic!("read lib.rs: {err}"));
     assert_eq!(
         sha256_hex(&bytes),
         EXPECTED_CLI_LIB_RS_SHA256,
@@ -460,7 +459,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
         .filter(|(k, _)| *k != "vectors")
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 

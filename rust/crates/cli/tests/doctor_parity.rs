@@ -20,9 +20,9 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_DOCTOR_PY_SHA256: &str =
     "e550b2a8094c4f0d212cf33ea9e0abbc88f77ba9ea4db1c74c663aecae7c7c8d";
 const EXPECTED_DOCTOR_RS_SHA256: &str =
-    "5bba8088a44ff8728de3c92e8ca9d6f39be80584abac5d2c1d054dfc5d5e36a7";
+    "0a63f3e5314a025af116b2ea9fbdb99cfea5d4bbd58d69f36a1b298cba9333cf";
 const EXPECTED_VECTORS_SHA256: &str =
-    "cca63dbb251c9eb9cded6bce336a28ed1b609fa99a98e3361f4ca83faf43b1a7";
+    "20b15147b31a9c496ced07a5b605745f89fbf8aa742ae8fdf5623c958aae6ce6";
 
 const GAP_CONFIG_ERROR: &str = "GAP-cli-doctor-config-error";
 
@@ -146,8 +146,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter()
-            .any(|item| gap_contains(item, GAP_CONFIG_ERROR)),
+        gaps.iter().any(|item| gap_contains(item, GAP_CONFIG_ERROR)),
         "vectors.json must list {GAP_CONFIG_ERROR}"
     );
 }
@@ -204,7 +203,12 @@ fn assert_configure_case(case: &VectorCase) {
     }
 
     let want_groups = array_field(&case.expected, "groups").expect("groups");
-    assert_eq!(spec.groups.len(), want_groups.len(), "groups for {}", case.id);
+    assert_eq!(
+        spec.groups.len(),
+        want_groups.len(),
+        "groups for {}",
+        case.id
+    );
     for (index, item) in want_groups.iter().enumerate() {
         let obj = as_object(item, "group").expect("group object");
         let group = spec
@@ -254,7 +258,12 @@ fn assert_local_argument(
         string_field(spec, "action").expect("action"),
         "action[{index}] for {case_id}"
     );
-    assert_doctor_nargs(decl.nargs, optional_string_field(spec, "nargs").expect("nargs"), case_id, index);
+    assert_doctor_nargs(
+        decl.nargs,
+        optional_string_field(spec, "nargs").expect("nargs"),
+        case_id,
+        index,
+    );
     assert_declared_type(
         decl.ty,
         optional_string_field(spec, "type_name").expect("type_name"),
@@ -384,18 +393,13 @@ fn assert_group(
     );
 }
 
-fn assert_declared_type(
-    actual: DeclaredType,
-    want: Option<String>,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_type(actual: DeclaredType, want: Option<String>, case_id: &str, index: usize) {
     match (actual, want.as_deref()) {
         (DeclaredType::Absent, None) => {}
         (DeclaredType::Named(got), Some("Path")) => assert_eq!(got, "Path"),
-        (actual, want) => panic!(
-            "type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}"
-        ),
+        (actual, want) => {
+            panic!("type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}")
+        }
     }
 }
 
@@ -426,19 +430,14 @@ fn assert_doctor_default_keyword(
     }
 }
 
-fn assert_arg_default(
-    actual: ArgDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_arg_default(actual: ArgDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (ArgDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (ArgDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (ArgDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -453,7 +452,9 @@ fn action_token(action: ArgAction) -> &'static str {
 fn assert_doctor_nargs(actual: Nargs, want: Option<String>, case_id: &str, index: usize) {
     match want {
         None => assert_eq!(actual, Nargs::Absent, "nargs[{index}] for {case_id}"),
-        Some(token) if token == "0" => assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}"),
+        Some(token) if token == "0" => {
+            assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}")
+        }
         Some(other) => panic!("unexpected nargs {other} for {case_id} arg {index}"),
     }
 }
@@ -488,15 +489,14 @@ fn assert_optional_string_list(
     }
 }
 
-fn assert_default_keyword(
-    actual: DefaultKeyword,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: DefaultKeyword, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, DefaultKeyword::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                DefaultKeyword::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => match actual {
             DefaultKeyword::Present(got) => {
@@ -511,12 +511,7 @@ fn assert_default_keyword(
     }
 }
 
-fn assert_declared_default(
-    actual: DeclaredDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_default(actual: DeclaredDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DeclaredDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (DeclaredDefault::False, JsonValue::Str(text)) if text == "false" => {}
@@ -528,9 +523,9 @@ fn assert_declared_default(
             );
         }
         (DeclaredDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -606,11 +601,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -676,10 +671,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)
@@ -722,10 +714,7 @@ fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> 
     }
 }
 
-fn optional_bool_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<bool>, ParseError> {
+fn optional_bool_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<bool>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Null)) => Ok(None),
         Some((_, JsonValue::Bool(value))) => Ok(Some(*value)),

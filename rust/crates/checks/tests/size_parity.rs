@@ -3,10 +3,10 @@
 //! Exercises [`check_size_anomaly`], [`check_sl011`], and [`ALL`] on cases that are
 //! silent on Python (empty finding list).
 
+use checks::context::CheckContext;
 use checks::size::{
     check_size_anomaly, check_sl011, ALL, SIZE_FLOOR_BYTES, SIZE_MIN_RECORDS, SIZE_RATIO_K,
 };
-use checks::context::CheckContext;
 use model::events::EventValue;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -171,10 +171,7 @@ fn lookup_construct_value<'a>(
     construct: &'a [(String, JsonValue)],
     key: &str,
 ) -> Option<&'a JsonValue> {
-    construct
-        .iter()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v)
+    construct.iter().find(|(k, _)| k == key).map(|(_, v)| v)
 }
 
 fn build_check_context_from_tagged(value: &JsonValue) -> Result<CheckContext, ParseError> {
@@ -250,10 +247,9 @@ fn json_tagged_to_serde(value: &JsonValue) -> Result<Value, ParseError> {
         "int" => Value::from(i64_field(obj, "v")?),
         "float" => {
             let f = f64_field(obj, "v")?;
-            let num =
-                serde_json::Number::from_f64(f).ok_or_else(|| ParseError {
-                    message: "non-finite float".into(),
-                })?;
+            let num = serde_json::Number::from_f64(f).ok_or_else(|| ParseError {
+                message: "non-finite float".into(),
+            })?;
             Value::Number(num)
         }
         "str" => Value::String(string_field(obj, "v")?),

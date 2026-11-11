@@ -26,7 +26,9 @@ use std::path::Path;
 
 use model::version::VERSION as MODEL_VERSION;
 
-use crate::common::{format_display_name, output_format, write_baseline_arg, ArgValue, CommonArgs, CommonError};
+use crate::common::{
+    format_display_name, output_format, write_baseline_arg, ArgValue, CommonArgs, CommonError,
+};
 use crate::context::CliContext;
 
 /// Python `sesslint.__version__`.
@@ -61,7 +63,8 @@ const UNSUPPORTED_INFO: &str =
     "unsupported (format-undetected): use sesslint doctor to inspect supported inputs";
 const SKIPPED_LARGE_INFO: &str =
     "skipped (file-too-large): increase --max-file-bytes to inspect this file";
-const AMBIGUOUS_WARN: &str = "Format detection ambiguous. Please specify --adapter explicitly (see sesslint doctor).";
+const AMBIGUOUS_WARN: &str =
+    "Format detection ambiguous. Please specify --adapter explicitly (see sesslint doctor).";
 const STDIN_HINT: &str = "hint: save the stream to a file, then run 'sesslint bundle <file>' and attach the output to an adapter request";
 
 const SEPARATOR_WIDTH: usize = 80;
@@ -407,11 +410,18 @@ fn file_line(ansi: &Ansi<'_>, file: &ScanFile) -> String {
             "[UNSUPPORTED]",
             format!(" ({})", unsupported_reason(file.skipped_reason.as_deref())),
         ),
-        "unreadable" => (ansi.red, "[UNREADABLE]", " (read error or non-UTF8)".to_string()),
+        "unreadable" => (
+            ansi.red,
+            "[UNREADABLE]",
+            " (read error or non-UTF8)".to_string(),
+        ),
         _ => (
             ansi.bold,
             "[SKIPPED]",
-            format!(" (reason: {})", skipped_text(file.skipped_reason.as_deref())),
+            format!(
+                " (reason: {})",
+                skipped_text(file.skipped_reason.as_deref())
+            ),
         ),
     };
     if file.cache_hit {
@@ -746,7 +756,10 @@ fn warn_findings<W: Write>(
     Ok(())
 }
 
-fn warn_sl302<W: Write>(ctx: &mut CliContext<W>, finding: &CheckFinding) -> Result<(), RenderError> {
+fn warn_sl302<W: Write>(
+    ctx: &mut CliContext<W>,
+    finding: &CheckFinding,
+) -> Result<(), RenderError> {
     if let CheckEvidence::Dict(entries) = &finding.evidence {
         if let Some(reason) = dict_get(entries, "reason") {
             if is_ambiguous_reason(reason) {
@@ -958,14 +971,16 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        format_scan_report_human, emit_check_report, parse_python_int, severity_exit, CheckCoverage,
-        CheckEvidence, CheckFinding, CheckReport, CodeRollup, DivergenceValue, EvidenceValue,
-        ReasonTotal, RenderError, ScanEvidence, ScanFile, ScanFinding, ScanReport, ScanSummary,
-        ScanTotals, SeverityCounts, WorstFile, BUILD_REPRO_METADATA_UNAVAILABLE,
+        emit_check_report, format_scan_report_human, parse_python_int, severity_exit,
+        CheckCoverage, CheckEvidence, CheckFinding, CheckReport, CodeRollup, DivergenceValue,
+        EvidenceValue, ReasonTotal, RenderError, ScanEvidence, ScanFile, ScanFinding, ScanReport,
+        ScanSummary, ScanTotals, SeverityCounts, WorstFile, BUILD_REPRO_METADATA_UNAVAILABLE,
         MINIMIZE_PATH_UNAVAILABLE, RENDER_HTML_UNAVAILABLE, RENDER_HUMAN_UNAVAILABLE,
         RENDER_JSON_UNAVAILABLE, RENDER_SARIF_UNAVAILABLE, VERSION,
     };
-    use crate::common::{write_baseline_arg, ArgValue, CommonArgs, CommonError, WRITE_BASELINE_UNAVAILABLE};
+    use crate::common::{
+        write_baseline_arg, ArgValue, CommonArgs, CommonError, WRITE_BASELINE_UNAVAILABLE,
+    };
     use crate::context::CliContext;
 
     fn totals() -> ScanTotals {
@@ -1109,13 +1124,7 @@ mod tests {
                 ),
                 file("unreadable", "synthetic-f", None, false, vec![]),
                 file("skipped", "synthetic-g", None, false, vec![]),
-                file(
-                    "skipped",
-                    "synthetic-h",
-                    Some(""),
-                    true,
-                    vec![],
-                ),
+                file("skipped", "synthetic-h", Some(""), true, vec![]),
                 file("other", "synthetic-i", Some("cap"), false, vec![]),
             ],
             summary: Some(ScanSummary {
@@ -1164,8 +1173,16 @@ mod tests {
             "[INVALID]",
             "synthetic-b (2 error(s), 3 warning(s))",
         );
-        assert_gap(lines[7], "[UNSUPPORTED]", "synthetic-c (unsupported version)");
-        assert_gap(lines[8], "[UNSUPPORTED]", "synthetic-d (unsupported version)");
+        assert_gap(
+            lines[7],
+            "[UNSUPPORTED]",
+            "synthetic-c (unsupported version)",
+        );
+        assert_gap(
+            lines[8],
+            "[UNSUPPORTED]",
+            "synthetic-d (unsupported version)",
+        );
         assert_gap(lines[9], "[UNSUPPORTED]", "synthetic-e (reader-limit)");
         assert_gap(
             lines[10],
@@ -1390,9 +1407,8 @@ mod tests {
             summary: None,
         };
         let plural = format_scan_report_human(&report, false);
-        assert!(plural.contains(
-            "  index divergence: 2 dangling index entries (see docs/codes/SL402.md)"
-        ));
+        assert!(plural
+            .contains("  index divergence: 2 dangling index entries (see docs/codes/SL402.md)"));
         report.files[0].findings = vec![sl("SL402", divergence("file-not-in-index "))];
         let unknown = format_scan_report_human(&report, false);
         assert!(unknown.contains("  index divergence:  (see docs/codes/SL402.md)"));
@@ -1472,7 +1488,10 @@ mod tests {
             parse_python_int(Some(&ArgValue::Bool(true))).unwrap(),
             Some(1)
         );
-        assert_eq!(parse_python_int(Some(&ArgValue::Int(-4))).unwrap(), Some(-4));
+        assert_eq!(
+            parse_python_int(Some(&ArgValue::Int(-4))).unwrap(),
+            Some(-4)
+        );
         assert_eq!(
             parse_python_int(Some(&ArgValue::Str("  -1_002 ".to_string()))).unwrap(),
             Some(-1002)
@@ -1482,10 +1501,7 @@ mod tests {
             Some(7)
         );
         let huge = "9".repeat(40);
-        assert_eq!(
-            parse_python_int(Some(&ArgValue::Str(huge))).unwrap(),
-            None
-        );
+        assert_eq!(parse_python_int(Some(&ArgValue::Str(huge))).unwrap(), None);
         let bad = parse_python_int(Some(&ArgValue::Str("nope".to_string()))).unwrap_err();
         assert_eq!(
             bad.to_string(),
@@ -1511,7 +1527,11 @@ mod tests {
         );
         let report = check_report(
             "Unsupported: synthetic",
-            vec![finding("SL301", "synthetic-version", CheckEvidence::NotDict)],
+            vec![finding(
+                "SL301",
+                "synthetic-version",
+                CheckEvidence::NotDict,
+            )],
         );
         let (result, buf) = run(false, &report, &args, "synthetic.json");
         let error = result.expect_err("baseline");
@@ -1576,10 +1596,7 @@ mod tests {
         let args = CommonArgs::new().with("skip_undetected", ArgValue::Bool(true));
         let report = check_report("Skipped: synthetic", vec![]);
         let (result, buf) = run(false, &report, &args, "synthetic.txt");
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            RENDER_HUMAN_UNAVAILABLE
-        );
+        assert_eq!(result.unwrap_err().to_string(), RENDER_HUMAN_UNAVAILABLE);
         assert_eq!(
             text_of(&buf),
             "skipped (file-too-large): increase --max-file-bytes to inspect this file\n"
@@ -1600,10 +1617,7 @@ mod tests {
 
     #[test]
     fn huge_unsupported_int_still_prints_the_info_line() {
-        let args = CommonArgs::new().with(
-            "fail_on_unsupported",
-            ArgValue::Str("9".repeat(40)),
-        );
+        let args = CommonArgs::new().with("fail_on_unsupported", ArgValue::Str("9".repeat(40)));
         let report = check_report("Unsupported:", vec![]);
         let (result, buf) = run(false, &report, &args, "synthetic.txt");
         assert_eq!(result.unwrap_err().to_string(), RENDER_HUMAN_UNAVAILABLE);
@@ -1616,10 +1630,7 @@ mod tests {
     #[test]
     fn detection_warns_sort_confidences_and_hint_before_the_import() {
         let evidence = CheckEvidence::Dict(vec![
-            (
-                "reason".to_string(),
-                EvidenceValue::Str("tie".to_string()),
-            ),
+            ("reason".to_string(), EvidenceValue::Str("tie".to_string())),
             (
                 "confidences".to_string(),
                 EvidenceValue::Dict(vec![
@@ -1627,10 +1638,7 @@ mod tests {
                     ("alpha".to_string(), EvidenceValue::Int(1)),
                     ("alpha".to_string(), EvidenceValue::Int(3)),
                     ("B".to_string(), EvidenceValue::Bool(true)),
-                    (
-                        "name".to_string(),
-                        EvidenceValue::Str("x".to_string()),
-                    ),
+                    ("name".to_string(), EvidenceValue::Str("x".to_string())),
                 ]),
             ),
         ]);
@@ -1683,11 +1691,17 @@ hint: run 'sesslint bundle synthetic/dir/file.JSON' and attach the output to an 
         assert!(!stdin_text.contains("Candidate confidences:"));
 
         let (text_result, text_buf) = run(false, &report, &args, "synthetic.txt");
-        assert_eq!(text_result.unwrap_err().to_string(), RENDER_HUMAN_UNAVAILABLE);
+        assert_eq!(
+            text_result.unwrap_err().to_string(),
+            RENDER_HUMAN_UNAVAILABLE
+        );
         assert!(!text_of(&text_buf).contains("hint:"));
 
         let (dot_result, dot_buf) = run(false, &report, &args, ".json");
-        assert_eq!(dot_result.unwrap_err().to_string(), RENDER_HUMAN_UNAVAILABLE);
+        assert_eq!(
+            dot_result.unwrap_err().to_string(),
+            RENDER_HUMAN_UNAVAILABLE
+        );
         assert!(!text_of(&dot_buf).contains("hint:"));
 
         let (jsonl_result, jsonl_buf) = run(false, &report, &args, "dir/synthetic.JSONL");
@@ -1748,10 +1762,7 @@ hint: run 'sesslint bundle synthetic/dir/file.JSON' and attach the output to an 
             text_of(&buf),
             "skipped (file-too-large): increase --max-file-bytes to inspect this file\n"
         );
-        assert_ne!(
-            BUILD_REPRO_METADATA_UNAVAILABLE,
-            RENDER_JSON_UNAVAILABLE
-        );
+        assert_ne!(BUILD_REPRO_METADATA_UNAVAILABLE, RENDER_JSON_UNAVAILABLE);
     }
 
     #[test]

@@ -2049,9 +2049,9 @@ mod claude_loader_tests {
 
     use super::{
         _build_payload, _load_claude_code_internal, exceeds_limit, ignore_stat_error,
-        load_claude_code, oversized_len, python_path_text, python_str, ClaudeFileLimit,
-        ClaudeKey, ClaudeLoadSource, ClaudeMap, ClaudeValue, LoadClaudeCodeError,
-        DEFAULT_MAX_FILE_BYTES, OPEN_BYTE_SOURCE_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE,
+        load_claude_code, oversized_len, python_path_text, python_str, ClaudeFileLimit, ClaudeKey,
+        ClaudeLoadSource, ClaudeMap, ClaudeValue, LoadClaudeCodeError, DEFAULT_MAX_FILE_BYTES,
+        OPEN_BYTE_SOURCE_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE,
     };
 
     fn map(pairs: Vec<(&str, ClaudeValue)>) -> ClaudeMap {
@@ -2127,10 +2127,7 @@ mod claude_loader_tests {
             "[1, True]"
         );
         assert_eq!(
-            python_str(&ClaudeValue::Map(map(vec![(
-                "k",
-                ClaudeValue::Bool(true)
-            )]))),
+            python_str(&ClaudeValue::Map(map(vec![("k", ClaudeValue::Bool(true))]))),
             "{'k': True}"
         );
         assert_eq!(
@@ -2220,19 +2217,13 @@ mod claude_loader_tests {
             &ClaudeValue::Null,
         );
         assert_eq!(kept.get("name"), Some(&ClaudeValue::Str(String::new())));
-        assert_eq!(
-            kept.get("input"),
-            Some(&ClaudeValue::Map(nested))
-        );
+        assert_eq!(kept.get("input"), Some(&ClaudeValue::Map(nested)));
 
         let from_arguments = _build_payload(
             &map(vec![
                 ("input", ClaudeValue::Null),
                 ("args", ClaudeValue::Null),
-                (
-                    "arguments",
-                    ClaudeValue::List(vec![ClaudeValue::Int(1)]),
-                ),
+                ("arguments", ClaudeValue::List(vec![ClaudeValue::Int(1)])),
             ]),
             "assistant",
             "tool_call",
@@ -2352,13 +2343,7 @@ mod claude_loader_tests {
             unknown.get("type"),
             Some(&ClaudeValue::Str("True".to_owned()))
         );
-        let missing = _build_payload(
-            &map(vec![]),
-            "system",
-            "unknown",
-            "rec",
-            &ClaudeValue::Null,
-        );
+        let missing = _build_payload(&map(vec![]), "system", "unknown", "rec", &ClaudeValue::Null);
         assert_eq!(
             missing.get("type"),
             Some(&ClaudeValue::Str("<missing>".to_owned()))
@@ -2393,10 +2378,7 @@ mod claude_loader_tests {
             "rec",
             &ClaudeValue::Null,
         );
-        assert_eq!(
-            from_text.get("content"),
-            Some(&ClaudeValue::Bool(false))
-        );
+        assert_eq!(from_text.get("content"), Some(&ClaudeValue::Bool(false)));
         assert_eq!(
             from_text.get("role"),
             Some(&ClaudeValue::Str("assistant".to_owned()))
@@ -2428,7 +2410,10 @@ mod claude_loader_tests {
     fn missing_path_and_directory_use_path_text() {
         let missing = load_str("synth/missing-claude-02.json", None);
         let shown = python_path_text(Path::new("synth/missing-claude-02.json"));
-        assert_eq!(missing.to_string(), format!("Session file not found: {shown}"));
+        assert_eq!(
+            missing.to_string(),
+            format!("Session file not found: {shown}")
+        );
         assert!(matches!(missing, LoadClaudeCodeError::NotFound(_)));
         assert!(!missing.to_string().contains("SecretScanTracker"));
         assert!(!missing.to_string().contains("_open_byte_source"));
@@ -2440,10 +2425,7 @@ mod claude_loader_tests {
         assert_eq!(like.to_string(), missing.to_string());
 
         let empty = load_str("", Some(1));
-        assert_eq!(
-            empty.to_string(),
-            "Expected session file, got directory: ."
-        );
+        assert_eq!(empty.to_string(), "Expected session file, got directory: .");
         assert!(matches!(empty, LoadClaudeCodeError::IsADirectory(_)));
         assert!(!empty.to_string().contains("File size"));
 
@@ -2533,13 +2515,10 @@ mod claude_loader_tests {
     #[test]
     fn bytes_and_stream_stop_at_the_tracker_without_reading() {
         let marker = b"synthetic-marker-0123456789";
-        let bytes_err =
-            _load_claude_code_internal(ClaudeLoadSource::Bytes(marker), limit(1)).expect_err("bytes");
+        let bytes_err = _load_claude_code_internal(ClaudeLoadSource::Bytes(marker), limit(1))
+            .expect_err("bytes");
         assert_eq!(bytes_err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
-        assert!(matches!(
-            bytes_err,
-            LoadClaudeCodeError::SecretScanTracker
-        ));
+        assert!(matches!(bytes_err, LoadClaudeCodeError::SecretScanTracker));
         assert!(!bytes_err.to_string().contains("synthetic-marker"));
         assert!(!bytes_err.to_string().contains("File size"));
         assert!(!bytes_err.to_string().contains("_open_byte_source"));
@@ -2582,8 +2561,8 @@ use model::canonical::{canonical_bytes, CanonicalUnavailable};
 use model::codes::{Repairability, Severity, SL001, SL002, SL301, SL302, SL303};
 use model::errors::{AdapterError, FindingError};
 use model::finding::{
-    enforce_content_free_text, make_finding, MakeFindingInput, SourceLine, SourceRef,
-    FINGERPRINT_CODEC_UNAVAILABLE, PyValue as FindingValue,
+    enforce_content_free_text, make_finding, MakeFindingInput, PyValue as FindingValue, SourceLine,
+    SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
 };
 
 use crate::links::{extract_links, Link, ObjectValue};
@@ -2712,8 +2691,7 @@ const TORN_TEMPLATE: &str = "Torn terminal record on line {line} for record {rec
 
 const LONE_SURROGATE_WHY: &str = "line {line} contains an invalid Unicode character (lone surrogate, e.g. \\ud800), so it cannot be parsed as a session record. The file was not truncated.";
 
-const VERSION_TEMPLATE: &str =
-    "Unsupported format version on line {line} for record {record_id}";
+const VERSION_TEMPLATE: &str = "Unsupported format version on line {line} for record {record_id}";
 
 const UNKNOWN_CRITICAL_TEMPLATE: &str =
     "Unknown critical record on line {line} for record {record_id}";
@@ -3376,7 +3354,8 @@ fn register_identity(
     raw: &ClaudeRawLine,
 ) -> Result<String, ProcessClaudeLineError> {
     let seq = i64::try_from(events.len()).map_err(|_| ProcessClaudeLineError::SeqIndex)?;
-    let payload = i64::try_from(raw.raw_bytes().len()).map_err(|_| ProcessClaudeLineError::PayloadLen)?;
+    let payload =
+        i64::try_from(raw.raw_bytes().len()).map_err(|_| ProcessClaudeLineError::PayloadLen)?;
     let real = chained_get(obj, &ID_FIELDS).and_then(identity_text);
     let guard = context
         .collision_guard
@@ -3518,10 +3497,7 @@ fn version_evidence(version_raw: &str, raw: &ClaudeRawLine) -> FindingValue {
         FindingValue::string("version_raw"),
         FindingValue::string(version_raw),
     ));
-    entries.push((
-        FindingValue::string("supported_set"),
-        sorted_versions(),
-    ));
+    entries.push((FindingValue::string("supported_set"), sorted_versions()));
     entries.push((
         FindingValue::string("supported_app_major_versions"),
         sorted_majors(),
@@ -3877,9 +3853,7 @@ fn metadata_key(key: &ClaudeKey) -> MetadataKey {
 fn metadata_value(value: &ClaudeValue) -> MetadataValue {
     match value {
         ClaudeValue::Null => MetadataValue::NoneValue,
-        ClaudeValue::List(items) => {
-            MetadataValue::List(items.iter().map(metadata_value).collect())
-        }
+        ClaudeValue::List(items) => MetadataValue::List(items.iter().map(metadata_value).collect()),
         ClaudeValue::Map(map) => metadata_from_map(map),
         ClaudeValue::Bool(_)
         | ClaudeValue::Int(_)
@@ -4535,7 +4509,9 @@ fn count_marked(root: &Parsed) -> usize {
 }
 
 fn line_defect_code(raw: &ClaudeRawLine, is_terminal: bool) -> &'static str {
-    if is_terminal && !raw.truncated_limit() && line_is_torn(raw.raw_bytes(), raw.line_number() == 1)
+    if is_terminal
+        && !raw.truncated_limit()
+        && line_is_torn(raw.raw_bytes(), raw.line_number() == 1)
     {
         SL002
     } else {
@@ -4748,7 +4724,10 @@ fn cut_skip_string(text: &str, pos: i64) -> i64 {
     if pos < 0 {
         return CUT_BAD;
     }
-    let Some(start) = usize::try_from(pos).ok().and_then(|value| value.checked_add(1)) else {
+    let Some(start) = usize::try_from(pos)
+        .ok()
+        .and_then(|value| value.checked_add(1))
+    else {
         return CUT_BAD;
     };
     let bytes = text.as_bytes();
@@ -5021,13 +5000,7 @@ mod process_line_tests {
 
     const PATH: &str = "synth.jsonl";
 
-    fn line_at(
-        number: i64,
-        bytes: &[u8],
-        truncated: bool,
-        start: i64,
-        end: i64,
-    ) -> ClaudeRawLine {
+    fn line_at(number: i64, bytes: &[u8], truncated: bool, start: i64, end: i64) -> ClaudeRawLine {
         ClaudeRawLine::try_new(number, bytes.to_vec(), truncated, start, end, 1)
             .expect("coordinates")
     }
@@ -5112,8 +5085,14 @@ mod process_line_tests {
             "user",
             "message",
         )];
-        let err = process(&line(marker), true, DEFAULT_MAX_DEPTH, &events, &mut context)
-            .expect_err("tracker");
+        let err = process(
+            &line(marker),
+            true,
+            DEFAULT_MAX_DEPTH,
+            &events,
+            &mut context,
+        )
+        .expect_err("tracker");
         assert!(matches!(err, ProcessClaudeLineError::SecretScanTracker));
         assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
         assert!(!err.to_string().contains("feed"));
@@ -5155,8 +5134,7 @@ mod process_line_tests {
             end.to_string(),
             "Invalid byte_end: 1 (must be integer >= byte_offset=2)"
         );
-        let ordinal =
-            ClaudeRawLine::try_new(1, Vec::new(), false, 0, 0, 0).expect_err("ordinal");
+        let ordinal = ClaudeRawLine::try_new(1, Vec::new(), false, 0, 0, 0).expect_err("ordinal");
         assert_eq!(
             ordinal.to_string(),
             "Invalid record_ordinal: 0 (must be integer >= 1)"
@@ -5171,8 +5149,7 @@ mod process_line_tests {
         };
         let events = Vec::new();
         let raw = line_at(2, b"syn-marker-qq", true, 4, 10);
-        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context)
-            .expect_err("limit");
+        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context).expect_err("limit");
         codec(&err);
         assert!(!err.to_string().contains("syn-marker-qq"));
         assert_eq!(context.record_sizes.as_deref(), Some(&[6][..]));
@@ -5185,8 +5162,7 @@ mod process_line_tests {
         let mut context = ClaudeLineContext::default();
         let events = Vec::new();
         let raw = line_at(0, b"x", true, 0, 1);
-        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context)
-            .expect_err("line");
+        let err = process(&raw, true, DEFAULT_MAX_DEPTH, &events, &mut context).expect_err("line");
         assert!(err.to_string().contains("SourceRef.line"));
         assert!(!err.to_string().contains("canonical_json_bytes"));
         assert!(events.is_empty());
@@ -5308,10 +5284,7 @@ mod process_line_tests {
         for _ in 0..1001 {
             text.push('}');
         }
-        assert!(matches!(
-            parse_json_document(&text),
-            Err(JsonFail::Nesting)
-        ));
+        assert!(matches!(parse_json_document(&text), Err(JsonFail::Nesting)));
         let mut context = ClaudeLineContext::default();
         codec(&fail(text.as_bytes(), &mut context));
         assert!(context.collision_guard.is_none());
@@ -5368,10 +5341,7 @@ mod process_line_tests {
     #[test]
     fn a_critical_prefix_on_metadata_is_one_finding() {
         let mut context = ClaudeLineContext::default();
-        codec(&fail(
-            br#"{"type":"mode","critical_x":1}"#,
-            &mut context,
-        ));
+        codec(&fail(br#"{"type":"mode","critical_x":1}"#, &mut context));
         assert!(!context.seen_version_sl301);
     }
 
@@ -5490,10 +5460,7 @@ mod process_line_tests {
             br#"{"type":"user","uuid":"r1","parentSessionId":0}"#,
             &mut zero,
         ));
-        assert_eq!(
-            zero.links.as_ref().expect("links")[0].target,
-            "0"
-        );
+        assert_eq!(zero.links.as_ref().expect("links")[0].target, "0");
         let mut flag = ClaudeLineContext {
             links: Some(Vec::new()),
             ..ClaudeLineContext::default()
@@ -5529,16 +5496,26 @@ mod process_line_tests {
             seen_version_sl301: true,
             ..ClaudeLineContext::default()
         };
-        noted
-            .drift
-            .as_mut()
-            .expect("drift")
-            .observe_version("1", true, "schemaVersion", None, None, None, None, None);
-        noted
-            .drift
-            .as_mut()
-            .expect("drift")
-            .observe_version("1.0", true, "schemaVersion", None, None, None, None, None);
+        noted.drift.as_mut().expect("drift").observe_version(
+            "1",
+            true,
+            "schemaVersion",
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        noted.drift.as_mut().expect("drift").observe_version(
+            "1.0",
+            true,
+            "schemaVersion",
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         let events = Vec::new();
         process(
             &line(br#"{"type":"mode","version":"9"}"#),

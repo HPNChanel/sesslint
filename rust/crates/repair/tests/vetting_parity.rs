@@ -8,9 +8,7 @@ use repair::planner::{
     Blocked, Loss, PlanKey, PlanStep, PlanStepFields, PlanValue, RepairPlan, RepairPlanFields,
     SourceHashEvent, PLAN_VERSION, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
 };
-use repair::vetting::{
-    vet_plan, VetPlanError, JSON_DUMPS_UNAVAILABLE, _plan_step_identity,
-};
+use repair::vetting::{vet_plan, VetPlanError, _plan_step_identity, JSON_DUMPS_UNAVAILABLE};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -101,15 +99,8 @@ fn assert_vet_plan(case: &VectorCase) {
     let ack = bool_field(&case.construct, "acknowledge_side_effects").unwrap_or(false);
     let input_format =
         string_field(&case.construct, "input_format").unwrap_or_else(|_| "canonical".to_owned());
-    let err = vet_plan(
-        &supplied,
-        &findings,
-        &events,
-        &caller,
-        ack,
-        &input_format,
-    )
-    .expect_err(&case.id);
+    let err =
+        vet_plan(&supplied, &findings, &events, &caller, ack, &input_format).expect_err(&case.id);
     let mode = string_field(&case.expected, "mode").expect("mode");
     match mode.as_str() {
         "comparable" => assert_comparable_vet_plan(case, &err),
@@ -140,16 +131,24 @@ fn assert_comparable_vet_plan(case: &VectorCase, err: &VetPlanError) {
 
 fn assert_register_all_seam(case: &VectorCase, err: &VetPlanError) {
     let seam = string_field(&case.expected, "seam").expect("seam");
-    assert_eq!(seam, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        seam, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+        "{}",
+        case.id
+    );
     let VetPlanError::Plan(inner) = err else {
         panic!("{} expected Plan(register_all), got {err:?}", case.id);
     };
-    assert_eq!(inner.to_string(), RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE, "{}", case.id);
+    assert_eq!(
+        inner.to_string(),
+        RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+        "{}",
+        case.id
+    );
     let pin = object_field(&case.expected, "pin").expect("pin");
     let pin_message = string_field(pin, "message").expect("pin message");
     assert_ne!(
-        pin_message,
-        RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
+        pin_message, RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
         "{} pin must differ from rust seam",
         case.id
     );
@@ -199,8 +198,7 @@ fn supplied_from_construct(construct: &[(String, JsonValue)]) -> RepairPlan {
 }
 
 fn default_lossy_step() -> PlanStep {
-    let mut fields =
-        PlanStepFields::new(41, "synthetic-recipe", "0123456789abcdef", Some(0));
+    let mut fields = PlanStepFields::new(41, "synthetic-recipe", "0123456789abcdef", Some(0));
     fields.lossy = true;
     fields.loss = vec![("discarded-suffix".to_owned(), 2)];
     PlanStep::try_new(fields).expect("step")
@@ -212,8 +210,7 @@ fn plan_step_from_object(obj: &[(String, JsonValue)]) -> Result<PlanStep, String
 }
 
 fn marker_finding() -> Finding {
-    let source =
-        SourceRef::try_new("<canonical>", None, Some("rec-synthetic")).expect("source");
+    let source = SourceRef::try_new("<canonical>", None, Some("rec-synthetic")).expect("source");
     Finding::try_new(FindingInput {
         code: PyValue::string("SL203"),
         severity: PyValue::severity(Severity::Error),
@@ -292,9 +289,7 @@ fn json_to_plan_value(value: &JsonValue) -> PlanValue {
             }
         }
         JsonValue::Str(text) => PlanValue::str_value(text.clone()),
-        JsonValue::Array(items) => {
-            PlanValue::list(items.iter().map(json_to_plan_value).collect())
-        }
+        JsonValue::Array(items) => PlanValue::list(items.iter().map(json_to_plan_value).collect()),
         JsonValue::Object(entries) => PlanValue::map(
             entries
                 .iter()
@@ -337,7 +332,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -353,7 +354,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)
@@ -478,7 +480,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match lookup(obj, key) {
         Some(JsonValue::Array(items)) => Ok(items),
         _ => Err(ParseError {
@@ -532,7 +537,10 @@ fn i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<i64, ParseError> 
     }
 }
 
-fn optional_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<String>, ParseError> {
+fn optional_string_field(
+    obj: &[(String, JsonValue)],
+    key: &str,
+) -> Result<Option<String>, ParseError> {
     match lookup(obj, key) {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Str(text)) => Ok(Some(text.clone())),

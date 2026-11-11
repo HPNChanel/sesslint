@@ -211,7 +211,12 @@ fn assert_configure_case(case: &VectorCase) {
     assert_eq!(want_group.len(), 2, "exclusive_group for {}", case.id);
     let a = usize_field(want_group, 0).expect("exclusive_group[0]");
     let b = usize_field(want_group, 1).expect("exclusive_group[1]");
-    assert_eq!(spec.exclusive_group, [a, b], "exclusive_group for {}", case.id);
+    assert_eq!(
+        spec.exclusive_group,
+        [a, b],
+        "exclusive_group for {}",
+        case.id
+    );
 
     let want_report = array_field(&case.expected, "report_output").expect("report_output");
     assert_eq!(
@@ -346,12 +351,7 @@ fn assert_report_output(
     );
 }
 
-fn assert_default_value(
-    actual: DefaultValue,
-    spec: JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_value(actual: DefaultValue, spec: JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DefaultValue::None, JsonValue::Str(text)) if text == "none" => {}
         (DefaultValue::False, JsonValue::Str(text)) if text == "false" => {}
@@ -362,25 +362,18 @@ fn assert_default_value(
                 "default[{index}] for {case_id}"
             );
         }
-        (actual, spec) => panic!(
-            "default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => panic!("default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"),
     }
 }
 
-fn assert_arg_default(
-    actual: ArgDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_arg_default(actual: ArgDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (ArgDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (ArgDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (ArgDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -422,15 +415,14 @@ fn assert_optional_string_list(
     }
 }
 
-fn assert_default_keyword(
-    actual: DefaultKeyword,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: DefaultKeyword, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, DefaultKeyword::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                DefaultKeyword::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => match actual {
             DefaultKeyword::Present(got) => {
@@ -531,11 +523,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -601,10 +593,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)

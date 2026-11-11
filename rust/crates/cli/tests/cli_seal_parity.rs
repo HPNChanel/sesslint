@@ -2,7 +2,7 @@
 //!
 //! `run()` ledger verification is out of scope (`known_parity_gaps` in manifest.json).
 
-use cli::seal::{configure, run, VerifyLedgerUnavailable, VERIFY_LEDGER_UNAVAILABLE, NAME};
+use cli::seal::{configure, run, VerifyLedgerUnavailable, NAME, VERIFY_LEDGER_UNAVAILABLE};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -167,12 +167,14 @@ fn assert_configure_case(case: &VectorCase) {
         case.id
     );
     assert!(
-        spec.description.contains("verdicts \u{2014} self-verifying"),
+        spec.description
+            .contains("verdicts \u{2014} self-verifying"),
         "description must keep U+2014 em dash for {}",
         case.id
     );
     assert_eq!(
-        spec.verify.flag, expected_verify_flag.as_str(),
+        spec.verify.flag,
+        expected_verify_flag.as_str(),
         "verify.flag for {}",
         case.id
     );
@@ -182,7 +184,8 @@ fn assert_configure_case(case: &VectorCase) {
         case.id
     );
     assert_eq!(
-        spec.verify.metavar, expected_verify_metavar.as_str(),
+        spec.verify.metavar,
+        expected_verify_metavar.as_str(),
         "verify.metavar for {}",
         case.id
     );
@@ -192,12 +195,14 @@ fn assert_configure_case(case: &VectorCase) {
         case.id
     );
     assert_eq!(
-        spec.verify.help, expected_verify_help.as_str(),
+        spec.verify.help,
+        expected_verify_help.as_str(),
         "verify.help for {}",
         case.id
     );
     assert_eq!(
-        spec.json.flag, expected_json_flag.as_str(),
+        spec.json.flag,
+        expected_json_flag.as_str(),
         "json.flag for {}",
         case.id
     );
@@ -212,12 +217,14 @@ fn assert_configure_case(case: &VectorCase) {
         case.id
     );
     assert_eq!(
-        spec.json.metavar, expected_json_metavar.as_deref(),
+        spec.json.metavar,
+        expected_json_metavar.as_deref(),
         "json.metavar for {}",
         case.id
     );
     assert_eq!(
-        spec.json.help, expected_json_help.as_str(),
+        spec.json.help,
+        expected_json_help.as_str(),
         "json.help for {}",
         case.id
     );
@@ -232,7 +239,9 @@ fn assert_rust_run_seam() {
     ];
     for (verify, json) in inputs {
         match run(verify, json) {
-            Ok(code) => panic!("expected run() seam for verify={verify:?} json={json}, got exit {code}"),
+            Ok(code) => {
+                panic!("expected run() seam for verify={verify:?} json={json}, got exit {code}")
+            }
             Err(err) => assert_run_seam(&err, verify, json),
         }
     }
@@ -297,11 +306,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -375,10 +384,7 @@ fn bool_field(obj: &[(String, JsonValue)], key: &str) -> Result<bool, ParseError
     }
 }
 
-fn optional_bool_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<bool>, ParseError> {
+fn optional_bool_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<bool>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Null)) => Ok(None),
         Some((_, JsonValue::Bool(value))) => Ok(Some(*value)),

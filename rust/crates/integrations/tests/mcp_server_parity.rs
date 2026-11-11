@@ -184,10 +184,7 @@ fn assert_module_constants(case: &VectorCase) {
         case.id
     );
     let info = object_field(&case.expected, "server_info").expect("server_info");
-    assert_eq!(
-        string_field_obj(info, "name").expect("name"),
-        SERVER_NAME
-    );
+    assert_eq!(string_field_obj(info, "name").expect("name"), SERVER_NAME);
     assert_eq!(
         string_field_obj(info, "version").expect("version"),
         CLI_VERSION
@@ -277,10 +274,7 @@ fn assert_handle_line_twice(case: &VectorCase) {
     let first = handle_line(&raw).expect("first").expect("first bytes");
     let second = handle_line(&raw).expect("second").expect("second bytes");
     assert_eq!(first, second, "{}", case.id);
-    assert_eq!(
-        string_field(&case.expected, "kind").expect("kind"),
-        "equal"
-    );
+    assert_eq!(string_field(&case.expected, "kind").expect("kind"), "equal");
 }
 
 fn assert_serve(case: &VectorCase) {
@@ -375,7 +369,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;

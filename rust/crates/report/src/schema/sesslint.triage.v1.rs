@@ -1445,15 +1445,12 @@ mod tests {
         );
         assert_eq!(validate(r#"{"a":1,}"#).unwrap_err().detail(), "syntax");
         let hash = "ab".repeat(32);
-        assert_eq!(pattern_match(HASH_PATTERN, &hash).unwrap(), true);
-        assert_eq!(
-            pattern_match(HASH_PATTERN, &"AB".repeat(32)).unwrap(),
-            false
-        );
-        assert_eq!(pattern_match(HASH_PATTERN, "ab").unwrap(), false);
-        assert_eq!(pattern_match(CODE_PATTERN, "SL001").unwrap(), true);
-        assert_eq!(pattern_match(CODE_PATTERN, "SL00").unwrap(), false);
-        assert_eq!(pattern_match(CODE_PATTERN, "sl001").unwrap(), false);
+        assert!(pattern_match(HASH_PATTERN, &hash).unwrap());
+        assert!(!pattern_match(HASH_PATTERN, &"AB".repeat(32)).unwrap());
+        assert!(!pattern_match(HASH_PATTERN, "ab").unwrap());
+        assert!(pattern_match(CODE_PATTERN, "SL001").unwrap());
+        assert!(!pattern_match(CODE_PATTERN, "SL00").unwrap());
+        assert!(!pattern_match(CODE_PATTERN, "sl001").unwrap());
         assert!(pattern_match("^.*$", "a").is_err());
     }
 

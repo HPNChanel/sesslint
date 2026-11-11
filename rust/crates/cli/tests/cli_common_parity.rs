@@ -4,9 +4,9 @@
 //! are documented in `known_parity_gaps` (not byte-compared on those Rust paths).
 
 use cli::common::{
-    format_display_name, handle_internal_error, load_baseline_arg, output_format,
-    read_stdin_bytes, rule_codes_arg, should_color, write_baseline_arg, ArgValue, CaughtError,
-    CommonArgs, CommonError, FORMAT_DISPLAY_NAMES, DEFAULT_MAX_FILE_BYTES,
+    format_display_name, handle_internal_error, load_baseline_arg, output_format, read_stdin_bytes,
+    rule_codes_arg, should_color, write_baseline_arg, ArgValue, CaughtError, CommonArgs,
+    CommonError, DEFAULT_MAX_FILE_BYTES, FORMAT_DISPLAY_NAMES,
 };
 use cli::errors::CliError;
 use std::fmt;
@@ -52,10 +52,7 @@ fn cli_common_module_parity_vectors() {
     let path = vectors_path();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-    assert!(
-        !raw.contains('\r'),
-        "vectors.json must be LF-only"
-    );
+    assert!(!raw.contains('\r'), "vectors.json must be LF-only");
 
     let prov_raw = std::fs::read_to_string(provenance_path())
         .unwrap_or_else(|err| panic!("read PROVENANCE: {err}"));
@@ -151,7 +148,12 @@ fn assert_format_display_names(case: &VectorCase) {
             "display row {index} for {}",
             case.id
         );
-        assert_eq!(rust_display, display.as_str(), "pair row {index} for {}", case.id);
+        assert_eq!(
+            rust_display,
+            display.as_str(),
+            "pair row {index} for {}",
+            case.id
+        );
     }
 }
 
@@ -246,7 +248,12 @@ fn assert_rule_codes_arg(case: &VectorCase) {
 fn assert_output_format(case: &VectorCase) {
     let args = common_args_from_object(object_field(&case.construct, "args").unwrap_or(&[]));
     let expected = format_expected_string(&case.expected);
-    assert_eq!(output_format(&args), expected, "output_format for {}", case.id);
+    assert_eq!(
+        output_format(&args),
+        expected,
+        "output_format for {}",
+        case.id
+    );
 }
 
 fn format_expected_string(expected: &[(String, JsonValue)]) -> String {
@@ -260,11 +267,7 @@ fn format_expected_string(expected: &[(String, JsonValue)]) -> String {
 fn assert_load_baseline_arg(case: &VectorCase) {
     let args = common_args_from_object(object_field(&case.construct, "args").unwrap_or(&[]));
     let baseline = load_baseline_arg(&args).expect("load_baseline_arg");
-    assert!(
-        baseline.is_none(),
-        "unset baseline for {}",
-        case.id
-    );
+    assert!(baseline.is_none(), "unset baseline for {}", case.id);
     assert!(
         case.expected
             .iter()
@@ -279,7 +282,11 @@ fn assert_load_baseline_arg(case: &VectorCase) {
 fn assert_write_baseline_arg(case: &VectorCase) {
     let args = common_args_from_object(object_field(&case.construct, "args").unwrap_or(&[]));
     write_baseline_arg(&args).expect("write_baseline_arg");
-    assert!(bool_field(&case.expected, "ok").expect("ok"), "ok for {}", case.id);
+    assert!(
+        bool_field(&case.expected, "ok").expect("ok"),
+        "ok for {}",
+        case.id
+    );
 }
 
 fn assert_read_stdin_bytes(case: &VectorCase) {
@@ -312,12 +319,14 @@ fn assert_read_stdin_bytes(case: &VectorCase) {
 
 fn assert_default_max_file_bytes(case: &VectorCase) {
     let expected = i64_field(&case.expected, "value").expect("value");
-    assert_eq!(DEFAULT_MAX_FILE_BYTES, expected, "DEFAULT_MAX_FILE_BYTES for {}", case.id);
+    assert_eq!(
+        DEFAULT_MAX_FILE_BYTES, expected,
+        "DEFAULT_MAX_FILE_BYTES for {}",
+        case.id
+    );
 }
 
-fn common_args_from_optional_object(
-    fields: Option<&[(String, JsonValue)]>,
-) -> Option<CommonArgs> {
+fn common_args_from_optional_object(fields: Option<&[(String, JsonValue)]>) -> Option<CommonArgs> {
     fields.map(common_args_from_object)
 }
 
@@ -340,7 +349,11 @@ fn json_to_arg_value(value: &JsonValue) -> ArgValue {
 }
 
 fn environ_pairs(construct: &[(String, JsonValue)]) -> Vec<(&str, &str)> {
-    let Some(value) = construct.iter().find(|(k, _)| k == "environ").map(|(_, v)| v) else {
+    let Some(value) = construct
+        .iter()
+        .find(|(k, _)| k == "environ")
+        .map(|(_, v)| v)
+    else {
         return Vec::new();
     };
     match value {
@@ -393,10 +406,7 @@ fn decode_hex(hex: &str) -> Result<Vec<u8>, String> {
     }
     (0..hex.len())
         .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|_| format!("bad hex at {i}"))
-        })
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| format!("bad hex at {i}")))
         .collect()
 }
 
@@ -428,7 +438,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
         .filter(|(k, _)| *k != "vectors")
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 

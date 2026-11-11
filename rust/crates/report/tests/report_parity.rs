@@ -5,11 +5,11 @@ use model::codes::{Repairability, Severity, SL001};
 use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 use report::report::{
     build_report, compute_assurance, dump_report, minimize_path, parse_report, render_human,
-    BuildCoverage, BuildReportParts, CountKey, CountValue, Counts, Coverage, CoverageInput,
-    CountsInput, DumpReportInput, FindingElem, FindingsInput, InputKey, InputValue,
-    JsonLoadsUnavailable, ParseReportError, PathInput,
-    RenderHumanError, RefusalRationaleUnavailable, Report, ReportParts, SkipSeq, REPORT_MODULE_ALL,
-    REPORT_SCHEMA_VERSION, REQUIRED_SEVERITIES, VALID_ASSURANCE_LEVELS,
+    BuildCoverage, BuildReportParts, CountKey, CountValue, Counts, CountsInput, Coverage,
+    CoverageInput, DumpReportInput, FindingElem, FindingsInput, InputKey, InputValue,
+    JsonLoadsUnavailable, ParseReportError, PathInput, RefusalRationaleUnavailable,
+    RenderHumanError, Report, ReportParts, SkipSeq, REPORT_MODULE_ALL, REPORT_SCHEMA_VERSION,
+    REQUIRED_SEVERITIES, VALID_ASSURANCE_LEVELS,
 };
 use std::collections::BTreeSet;
 use std::fmt;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/report/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "efdbdd1218c437dea2aa81e9907ed39b6ee8590b6ef4d4d9613ddd3381130298";
+    "e3193e7417e5423fcf8364dd36748ec10f436d8aeee014fe320175059b03f782";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.report";
@@ -26,7 +26,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_REPORT_PY_SHA256: &str =
     "ac5cfc7f9d3f177faf3d9bc0f0cdc6c988b5d3c9fa5b354c81bf36469b97bac0";
 const EXPECTED_REPORT_RS_SHA256: &str =
-    "56d9593175f4d0a4932fa2364d882fd52aff23ba13648491f5e2cd84333c503a";
+    "2b3f9f40a3e9817ade5939972e4611ecc32460a41205347833681a9f1699ecb4";
 
 const REFUSAL_SEAM: &str = "sesslint.repair.refusals.refusal_rationale_for is not available";
 const JSON_LOADS_SEAM: &str = "json.loads is not available";
@@ -58,7 +58,11 @@ fn report_module_parity_vectors() {
     );
     let (meta, cases) = parse_document_with_meta(&normalized).expect("parse vectors.json");
     assert_root_meta(&meta);
-    assert_eq!(cases.len(), EXPECTED_VECTOR_COUNT, "unexpected vector count");
+    assert_eq!(
+        cases.len(),
+        EXPECTED_VECTOR_COUNT,
+        "unexpected vector count"
+    );
     for case in &cases {
         assert_case(case);
     }
@@ -106,12 +110,22 @@ fn assert_case(case: &VectorCase) {
 
 fn assert_module_exports(case: &VectorCase) {
     let names = array_field(&case.expected, "python_all").expect("python_all");
-    assert_eq!(names.len(), REPORT_MODULE_ALL.len(), "ALL length {}", case.id);
+    assert_eq!(
+        names.len(),
+        REPORT_MODULE_ALL.len(),
+        "ALL length {}",
+        case.id
+    );
     for (index, item) in names.iter().enumerate() {
         let JsonValue::Str(name) = item else {
             panic!("python_all[{index}] must be string");
         };
-        assert_eq!(REPORT_MODULE_ALL[index], name.as_str(), "ALL[{index}] {}", case.id);
+        assert_eq!(
+            REPORT_MODULE_ALL[index],
+            name.as_str(),
+            "ALL[{index}] {}",
+            case.id
+        );
     }
 }
 
@@ -202,7 +216,12 @@ fn assert_parse_report(case: &VectorCase) {
             let err = parse_report(&input).expect_err("json.loads seam");
             match err {
                 ParseReportError::Json(JsonLoadsUnavailable) => {
-                    assert_eq!(JsonLoadsUnavailable::MESSAGE, JSON_LOADS_SEAM, "{}", case.id);
+                    assert_eq!(
+                        JsonLoadsUnavailable::MESSAGE,
+                        JSON_LOADS_SEAM,
+                        "{}",
+                        case.id
+                    );
                 }
                 other => panic!("expected json.loads seam in {}: {other}", case.id),
             }
@@ -268,11 +287,16 @@ fn assert_render_human(case: &VectorCase) {
         string_field(assertion, "mode").expect("mode"),
         "gap_refusal_rationale"
     );
-    let err = render_human(&report, color, &adapter, &profile, None, None)
-        .expect_err("refusal seam");
+    let err =
+        render_human(&report, color, &adapter, &profile, None, None).expect_err("refusal seam");
     match err {
         RenderHumanError::Refusal(RefusalRationaleUnavailable) => {
-            assert_eq!(RefusalRationaleUnavailable.to_string(), REFUSAL_SEAM, "{}", case.id);
+            assert_eq!(
+                RefusalRationaleUnavailable.to_string(),
+                REFUSAL_SEAM,
+                "{}",
+                case.id
+            );
         }
         other => panic!("expected refusal seam in {}: {other}", case.id),
     }
@@ -298,16 +322,13 @@ fn assert_minimize_path(case: &VectorCase) {
     assert_eq!(got, want, "minimize_path {}", case.id);
 }
 
-fn build_report_from_construct(
-    construct: &[(String, JsonValue)],
-    findings: &[Finding],
-) -> Report {
+fn build_report_from_construct(construct: &[(String, JsonValue)], findings: &[Finding]) -> Report {
     let session = string_field(construct, "session_id").unwrap_or_else(|_| "sess_marker".into());
     let fp = string_field(construct, "source_fingerprint").unwrap_or_else(|_| "fp_marker".into());
     let tool = string_field(construct, "tool_version").unwrap_or_else(|_| "0.1.0".into());
     let assurance = string_field(construct, "assurance").unwrap_or_else(|_| "A2".to_owned());
-    let limitation =
-        string_field(construct, "limitation").unwrap_or_else(|_| "Graph invariants validated.".into());
+    let limitation = string_field(construct, "limitation")
+        .unwrap_or_else(|_| "Graph invariants validated.".into());
     let performed = match lookup(construct, "performed") {
         Some(JsonValue::Array(items)) => items
             .iter()
@@ -322,24 +343,12 @@ fn build_report_from_construct(
         &InputValue::tuple(performed),
         &SkipSeq::Tuple(Vec::new()),
         &InputValue::dict(vec![
-            (
-                InputKey::str_key("id"),
-                InputValue::str_value("canonical"),
-            ),
-            (
-                InputKey::str_key("version"),
-                InputValue::str_value("1"),
-            ),
+            (InputKey::str_key("id"), InputValue::str_value("canonical")),
+            (InputKey::str_key("version"), InputValue::str_value("1")),
         ]),
         &InputValue::dict(vec![
-            (
-                InputKey::str_key("id"),
-                InputValue::str_value("neutral"),
-            ),
-            (
-                InputKey::str_key("version"),
-                InputValue::str_value("1"),
-            ),
+            (InputKey::str_key("id"), InputValue::str_value("neutral")),
+            (InputKey::str_key("version"), InputValue::str_value("1")),
         ]),
     )
     .unwrap_or_else(|err| panic!("coverage: {err}"));
@@ -350,11 +359,7 @@ fn build_report_from_construct(
         source_fingerprint: &InputValue::str_value(fp),
         tool_version: &InputValue::str_value(tool),
         findings: &FindingsInput::Tuple(
-            findings
-                .iter()
-                .cloned()
-                .map(FindingElem::Finding)
-                .collect(),
+            findings.iter().cloned().map(FindingElem::Finding).collect(),
         ),
         counts: &CountsInput::Value(counts),
         assurance: &InputValue::str_value(assurance),
@@ -441,30 +446,18 @@ fn bool_total_mapping() -> InputValue {
             InputKey::str_key("tool_version"),
             InputValue::str_value("0.1.0"),
         ),
-        (
-            InputKey::str_key("assurance"),
-            InputValue::str_value("A1"),
-        ),
+        (InputKey::str_key("assurance"), InputValue::str_value("A1")),
         (
             InputKey::str_key("limitation"),
             InputValue::str_value("Valid limitation"),
         ),
-        (
-            InputKey::str_key("findings"),
-            InputValue::tuple(Vec::new()),
-        ),
+        (InputKey::str_key("findings"), InputValue::tuple(Vec::new())),
         (
             InputKey::str_key("counts"),
             InputValue::dict(vec![
-                (
-                    InputKey::str_key("by_severity"),
-                    zero_severity_mapping(),
-                ),
+                (InputKey::str_key("by_severity"), zero_severity_mapping()),
                 (InputKey::str_key("by_code"), InputValue::dict(vec![])),
-                (
-                    InputKey::str_key("total"),
-                    InputValue::bool_value(true),
-                ),
+                (InputKey::str_key("total"), InputValue::bool_value(true)),
             ]),
         ),
         (
@@ -474,28 +467,19 @@ fn bool_total_mapping() -> InputValue {
                     InputKey::str_key("performed"),
                     InputValue::tuple(Vec::new()),
                 ),
-                (
-                    InputKey::str_key("skipped"),
-                    InputValue::tuple(Vec::new()),
-                ),
+                (InputKey::str_key("skipped"), InputValue::tuple(Vec::new())),
                 (
                     InputKey::str_key("adapter"),
                     InputValue::dict(vec![
                         (InputKey::str_key("id"), InputValue::str_value("canonical")),
-                        (
-                            InputKey::str_key("version"),
-                            InputValue::str_value("1"),
-                        ),
+                        (InputKey::str_key("version"), InputValue::str_value("1")),
                     ]),
                 ),
                 (
                     InputKey::str_key("profile"),
                     InputValue::dict(vec![
                         (InputKey::str_key("id"), InputValue::str_value("neutral")),
-                        (
-                            InputKey::str_key("version"),
-                            InputValue::str_value("1"),
-                        ),
+                        (InputKey::str_key("version"), InputValue::str_value("1")),
                     ]),
                 ),
             ]),
@@ -608,7 +592,10 @@ fn parse_document_with_meta(input: &str) -> Result<(DocumentMeta, Vec<VectorCase
     };
     let mut meta = root.clone();
     meta.retain(|(key, _)| key != "vectors");
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok((meta, cases))
 }
 

@@ -6,8 +6,8 @@ use model::codes::{Repairability, Severity, CODE_REGISTRY};
 use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
 use report::report::{MinimizePathError, HASHLIB_SHA1};
 use report::sarif::{
-    build_sarif, render_sarif, scan_report_sarif, JsonValue, ScanReportUnavailable,
-    SARIF_SCHEMA, SARIF_VERSION, SCAN_REPORT_UNAVAILABLE, TOOL_INFORMATION_URI,
+    build_sarif, render_sarif, scan_report_sarif, JsonValue, ScanReportUnavailable, SARIF_SCHEMA,
+    SARIF_VERSION, SCAN_REPORT_UNAVAILABLE, TOOL_INFORMATION_URI,
 };
 use sha2::Digest;
 use std::fmt;
@@ -46,7 +46,10 @@ fn sarif_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -60,15 +63,25 @@ fn sarif_module_parity_vectors() {
 
     let doc = parse_document_with_meta(&normalized).expect("parse vectors.json");
     assert_root_meta(&doc.meta);
-    assert_eq!(doc.cases.len(), EXPECTED_VECTOR_COUNT, "unexpected vector count");
+    assert_eq!(
+        doc.cases.len(),
+        EXPECTED_VECTOR_COUNT,
+        "unexpected vector count"
+    );
     for case in &doc.cases {
         assert_case(case);
     }
 }
 
 fn assert_root_meta(meta: &[(String, ParseJsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT
@@ -131,8 +144,18 @@ fn assert_build_sarif(case: &VectorCase) {
         assert!(allowed, "pin levels must be subset {}", case.id);
         let levels_obj = object_field(&case.expected, "rule_levels").expect("rule_levels");
         let extracted = rule_levels_from_document(&document);
-        assert_eq!(extracted.get("SL003").map(String::as_str), Some(want_sl003.as_str()), "{}", case.id);
-        assert_eq!(extracted.get("SL101").map(String::as_str), Some(want_sl101.as_str()), "{}", case.id);
+        assert_eq!(
+            extracted.get("SL003").map(String::as_str),
+            Some(want_sl003.as_str()),
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            extracted.get("SL101").map(String::as_str),
+            Some(want_sl101.as_str()),
+            "{}",
+            case.id
+        );
         for (code, level) in levels_obj {
             let ParseJsonValue::Str(want_level) = level else {
                 panic!("rule_levels value must be string");
@@ -159,8 +182,18 @@ fn assert_build_sarif(case: &VectorCase) {
         let rule_ids = rule_ids_from_document(&document);
         assert_eq!(rule_ids.len(), want_count, "{}", case.id);
         assert_eq!(want_count, CODE_REGISTRY.len(), "{}", case.id);
-        assert_eq!(sorted, rule_ids.windows(2).all(|w| w[0] <= w[1]), "{}", case.id);
-        assert_eq!(results_len, results_len_from_document(&document), "{}", case.id);
+        assert_eq!(
+            sorted,
+            rule_ids.windows(2).all(|w| w[0] <= w[1]),
+            "{}",
+            case.id
+        );
+        assert_eq!(
+            results_len,
+            results_len_from_document(&document),
+            "{}",
+            case.id
+        );
     }
 }
 
@@ -219,10 +252,7 @@ fn assert_scan_report_sarif_gap(case: &VectorCase) {
     }
 }
 
-fn findings_from_construct(
-    construct: &[(String, ParseJsonValue)],
-    id: &str,
-) -> Vec<Finding> {
+fn findings_from_construct(construct: &[(String, ParseJsonValue)], id: &str) -> Vec<Finding> {
     let rows = array_field(construct, "findings").expect("findings");
     if rows.is_empty() {
         return Vec::new();
@@ -235,10 +265,7 @@ fn findings_from_construct(
         .collect()
 }
 
-fn single_finding_from_construct(
-    construct: &[(String, ParseJsonValue)],
-    id: &str,
-) -> Finding {
+fn single_finding_from_construct(construct: &[(String, ParseJsonValue)], id: &str) -> Finding {
     let obj = object_field(construct, "finding").expect("finding");
     build_finding_from_object(obj).unwrap_or_else(|err| panic!("finding in {id}: {err}"))
 }
@@ -250,12 +277,8 @@ fn build_finding_from_object(obj: &[(String, ParseJsonValue)]) -> Result<Finding
     let line = optional_i64_field(obj, "line").map_err(|e| e.message)?;
     let fingerprint = string_field(obj, "fingerprint").map_err(|e| e.message)?;
     let message = string_field(obj, "message").map_err(|e| e.message)?;
-    let source = SourceRef::try_new(
-        &path,
-        line.map(SourceLine::Int),
-        None,
-    )
-    .map_err(|err| err.to_string())?;
+    let source = SourceRef::try_new(&path, line.map(SourceLine::Int), None)
+        .map_err(|err| err.to_string())?;
     Finding::try_new(FindingInput {
         code: PyValue::string(&code),
         severity: PyValue::severity(severity),
@@ -397,10 +420,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn lookup<'a>(
-    obj: &'a [(String, ParseJsonValue)],
-    key: &str,
-) -> Option<&'a ParseJsonValue> {
+fn lookup<'a>(obj: &'a [(String, ParseJsonValue)], key: &str) -> Option<&'a ParseJsonValue> {
     obj.iter().find(|(k, _)| k == key).map(|(_, v)| v)
 }
 
@@ -541,12 +561,11 @@ fn optional_i64_field(
 ) -> Result<Option<i64>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         None | Some((_, ParseJsonValue::Null)) => Ok(None),
-        Some((_, ParseJsonValue::Number(raw))) => raw
-            .parse::<i64>()
-            .map(Some)
-            .map_err(|_| ParseError {
+        Some((_, ParseJsonValue::Number(raw))) => {
+            raw.parse::<i64>().map(Some).map_err(|_| ParseError {
                 message: format!("{key} must be i64"),
-            }),
+            })
+        }
         _ => Err(ParseError {
             message: format!("{key} must be number or null"),
         }),
@@ -603,7 +622,10 @@ fn parse_number(input: &str) -> Result<(ParseJsonValue, &str), ParseError> {
             break;
         }
     }
-    Ok((ParseJsonValue::Number(input[..end].to_owned()), &input[end..]))
+    Ok((
+        ParseJsonValue::Number(input[..end].to_owned()),
+        &input[end..],
+    ))
 }
 
 fn parse_array(input: &str) -> Result<(ParseJsonValue, &str), ParseError> {

@@ -3,7 +3,7 @@
   "module": "sesslint.cli.doctor",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "doctor_py_sha256": "e550b2a8094c4f0d212cf33ea9e0abbc88f77ba9ea4db1c74c663aecae7c7c8d",
-  "doctor_rs_sha256": "5bba8088a44ff8728de3c92e8ca9d6f39be80584abac5d2c1d054dfc5d5e36a7",
+  "doctor_rs_sha256": "0a63f3e5314a025af116b2ea9fbdb99cfea5d4bbd58d69f36a1b298cba9333cf",
   "known_parity_gaps": [
     "GAP-cli-doctor-config-error: Python run() starts with `from sesslint.config import ConfigError` before any path check and before `from sesslint.doctor import doctor_report`; Rust run() returns Display `sesslint.config.ConfigError is not available` at that import (no doctor_report, no getattr, no emit_text, no exit 0/2)."
   ],

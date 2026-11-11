@@ -102,7 +102,11 @@ const CITED: &[CitedVector] = &[
         rel: "parity/vectors/io/vectors.json",
         id: "iter_events_two_events",
         construct: "io_iter_events_stream",
-        extra: &["\"event_count\": 2", "\"id\": \"evt-one\"", "\"id\": \"evt-two\""],
+        extra: &[
+            "\"event_count\": 2",
+            "\"id\": \"evt-one\"",
+            "\"id\": \"evt-two\"",
+        ],
     },
     CitedVector {
         rel: "parity/vectors/io/vectors.json",
@@ -388,7 +392,8 @@ fn assert_pin_results_absent(dir: &Path, rel: &str) {
         if path.is_dir() {
             assert_pin_results_absent(&path, &child);
         } else if name_str == "vectors.json" {
-            let json = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
+            let json =
+                fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {child}: {err}"));
             for needle in ABSENT_PIN_RESULTS {
                 assert!(
                     !json.contains(needle),
@@ -469,9 +474,10 @@ fn every_pinned_sl001_tail_test_has_one_disposition() {
 #[test]
 fn covered_vector_ids_are_present_in_published_vectors() {
     let api = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("parity/vectors/api/vectors.json");
+    let api_json = fs::read_to_string(&api).unwrap_or_else(|err| panic!("read api vectors: {err}"));
     assert!(
-        !api.exists(),
-        "sesslint.api has no published vectors.json"
+        api_json.contains("\"module\": \"sesslint.api\""),
+        "sesslint.api publishes parity/vectors/api/vectors.json"
     );
 
     let mut loaded = BTreeSet::new();
@@ -511,7 +517,11 @@ fn covered_vector_ids_are_present_in_published_vectors() {
     }
 
     for cited in CITED {
-        assert!(loaded.contains(cited.rel), "cited file {} is not published", cited.rel);
+        assert!(
+            loaded.contains(cited.rel),
+            "cited file {} is not published",
+            cited.rel
+        );
         let json = read_rel(cited.rel);
         let slice = vector_slice(&json, cited.id);
         let type_needle = format!("\"type\": \"{}\"", cited.construct);
@@ -522,11 +532,7 @@ fn covered_vector_ids_are_present_in_published_vectors() {
             cited.construct
         );
         for needle in cited.extra {
-            assert!(
-                slice.contains(needle),
-                "{} is missing {needle}",
-                cited.id
-            );
+            assert!(slice.contains(needle), "{} is missing {needle}", cited.id);
         }
     }
 

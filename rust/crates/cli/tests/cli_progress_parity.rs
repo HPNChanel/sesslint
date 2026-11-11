@@ -127,7 +127,9 @@ fn cli_progress_module_parity_vectors() {
     );
     let prov_gaps = array_field(&provenance, "known_parity_gaps").expect("PROVENANCE gaps");
     assert!(
-        prov_gaps.iter().any(|item| gap_contains(item, GAP_DEFAULT_CLOCK)),
+        prov_gaps
+            .iter()
+            .any(|item| gap_contains(item, GAP_DEFAULT_CLOCK)),
         "PROVENANCE must document default TTY clock gap"
     );
 
@@ -192,7 +194,8 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter().any(|item| gap_contains(item, GAP_DEFAULT_CLOCK)),
+        gaps.iter()
+            .any(|item| gap_contains(item, GAP_DEFAULT_CLOCK)),
         "expected default TTY clock gap"
     );
 }
@@ -339,11 +342,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -612,4 +615,3 @@ fn parse_string(input: &str) -> Result<(String, &str), ParseError> {
         }
     }
 }
-

@@ -1,10 +1,10 @@
 //! Byte-exact parity for `sesslint.cli.export` against pinned Python vectors.
 
+use cli::context::CliContext;
 use cli::export::{
     configure, run, DeclaredDefault, DeclaredType, DefaultKeyword, ExportArgs, ExportParser,
-    EXPORT_FILE_UNAVAILABLE, LocalArgument, Nargs, RecordedArgument, NAME,
+    LocalArgument, Nargs, RecordedArgument, EXPORT_FILE_UNAVAILABLE, NAME,
 };
-use cli::context::CliContext;
 use cli::options::{ArgAction, ArgDefault, ArgumentDecl, DefaultKeyword as SharedDefault};
 use std::fmt;
 use std::path::PathBuf;
@@ -152,8 +152,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter()
-            .any(|item| gap_contains(item, GAP_EXPORT_FILE)),
+        gaps.iter().any(|item| gap_contains(item, GAP_EXPORT_FILE)),
         "vectors.json must list {GAP_EXPORT_FILE}"
     );
 }
@@ -367,18 +366,13 @@ fn assert_shared_argument(
     );
 }
 
-fn assert_declared_type(
-    actual: DeclaredType,
-    want: Option<String>,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_type(actual: DeclaredType, want: Option<String>, case_id: &str, index: usize) {
     match (actual, want.as_deref()) {
         (DeclaredType::Absent, None) => {}
         (DeclaredType::Named(got), Some("Path")) => assert_eq!(got, "Path"),
-        (actual, want) => panic!(
-            "type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}"
-        ),
+        (actual, want) => {
+            panic!("type_name[{index}] mismatch for {case_id}: {actual:?} vs {want:?}")
+        }
     }
 }
 
@@ -394,11 +388,7 @@ fn assert_run_path_case(case: &VectorCase) {
     assert_eq!(pin_stdout, "", "{}", case.id);
     assert_ne!(pin_stdout, EXPORT_FILE_UNAVAILABLE, "{}", case.id);
     assert_ne!(pin_stderr, EXPORT_FILE_UNAVAILABLE, "{}", case.id);
-    assert!(
-        !pin_stderr.contains(EXPORT_FILE_UNAVAILABLE),
-        "{}",
-        case.id
-    );
+    assert!(!pin_stderr.contains(EXPORT_FILE_UNAVAILABLE), "{}", case.id);
 
     let args_obj = object_field(&case.construct, "args").expect("args");
     let rel = string_field(args_obj, "path").expect("path");
@@ -449,7 +439,9 @@ fn export_output_from_construct(
 fn assert_export_nargs(actual: Nargs, want: Option<String>, case_id: &str, index: usize) {
     match want {
         None => assert_eq!(actual, Nargs::Absent, "nargs[{index}] for {case_id}"),
-        Some(token) if token == "0" => assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}"),
+        Some(token) if token == "0" => {
+            assert_eq!(actual, Nargs::Zero, "nargs[{index}] for {case_id}")
+        }
         Some(other) => panic!("unexpected nargs {other} for {case_id} arg {index}"),
     }
 }
@@ -511,15 +503,14 @@ fn assert_export_default_keyword(
     }
 }
 
-fn assert_default_keyword(
-    actual: SharedDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_default_keyword(actual: SharedDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match spec {
         JsonValue::Str(text) if text == "absent" => {
-            assert_eq!(actual, SharedDefault::Absent, "default_keyword[{index}] for {case_id}");
+            assert_eq!(
+                actual,
+                SharedDefault::Absent,
+                "default_keyword[{index}] for {case_id}"
+            );
         }
         JsonValue::Object(obj) => match actual {
             SharedDefault::Present(got) => {
@@ -534,35 +525,25 @@ fn assert_default_keyword(
     }
 }
 
-fn assert_declared_default(
-    actual: DeclaredDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_declared_default(actual: DeclaredDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (DeclaredDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (DeclaredDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (DeclaredDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
-fn assert_arg_default(
-    actual: ArgDefault,
-    spec: &JsonValue,
-    case_id: &str,
-    index: usize,
-) {
+fn assert_arg_default(actual: ArgDefault, spec: &JsonValue, case_id: &str, index: usize) {
     match (actual, spec) {
         (ArgDefault::None, JsonValue::Str(text)) if text == "none" => {}
         (ArgDefault::False, JsonValue::Str(text)) if text == "false" => {}
         (ArgDefault::Suppress, JsonValue::Str(text)) if text == "suppress" => {}
-        (actual, spec) => panic!(
-            "effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}"
-        ),
+        (actual, spec) => {
+            panic!("effective_default[{index}] mismatch for {case_id}: {actual:?} vs {spec:?}")
+        }
     }
 }
 
@@ -638,11 +619,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 
@@ -708,10 +689,7 @@ fn object_field_vec<'a>(
         .1)
 }
 
-fn object_or_string_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<JsonValue, ParseError> {
+fn object_or_string_field(obj: &[(String, JsonValue)], key: &str) -> Result<JsonValue, ParseError> {
     Ok(obj
         .iter()
         .find(|(k, _)| k == key)

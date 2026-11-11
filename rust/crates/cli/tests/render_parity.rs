@@ -489,7 +489,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
                     message: "vectors must be array".into(),
                 });
             };
-            cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+            cases = items
+                .iter()
+                .map(parse_vector_case)
+                .collect::<Result<_, _>>()?;
         } else {
             meta.push((key.clone(), item.clone()));
         }

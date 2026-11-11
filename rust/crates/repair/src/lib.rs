@@ -7,18 +7,18 @@ mod error;
 pub use error::RepairError;
 
 pub mod assurance;
-pub mod fingerprint;
-pub mod preconditions;
-pub mod refusals;
-pub mod registry;
-pub mod recipes_sl002;
-pub mod planner;
 pub mod errors;
+pub mod executor;
+pub mod fingerprint;
+pub mod planner;
+pub mod preconditions;
 pub mod recipes_conservative;
 pub mod recipes_salvage;
+pub mod recipes_sl002;
+pub mod refusals;
+pub mod registry;
 pub mod vetting;
 pub mod writeback;
-pub mod executor;
 
 // `sesslint.repair` package surface from `repair/__init__.py` `__all__`
 // @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.

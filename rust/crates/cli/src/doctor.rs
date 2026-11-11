@@ -115,7 +115,8 @@ pub const QUICK_CHECKS_GETATTR: &str = "not getattr(args, \"no_quick_checks\", F
 /// Pin `doctor_report(...)`.
 ///
 /// [`run`] does not call it.
-pub const DOCTOR_REPORT_CALL: &str = "doctor_report(agents=agents, quick_checks=not getattr(args, \"no_quick_checks\", False))";
+pub const DOCTOR_REPORT_CALL: &str =
+    "doctor_report(agents=agents, quick_checks=not getattr(args, \"no_quick_checks\", False))";
 
 /// Pin `ctx.error(f"Error: {err}")`.
 ///
@@ -544,8 +545,8 @@ mod tests {
     use std::io::{self, Write};
 
     use super::{
-        action_required, configure, evaluated_import, run, AFTER_IMPORT, AGENT_CHOICES,
-        AGENT_GETATTR, AGENT_HELP, AGENTS_EXPR, CONFIG_ERROR_UNAVAILABLE, CTX_ERROR_CALL,
+        action_required, configure, evaluated_import, run, AFTER_IMPORT, AGENTS_EXPR,
+        AGENT_CHOICES, AGENT_GETATTR, AGENT_HELP, CONFIG_ERROR_UNAVAILABLE, CTX_ERROR_CALL,
         DESCRIPTION, DOCTOR_REPORT_CALL, DOCTOR_REPORT_IMPORT, EMIT_TEXT_CALL, FORMAT_HELP, HELP,
         IMPORT_CONFIG_ERROR, IMPORT_DOCTOR_REPORT, IMPORT_STATEMENT, JSON_HELP, NAME,
         NO_QUICK_CHECKS_HELP, OUTPUT_FORMAT_CALL, OUTPUT_FORMAT_CHOICES, QUICK_CHECKS_GETATTR,
@@ -558,8 +559,8 @@ mod tests {
     };
 
     use super::{
-        DeclaredDefault, DeclaredType, DefaultKeyword, DoctorArgs, DoctorGroup, DoctorParser,
-        DoctorSubcommandSpec, LocalArgument, Nargs, RecordedArgument, ConfigErrorUnavailable,
+        ConfigErrorUnavailable, DeclaredDefault, DeclaredType, DefaultKeyword, DoctorArgs,
+        DoctorGroup, DoctorParser, DoctorSubcommandSpec, LocalArgument, Nargs, RecordedArgument,
     };
 
     const PIN_DESTS: &[&str] = &[
@@ -703,13 +704,10 @@ mod tests {
         assert_eq!(local_count, 4);
         assert_eq!(shared_count, 1);
         assert_eq!(spec.groups.len(), 1);
-        assert!(spec
-            .arguments
-            .iter()
-            .all(|argument| match argument {
-                RecordedArgument::Local(local) => !local.positional,
-                RecordedArgument::Shared(_) => true,
-            }));
+        assert!(spec.arguments.iter().all(|argument| match argument {
+            RecordedArgument::Local(local) => !local.positional,
+            RecordedArgument::Shared(_) => true,
+        }));
         let shared_dests: Vec<&str> = spec
             .arguments
             .iter()
@@ -902,10 +900,7 @@ mod tests {
         assert_ne!(group_dests(&spec, group), vec!["json", "output_format"]);
         assert_eq!(
             group.members,
-            vec![
-                index_of(&spec, "output_format"),
-                index_of(&spec, "json"),
-            ]
+            vec![index_of(&spec, "output_format"), index_of(&spec, "json"),]
         );
         assert_eq!(group.members, vec![2, 3]);
         assert!(group.members[0] < group.members[1]);
@@ -955,10 +950,7 @@ mod tests {
         let mut shared_format = OptionParser::new();
         add_output_format_option(&mut shared_format);
         assert_eq!(shared_format.arguments().len(), 1);
-        assert_eq!(
-            format.choices,
-            shared_format.arguments()[0].choices
-        );
+        assert_eq!(format.choices, shared_format.arguments()[0].choices);
         assert_eq!(format.help, shared_format.arguments()[0].help);
         assert_ne!(
             argument_at(&spec, "output_format").option_strings(),

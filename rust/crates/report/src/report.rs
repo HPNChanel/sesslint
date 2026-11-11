@@ -4824,8 +4824,10 @@ fn parse_manifest_mapping(
     reject_manifest_unknown(entries)?;
     require_manifest_fields(entries)?;
     manifest_schema_version(manifest_field(entries, "schema_version")?)?;
-    let input_fingerprint =
-        manifest_fingerprint(manifest_field(entries, "input_fingerprint")?, "input_fingerprint")?;
+    let input_fingerprint = manifest_fingerprint(
+        manifest_field(entries, "input_fingerprint")?,
+        "input_fingerprint",
+    )?;
     let output_fingerprint = manifest_fingerprint(
         manifest_field(entries, "output_fingerprint")?,
         "output_fingerprint",
@@ -5026,10 +5028,7 @@ fn manifest_schema_version(value: &InputValue) -> Result<(), ParseManifestError>
         return Ok(());
     }
     Err(ParseManifestError::Version(VersionError::new(
-        format!(
-            "Unsupported manifest schema version: {}",
-            input_repr(value)
-        ),
+        format!("Unsupported manifest schema version: {}", input_repr(value)),
         Some(python_str_value(value)),
     )))
 }
@@ -5133,7 +5132,9 @@ fn reject_action_unknown(
 
 fn action_kind(index: usize, value: &InputValue) -> Result<String, ParseManifestError> {
     match value {
-        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(python_strip(text).to_owned()),
+        InputValue::Str(text) if !python_strip(text).is_empty() => {
+            Ok(python_strip(text).to_owned())
+        }
         other => Err(schema_manifest(format!(
             "actions[{index}].kind must be a non-empty string, got {}",
             input_repr(other)
@@ -5247,9 +5248,7 @@ fn copied_mapping(
     }
 }
 
-fn parse_revalidation_block(
-    value: &InputValue,
-) -> Result<RevalidationSummary, ParseManifestError> {
+fn parse_revalidation_block(value: &InputValue) -> Result<RevalidationSummary, ParseManifestError> {
     let entries = match value {
         InputValue::Dict(entries) => entries.as_slice(),
         other => {
@@ -5262,9 +5261,12 @@ fn parse_revalidation_block(
     reject_revalidation_unknown(entries)?;
     require_revalidation_fields(entries)?;
     let assurance = revalidation_assurance(revalidation_field(entries, "assurance")?)?;
-    let error_count = revalidation_count(revalidation_field(entries, "error_count")?, "error_count")?;
-    let warning_count =
-        revalidation_count(revalidation_field(entries, "warning_count")?, "warning_count")?;
+    let error_count =
+        revalidation_count(revalidation_field(entries, "error_count")?, "error_count")?;
+    let warning_count = revalidation_count(
+        revalidation_field(entries, "warning_count")?,
+        "warning_count",
+    )?;
     let profile_id = revalidation_text(revalidation_field(entries, "profile_id")?, "profile_id")?;
     let profile_version = revalidation_text(
         revalidation_field(entries, "profile_version")?,
@@ -5331,7 +5333,9 @@ fn revalidation_field<'a>(
 
 fn revalidation_assurance(value: &InputValue) -> Result<String, ParseManifestError> {
     match value {
-        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => Ok(text.clone()),
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+            Ok(text.clone())
+        }
         other => Err(ParseManifestError::Assurance(AssuranceError::new(format!(
             "Invalid revalidation assurance: {}. Must be one of {}",
             input_repr(other),
@@ -5352,7 +5356,9 @@ fn revalidation_count(value: &InputValue, field: &str) -> Result<i64, ParseManif
 
 fn revalidation_text(value: &InputValue, field: &str) -> Result<String, ParseManifestError> {
     match value {
-        InputValue::Str(text) if !python_strip(text).is_empty() => Ok(python_strip(text).to_owned()),
+        InputValue::Str(text) if !python_strip(text).is_empty() => {
+            Ok(python_strip(text).to_owned())
+        }
         _ => Err(schema_manifest(format!(
             "revalidation.{field} must be a non-empty string"
         ))),
@@ -5375,7 +5381,9 @@ fn revalidation_fingerprint(
 
 fn parse_ceiling(value: &InputValue) -> Result<String, ParseManifestError> {
     match value {
-        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => Ok(text.clone()),
+        InputValue::Str(text) if VALID_ASSURANCE_LEVELS.contains(&text.as_str()) => {
+            Ok(text.clone())
+        }
         other => Err(ParseManifestError::Assurance(AssuranceError::new(format!(
             "Invalid assurance_ceiling: {}. Must be one of {}",
             input_repr(other),
@@ -10264,7 +10272,9 @@ mod parse_manifest_port {
                         "Unsupported manifest schema version: 'sesslint.repair-manifest/v9'{VERSION_SUFFIX}"
                     )
                 );
-                assert!(!error.to_string().contains("RepairManifest.schema_version must be"));
+                assert!(!error
+                    .to_string()
+                    .contains("RepairManifest.schema_version must be"));
             }
             other => panic!("string version, got {other:?}"),
         }
@@ -10278,7 +10288,11 @@ mod parse_manifest_port {
             }
             other => panic!("int version, got {other:?}"),
         }
-        match parse_err(&replace(&base, "schema_version", InputValue::bool_value(true))) {
+        match parse_err(&replace(
+            &base,
+            "schema_version",
+            InputValue::bool_value(true),
+        )) {
             ParseManifestError::Version(error) => {
                 assert_eq!(error.version(), Some("True"));
                 assert_eq!(
@@ -10329,7 +10343,10 @@ mod parse_manifest_port {
             "declared_loss",
             InputValue::int(1),
         );
-        assert_eq!(message(&bad_actions), "actions must be a list or tuple, got str");
+        assert_eq!(
+            message(&bad_actions),
+            "actions must be a list or tuple, got str"
+        );
         assert_eq!(
             message(&replace(
                 &base,
@@ -10571,25 +10588,30 @@ mod parse_manifest_port {
         assert!(!message(&replace_revalidation("assurance", text("A9")))
             .contains("Invalid revalidation assurance 'A9'"));
         assert_eq!(
-            message(&replace_revalidation("error_count", InputValue::bool_value(true))),
+            message(&replace_revalidation(
+                "error_count",
+                InputValue::bool_value(true)
+            )),
             "revalidation.error_count must be a non-negative integer, got True"
         );
         assert_eq!(
-            message(&replace_revalidation("error_count", InputValue::bool_value(false))),
+            message(&replace_revalidation(
+                "error_count",
+                InputValue::bool_value(false)
+            )),
             "revalidation.error_count must be a non-negative integer, got False"
         );
         assert_eq!(
             message(&replace_revalidation("error_count", InputValue::int(-1))),
             "revalidation.error_count must be a non-negative integer, got -1"
         );
-        assert!(!message(&replace_revalidation("error_count", InputValue::bool_value(true)))
-            .contains("RevalidationSummary.error_count"));
+        assert!(!message(&replace_revalidation(
+            "error_count",
+            InputValue::bool_value(true)
+        ))
+        .contains("RevalidationSummary.error_count"));
         let warning_bool = replace_revalidation("warning_count", InputValue::bool_value(true));
-        let warning_bool = replace(
-            &warning_bool,
-            "assurance_ceiling",
-            text("A9"),
-        );
+        let warning_bool = replace(&warning_bool, "assurance_ceiling", text("A9"));
         assert_eq!(
             message(&warning_bool),
             "revalidation.warning_count must be a non-negative integer, got True"
@@ -10688,11 +10710,7 @@ mod parse_manifest_port {
         rich = replace(&rich, "adapter_version", text("  2  "));
         rich = replace(&rich, "byte_counts", bytes);
         rich = replace(&rich, "record_counts", records);
-        rich = replace(
-            &rich,
-            "revalidation",
-            replace_nested_fingerprint("  cd  "),
-        );
+        rich = replace(&rich, "revalidation", replace_nested_fingerprint("  cd  "));
         let parsed = parse_ok(&rich);
         assert_eq!(parsed.input_fingerprint(), "in");
         assert_eq!(parsed.output_fingerprint(), "out");
@@ -13402,7 +13420,11 @@ fn walk_evidence(
     walked
 }
 
-fn stored_evidence(key: &str, value: &EvidenceWalkValue, include_content: bool) -> EvidenceWalkValue {
+fn stored_evidence(
+    key: &str,
+    value: &EvidenceWalkValue,
+    include_content: bool,
+) -> EvidenceWalkValue {
     match value {
         EvidenceWalkValue::Str(text) if !include_content && hashes_identifier(key, text) => {
             EvidenceWalkValue::Str(short_hash(text, 8))
@@ -13516,11 +13538,11 @@ mod port_1924 {
         format_finding_content_free, get_finding_remediation, ordinal_from_index,
         prepare_render_json, render_json, walk_evidence, CountKey, CountValue, Counts, CountsInput,
         Coverage, CoverageInput, EvidenceWalkValue, FindingElem, FindingsInput, FormatFindingError,
-        HomeDirectoryError, InputKey, InputValue, JsonDumpsUnavailable, KNOWN_REPORT_FIELDS,
-        MinimizePathError, RefusalRationaleUnavailable, RenderJsonError, RenderJsonInput, RenderKey,
-        RenderNode, RenderRepro, Report, ReportParts, ReproMetadata, ReproValue, SkipSeq, JSON_DUMPS,
-        REFUSAL_RATIONALE_FOR, REPORT_FINDING_KEYS, REPORT_FORBIDDEN_FINDING_KEYS, REPORT_ROOT_KEYS,
-        REPORT_SCHEMA_VERSION,
+        HomeDirectoryError, InputKey, InputValue, JsonDumpsUnavailable, MinimizePathError,
+        RefusalRationaleUnavailable, RenderJsonError, RenderJsonInput, RenderKey, RenderNode,
+        RenderRepro, Report, ReportParts, ReproMetadata, ReproValue, SkipSeq, JSON_DUMPS,
+        KNOWN_REPORT_FIELDS, REFUSAL_RATIONALE_FOR, REPORT_FINDING_KEYS,
+        REPORT_FORBIDDEN_FINDING_KEYS, REPORT_ROOT_KEYS, REPORT_SCHEMA_VERSION,
     };
     use model::codes::{Repairability, Severity, SL001};
     use model::finding::{
@@ -13746,10 +13768,7 @@ mod port_1924 {
     #[test]
     fn remediation_stops_at_the_refusal_import() {
         assert_eq!(RefusalRationaleUnavailable.to_string(), REFUSAL);
-        assert_eq!(
-            format!("{REFUSAL_RATIONALE_FOR} is not available"),
-            REFUSAL
-        );
+        assert_eq!(format!("{REFUSAL_RATIONALE_FOR} is not available"), REFUSAL);
         for repairability in Repairability::ALL {
             let finding = make_finding("file.jsonl", repairability, PyValue::None);
             for for_operator in [false, true] {
@@ -13793,12 +13812,12 @@ mod port_1924 {
             other => panic!("expected sha1, got {other:?}"),
         }
         let home_error = FormatFindingError::Minimize(MinimizePathError::Home(HomeDirectoryError));
-        assert_eq!(home_error.to_string(), "Could not determine home directory.");
+        assert_eq!(
+            home_error.to_string(),
+            "Could not determine home directory."
+        );
         let evidence = PyValue::map(vec![
-            (
-                PyValue::string("byte_offset"),
-                PyValue::bool_value(true),
-            ),
+            (PyValue::string("byte_offset"), PyValue::bool_value(true)),
             (PyValue::string("byte"), PyValue::int(4)),
             (
                 PyValue::string("session_id"),
@@ -13830,19 +13849,13 @@ mod port_1924 {
             pair("a", EvidenceWalkValue::Int(3)),
         ];
         let walked = walk_evidence(&entries, false, Some(&InputValue::int(7)));
-        assert_eq!(
-            walk_keys(&walked),
-            ["keep", "Content", "b", "a", "ordinal"]
-        );
+        assert_eq!(walk_keys(&walked), ["keep", "Content", "b", "a", "ordinal"]);
         assert_eq!(walked[0].1, EvidenceWalkValue::Str("visible".to_owned()));
         assert_eq!(walked[4].1, EvidenceWalkValue::Int(7));
         let kept = walk_evidence(&entries, true, Some(&InputValue::int(7)));
         assert_eq!(walk_keys(&kept)[0], "content");
         assert!(walk_keys(&kept).contains(&"prompt"));
-        let present = vec![pair(
-            "ordinal",
-            EvidenceWalkValue::Str("stay".to_owned()),
-        )];
+        let present = vec![pair("ordinal", EvidenceWalkValue::Str("stay".to_owned()))];
         let unchanged = walk_evidence(&present, false, Some(&InputValue::int(4)));
         assert_eq!(unchanged, present);
         for skipped in [
@@ -14021,15 +14034,11 @@ mod port_1924 {
     #[test]
     fn empty_report_uses_pin_order_then_stops_at_dumps() {
         let report = make_report(&[]);
-        let prepared = match prepare_render_json(
-            RenderJsonInput::Report(&report),
-            false,
-            None,
-            Some(HOME),
-        ) {
-            Ok(entries) => entries,
-            Err(error) => panic!("empty report rejected: {error}"),
-        };
+        let prepared =
+            match prepare_render_json(RenderJsonInput::Report(&report), false, None, Some(HOME)) {
+                Ok(entries) => entries,
+                Err(error) => panic!("empty report rejected: {error}"),
+            };
         assert_eq!(root_keys(&prepared), PIN);
         assert_eq!(text_at(&prepared, "assurance"), "A1");
         assert_eq!(text_at(&prepared, "limitation"), "lim-marker");
@@ -14058,15 +14067,11 @@ mod port_1924 {
         assert_eq!(message, DUMPS);
         assert!(!message.contains("sess-marker"));
         assert!(!message.contains('{'));
-        let flagged = match prepare_render_json(
-            RenderJsonInput::Report(&report),
-            true,
-            None,
-            Some(HOME),
-        ) {
-            Ok(entries) => entries,
-            Err(error) => panic!("content flags rejected: {error}"),
-        };
+        let flagged =
+            match prepare_render_json(RenderJsonInput::Report(&report), true, None, Some(HOME)) {
+                Ok(entries) => entries,
+                Err(error) => panic!("content flags rejected: {error}"),
+            };
         let mut expected = PIN.to_vec();
         expected.extend(["content_warning", "included_content"]);
         assert_eq!(root_keys(&flagged), expected);
@@ -14142,9 +14147,10 @@ mod port_1924 {
             ]
         );
         match repro {
-            RenderNode::Map(entries) => match entries.iter().find(|(key, _)| {
-                matches!(key, RenderKey::Text(text) if text == "detection")
-            }) {
+            RenderNode::Map(entries) => match entries
+                .iter()
+                .find(|(key, _)| matches!(key, RenderKey::Text(text) if text == "detection"))
+            {
                 Some((_, node)) => {
                     assert_eq!(map_keys(node), ["confidence", "method"]);
                     match node {
@@ -14199,15 +14205,11 @@ mod port_1924 {
             ("assurance", &assurance),
             ("findings", &findings),
         ];
-        let prepared = match prepare_render_json(
-            RenderJsonInput::Mapping(&pairs),
-            false,
-            None,
-            Some(HOME),
-        ) {
-            Ok(entries) => entries,
-            Err(error) => panic!("mapping rejected: {error}"),
-        };
+        let prepared =
+            match prepare_render_json(RenderJsonInput::Mapping(&pairs), false, None, Some(HOME)) {
+                Ok(entries) => entries,
+                Err(error) => panic!("mapping rejected: {error}"),
+            };
         assert_eq!(
             root_keys(&prepared),
             ["tool_version", "assurance", "findings"]
@@ -14217,15 +14219,11 @@ mod port_1924 {
             render_message(RenderJsonInput::Mapping(&pairs), false, None),
             DUMPS
         );
-        let flagged = match prepare_render_json(
-            RenderJsonInput::Mapping(&pairs),
-            true,
-            None,
-            Some(HOME),
-        ) {
-            Ok(entries) => entries,
-            Err(error) => panic!("flags rejected: {error}"),
-        };
+        let flagged =
+            match prepare_render_json(RenderJsonInput::Mapping(&pairs), true, None, Some(HOME)) {
+                Ok(entries) => entries,
+                Err(error) => panic!("flags rejected: {error}"),
+            };
         assert_eq!(
             root_keys(&flagged),
             [
@@ -14275,7 +14273,12 @@ mod port_1924 {
         let zebra = InputValue::int(1);
         let ant = InputValue::int(2);
         let bogus = InputValue::str_value("x");
-        let extras = [("Zebra", &zebra), ("ant", &ant), ("bogus", &bogus), ("bogus", &bogus)];
+        let extras = [
+            ("Zebra", &zebra),
+            ("ant", &ant),
+            ("bogus", &bogus),
+            ("bogus", &bogus),
+        ];
         let extra_message = render_message(RenderJsonInput::Mapping(&extras), true, None);
         assert_eq!(
             extra_message,
@@ -14383,11 +14386,7 @@ mod port_1924 {
         );
         let ok = InputValue::dict(Vec::new());
         let bad = InputValue::dict(vec![(InputKey::str_key("bogus"), InputValue::int(1))]);
-        let indexed = InputValue::list(vec![
-            InputValue::str_value("skip"),
-            ok,
-            bad,
-        ]);
+        let indexed = InputValue::list(vec![InputValue::str_value("skip"), ok, bad]);
         let indexed_pairs = [("findings", &indexed)];
         assert_eq!(
             render_message(RenderJsonInput::Mapping(&indexed_pairs), false, None),

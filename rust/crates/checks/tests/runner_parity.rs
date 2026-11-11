@@ -126,7 +126,11 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     }
 
     let import_paths = array_field(meta, "python_import_paths").expect("python_import_paths");
-    assert_eq!(import_paths.len(), IMPORT_PATHS.len(), "import paths length");
+    assert_eq!(
+        import_paths.len(),
+        IMPORT_PATHS.len(),
+        "import paths length"
+    );
     for (idx, item) in import_paths.iter().enumerate() {
         let JsonValue::Str(path) = item else {
             panic!("python_import_paths[{idx}] must be string");
@@ -178,8 +182,8 @@ fn assert_case(case: &VectorCase) {
 
 fn assert_run_all_checks(case: &VectorCase) {
     let events = decode_event_list(&case.construct).expect("events");
-    let source_path = optional_string(&case.construct, "source_path")
-        .unwrap_or_else(|| "<repaired>".to_owned());
+    let source_path =
+        optional_string(&case.construct, "source_path").unwrap_or_else(|| "<repaired>".to_owned());
     let return_coverage = bool_field(&case.construct, "return_coverage").unwrap_or(false);
     let profile_name;
     let profile = match optional_string(&case.construct, "profile") {

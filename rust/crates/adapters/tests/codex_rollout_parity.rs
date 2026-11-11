@@ -3,10 +3,9 @@
 use adapters::codex_rollout::{
     detect_codex_rollout, load_codex_rollout, load_codex_rollout_session, CodexFindingGate,
     CodexLoadLimits, CodexLoadSource, CodexTailCall, LoadCodexRolloutError,
-    LoadCodexRolloutSessionError, SuppliedSecretScanTracker, ALL, CRITICAL_KEYS,
+    LoadCodexRolloutSessionError, SuppliedSecretScanTracker, _safe_type_value, ALL, CRITICAL_KEYS,
     ENVELOPE_OPAQUE_TYPES, GUARDIAN_SNAPSHOT_ITEM_CAP, KNOWN_ENVELOPE_KEYS, KNOWN_PAYLOAD_KEYS,
-    RESPONSE_ITEM_TYPE_MAP, SQLITE_MAGIC, SUPPORTED_CODEX_ROLLOUT_VERSIONS, _safe_type_value,
-    _GUARDIAN_ID_MAX,
+    RESPONSE_ITEM_TYPE_MAP, SQLITE_MAGIC, SUPPORTED_CODEX_ROLLOUT_VERSIONS, _GUARDIAN_ID_MAX,
 };
 use adapters::safe_value::PyValue;
 use model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE;
@@ -112,14 +111,27 @@ fn assert_module_constants(case: &VectorCase) {
         "envelope_opaque_types",
         sorted_const(&ENVELOPE_OPAQUE_TYPES),
     );
-    assert_sorted_string_array(case, "known_envelope_keys", sorted_slice(&KNOWN_ENVELOPE_KEYS));
-    assert_sorted_string_array(case, "known_payload_keys", sorted_slice(&KNOWN_PAYLOAD_KEYS));
+    assert_sorted_string_array(
+        case,
+        "known_envelope_keys",
+        sorted_slice(&KNOWN_ENVELOPE_KEYS),
+    );
+    assert_sorted_string_array(
+        case,
+        "known_payload_keys",
+        sorted_slice(&KNOWN_PAYLOAD_KEYS),
+    );
     let cap = usize_field(&case.expected, "guardian_snapshot_item_cap").expect("cap");
     assert_eq!(cap, GUARDIAN_SNAPSHOT_ITEM_CAP, "{}", case.id);
     let gid = usize_field(&case.expected, "guardian_id_max").expect("gid");
     assert_eq!(gid, _GUARDIAN_ID_MAX, "{}", case.id);
     let items = array_field(&case.expected, "response_item_type_map").expect("map");
-    assert_eq!(items.len(), RESPONSE_ITEM_TYPE_MAP.len(), "item map {}", case.id);
+    assert_eq!(
+        items.len(),
+        RESPONSE_ITEM_TYPE_MAP.len(),
+        "item map {}",
+        case.id
+    );
     for item in items {
         let obj = as_object_value(item, "item").expect("item");
         let key = string_field(obj, "key").expect("key");
@@ -192,7 +204,12 @@ fn assert_load_codex_rollout(case: &VectorCase) {
         let got = err.to_string().replace('\\', "/");
         let want = message.replace('\\', "/");
         if let Some((prefix, suffix)) = want.split_once(": ") {
-            assert!(got.starts_with(&format!("{prefix}: ")), "prefix {} {}", got, case.id);
+            assert!(
+                got.starts_with(&format!("{prefix}: ")),
+                "prefix {} {}",
+                got,
+                case.id
+            );
             assert!(got.ends_with(suffix), "suffix {} {}", got, case.id);
         } else {
             assert_eq!(got, want, "message {}", case.id);
@@ -205,31 +222,59 @@ fn assert_load_codex_rollout(case: &VectorCase) {
     let err = load_codex_rollout(src, limits, secret).expect_err("gap");
     match mode.as_str() {
         "gap_secret_scan_tracker" => {
-            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                SECRET_SCAN_TRACKER_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(err, LoadCodexRolloutError::SecretScanTracker));
         }
         "gap_tail_finalize" => {
-            assert!(matches!(err, LoadCodexRolloutError::Tail(CodexTailCall::Finalize)));
+            assert!(matches!(
+                err,
+                LoadCodexRolloutError::Tail(CodexTailCall::Finalize)
+            ));
             assert_eq!(err.to_string(), TAIL_FINALIZE_UNAVAILABLE, "{}", case.id);
         }
         "gap_content_hash" => {
             assert!(matches!(err, LoadCodexRolloutError::Line(_)));
-            assert_eq!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+                "{}",
+                case.id
+            );
         }
         "gap_finding_fingerprint" => {
             let gate = string_field(assertion, "gate").expect("gate");
             match gate.as_str() {
                 "sqlite" => {
                     assert_eq!(err.finding_gate(), Some(CodexFindingGate::Sqlite));
-                    assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+                    assert_eq!(
+                        err.to_string(),
+                        FINGERPRINT_CODEC_UNAVAILABLE,
+                        "{}",
+                        case.id
+                    );
                 }
                 "size" => {
                     assert_eq!(err.finding_gate(), Some(CodexFindingGate::Size));
-                    assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+                    assert_eq!(
+                        err.to_string(),
+                        FINGERPRINT_CODEC_UNAVAILABLE,
+                        "{}",
+                        case.id
+                    );
                 }
                 "line" | "malformed" => {
                     assert!(matches!(err, LoadCodexRolloutError::Line(_)));
-                    assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+                    assert_eq!(
+                        err.to_string(),
+                        FINGERPRINT_CODEC_UNAVAILABLE,
+                        "{}",
+                        case.id
+                    );
                 }
                 other => panic!("unknown gate {other} in {}", case.id),
             }
@@ -266,8 +311,7 @@ fn assert_load_codex_rollout_session(case: &VectorCase) {
     let source = object_field(&case.construct, "source").expect("source");
     let mut bytes_buf = Vec::new();
     let mut path_buf = PathBuf::new();
-    let src =
-        decode_codex_source(case, source, &mut bytes_buf, &mut path_buf).expect("source");
+    let src = decode_codex_source(case, source, &mut bytes_buf, &mut path_buf).expect("source");
     let limits = optional_limits(&case.construct);
     let secret = optional_secret(&case.construct);
     let assertion = object_field(&case.expected, "rust_assertion").expect("rust_assertion");
@@ -278,7 +322,12 @@ fn assert_load_codex_rollout_session(case: &VectorCase) {
     };
     match mode.as_str() {
         "gap_secret_scan_tracker" => {
-            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                SECRET_SCAN_TRACKER_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(
                 err,
                 LoadCodexRolloutSessionError::Load(LoadCodexRolloutError::SecretScanTracker)

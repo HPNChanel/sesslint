@@ -51,15 +51,31 @@ fn read_lf(path: &Path) -> String {
     let raw = std::fs::read_to_string(path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(!raw.contains('\r'), "{} contains CR", path.display());
-    assert!(!raw.contains(SEAM), "{} stores the region seam", path.display());
+    assert!(
+        !raw.contains(SEAM),
+        "{} stores the region seam",
+        path.display()
+    );
     assert!(
         !raw.contains(DETERMINISM_SEAM),
         "{} stores the canonical_json_bytes seam",
         path.display()
     );
-    assert!(!raw.contains("sesslint-wt"), "{} stores a worktree path", path.display());
-    assert!(!raw.contains("FOR_WORK"), "{} stores a checkout path", path.display());
-    assert!(!raw.contains("0 diff"), "{} claims a zero diff", path.display());
+    assert!(
+        !raw.contains("sesslint-wt"),
+        "{} stores a worktree path",
+        path.display()
+    );
+    assert!(
+        !raw.contains("FOR_WORK"),
+        "{} stores a checkout path",
+        path.display()
+    );
+    assert!(
+        !raw.contains("0 diff"),
+        "{} claims a zero diff",
+        path.display()
+    );
     assert!(!contains_sbp(&raw), "{} stores an sbp hash", path.display());
     raw
 }
@@ -119,12 +135,21 @@ fn missing_canonical_json_bytes_is_not_a_successful_plan() {
     ]));
     let hash_err = event_canonical_hash(&mapping).expect_err("canonical_json_bytes");
     assert_eq!(hash_err.to_string(), DETERMINISM_SEAM);
-    assert_eq!(hash_err.to_string(), DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE);
-    assert_eq!(hash_err.message(), DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE);
+    assert_eq!(
+        hash_err.to_string(),
+        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
+    );
+    assert_eq!(
+        hash_err.message(),
+        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
+    );
     assert!(!is_sha256_hex(&hash_err.to_string()));
     let fingerprint_err = event_content_fingerprint(&mapping).expect_err("content fingerprint");
     assert_eq!(fingerprint_err.to_string(), DETERMINISM_SEAM);
-    assert_eq!(fingerprint_err.message(), DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE);
+    assert_eq!(
+        fingerprint_err.message(),
+        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
+    );
     assert!(!is_sha256_hex(&fingerprint_err.to_string()));
 
     let findings: &[Finding] = &[];
@@ -143,7 +168,8 @@ fn missing_canonical_json_bytes_is_not_a_successful_plan() {
 }
 
 fn assert_case(case: &VectorCase) {
-    let kind = string_field(&case.construct, "type").unwrap_or_else(|err| panic!("{}: {err}", case.id));
+    let kind =
+        string_field(&case.construct, "type").unwrap_or_else(|err| panic!("{}: {err}", case.id));
     match kind.as_str() {
         "recipe_constant" => assert_recipe(case),
         "apply_refusals" => assert_refusals(case),
@@ -161,8 +187,16 @@ fn assert_recipe(case: &VectorCase) {
     let handles = string_array(expected, "handles").expect("handles");
     assert_eq!(recipe.handles(), handles.as_slice(), "{}", case.id);
     let preconditions = string_array(expected, "preconditions").expect("preconditions");
-    assert_eq!(recipe.preconditions(), preconditions.as_slice(), "{}", case.id);
-    assert_eq!(recipe.lossy(), bool_field(expected, "lossy").expect("lossy"));
+    assert_eq!(
+        recipe.preconditions(),
+        preconditions.as_slice(),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        recipe.lossy(),
+        bool_field(expected, "lossy").expect("lossy")
+    );
     assert_eq!(
         recipe.salvage_only(),
         bool_field(expected, "salvage_only").expect("salvage_only")
@@ -171,7 +205,10 @@ fn assert_recipe(case: &VectorCase) {
         recipe.min_policy(),
         string_field(expected, "min_policy").expect("min_policy")
     );
-    assert_eq!(recipe.version(), string_field(expected, "version").expect("version"));
+    assert_eq!(
+        recipe.version(),
+        string_field(expected, "version").expect("version")
+    );
     assert_eq!(
         recipe.excludes_execution_dependence(),
         bool_field(expected, "excludes_execution_dependence").expect("excludes")
@@ -184,7 +221,10 @@ fn assert_recipe(case: &VectorCase) {
         recipe.affected_region().is_some(),
         bool_field(expected, "affected_region_present").expect("region_present")
     );
-    assert_eq!(recipe.apply(), Some(CallableId::from_fn(apply_orphan_result_drop)));
+    assert_eq!(
+        recipe.apply(),
+        Some(CallableId::from_fn(apply_orphan_result_drop))
+    );
     assert_eq!(
         recipe.affected_region(),
         Some(CallableId::from_fn(affected_region_orphan_result_drop))
@@ -193,15 +233,34 @@ fn assert_recipe(case: &VectorCase) {
 }
 
 fn assert_refusals(case: &VectorCase) {
-    assert_eq!(string_field(&case.construct, "fn").expect("fn"), "apply_orphan_result_drop");
-    assert_eq!(string_field(&case.construct, "recipe").expect("recipe"), "orphan-result-drop");
-    assert_eq!(string_field(&case.expected, "mode").expect("mode"), "precondition");
-    assert_eq!(string_field(&case.expected, "error_type").expect("error_type"), "PreconditionFailed");
-    assert_eq!(string_field(&case.expected, "fn").expect("expected fn"), "apply_orphan_result_drop");
+    assert_eq!(
+        string_field(&case.construct, "fn").expect("fn"),
+        "apply_orphan_result_drop"
+    );
+    assert_eq!(
+        string_field(&case.construct, "recipe").expect("recipe"),
+        "orphan-result-drop"
+    );
+    assert_eq!(
+        string_field(&case.expected, "mode").expect("mode"),
+        "precondition"
+    );
+    assert_eq!(
+        string_field(&case.expected, "error_type").expect("error_type"),
+        "PreconditionFailed"
+    );
+    assert_eq!(
+        string_field(&case.expected, "fn").expect("expected fn"),
+        "apply_orphan_result_drop"
+    );
     let cases = array_field(&case.construct, "cases").expect("cases");
     let outcomes = array_field(&case.expected, "outcomes").expect("outcomes");
     assert_eq!(cases.len(), outcomes.len(), "{}", case.id);
-    assert!(cases.len() > 1, "{} is one example, not a whole proof", case.id);
+    assert!(
+        cases.len() > 1,
+        "{} is one example, not a whole proof",
+        case.id
+    );
     let mut messages = Vec::new();
     for (item, outcome) in cases.iter().zip(outcomes) {
         messages.push(assert_refusal_row(item, outcome));
@@ -247,7 +306,10 @@ fn assert_refusal_row(item: &JsonValue, outcome: &JsonValue) -> String {
     let row = as_object(item, "case").expect("case");
     let want = as_object(outcome, "outcome").expect("outcome");
     assert_eq!(string_field(want, "mode").expect("mode"), "precondition");
-    assert_eq!(string_field(want, "error_type").expect("error_type"), "PreconditionFailed");
+    assert_eq!(
+        string_field(want, "error_type").expect("error_type"),
+        "PreconditionFailed"
+    );
     let message = string_field(want, "message").expect("message");
     assert!(!message.is_empty(), "empty refusal");
     assert!(!is_sha256_hex(&message), "refusal message is a fingerprint");
@@ -266,7 +328,10 @@ fn assert_refusal_row(item: &JsonValue, outcome: &JsonValue) -> String {
 }
 
 fn assert_step_shape(label: &str, step: &[(String, JsonValue)], events: &[JsonValue]) {
-    assert_eq!(string_field(step, "recipe").expect("recipe"), "orphan-result-drop");
+    assert_eq!(
+        string_field(step, "recipe").expect("recipe"),
+        "orphan-result-drop"
+    );
     assert_eq!(string_field(step, "target_finding_fp").expect("fp"), "fp");
     assert_eq!(int_tag(field_ref(step, "seq")).expect("seq"), 0);
     require_lossy_bool(step);
@@ -329,8 +394,14 @@ fn assert_affected_region(case: &VectorCase) {
         string_field(&case.construct, "fn").expect("fn"),
         "affected_region_orphan_result_drop"
     );
-    assert_eq!(string_field(&case.expected, "mode").expect("mode"), "python_region");
-    assert_eq!(string_field(&case.expected, "gap_id").expect("gap_id"), GAP_REGION);
+    assert_eq!(
+        string_field(&case.expected, "mode").expect("mode"),
+        "python_region"
+    );
+    assert_eq!(
+        string_field(&case.expected, "gap_id").expect("gap_id"),
+        GAP_REGION
+    );
     let region = object_field(&case.expected, "region").expect("region");
     assert!(!bool_field(region, "unproven").expect("unproven"));
     let indices = array_field(region, "indices").expect("indices");
@@ -339,7 +410,10 @@ fn assert_affected_region(case: &VectorCase) {
         panic!("region index bool is not an int");
     };
     assert_eq!(text, "3");
-    assert_eq!(string_array(region, "ids").expect("ids"), ["tr_orph".to_owned()]);
+    assert_eq!(
+        string_array(region, "ids").expect("ids"),
+        ["tr_orph".to_owned()]
+    );
     assert!(array_field(region, "ranges").expect("ranges").is_empty());
     let events = decode_events(array_field(&case.construct, "events").expect("events"));
     let step = decode_step(object_field(&case.construct, "step").expect("step"));
@@ -350,10 +424,14 @@ fn assert_affected_region(case: &VectorCase) {
 }
 
 fn assert_coverage(raw: &str) {
-    let (value, rest) = parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("coverage: {err}"));
+    let (value, rest) =
+        parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("coverage: {err}"));
     assert!(rest.trim().is_empty(), "coverage trailing");
     let obj = as_object(&value, "coverage").expect("coverage object");
-    assert_eq!(usize_field(obj, "covered_count").expect("covered_count"), EXPECTED_COVERED);
+    assert_eq!(
+        usize_field(obj, "covered_count").expect("covered_count"),
+        EXPECTED_COVERED
+    );
     assert_eq!(
         usize_field(obj, "not_applicable_count").expect("not_applicable_count"),
         EXPECTED_NOT_APPLICABLE
@@ -377,13 +455,19 @@ fn assert_coverage_row(obj: &[(String, JsonValue)]) -> usize {
     assert!(!is_sha256_hex(&note), "{test}");
     if status == "covered" {
         assert_eq!(test, COVERED_TEST);
-        assert_eq!(string_field(obj, "vector_id").expect("vector_id"), COVERED_VECTOR);
+        assert_eq!(
+            string_field(obj, "vector_id").expect("vector_id"),
+            COVERED_VECTOR
+        );
         assert_eq!(note, "");
         assert!(!test.contains("affected_region"), "{test}");
         return 1;
     }
     assert_eq!(status, "not_applicable", "{test}");
-    assert!(matches!(field_ref(obj, "vector_id"), JsonValue::Null), "{test}");
+    assert!(
+        matches!(field_ref(obj, "vector_id"), JsonValue::Null),
+        "{test}"
+    );
     assert!(!note.is_empty(), "{test}");
     assert_named_gap(&test, &note);
     0
@@ -392,7 +476,10 @@ fn assert_coverage_row(obj: &[(String, JsonValue)]) -> usize {
 fn assert_named_gap(test: &str, note: &str) {
     if test.ends_with("test_orphan_result_drop_plans_and_applies") {
         assert!(note.contains("not a successful plan"), "{test}");
-        assert!(note.contains("apply_orphan_result_drop_with_loss"), "{test}");
+        assert!(
+            note.contains("apply_orphan_result_drop_with_loss"),
+            "{test}"
+        );
         assert!(note.contains("not the entire test"), "{test}");
     }
     if test.ends_with("test_orphan_result_drop_conservative_blocks") {
@@ -410,16 +497,26 @@ fn assert_named_gap(test: &str, note: &str) {
 }
 
 fn assert_manifest(raw: &str, digest: &str) {
-    let (value, rest) = parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("manifest: {err}"));
+    let (value, rest) =
+        parse_value(raw.trim_start()).unwrap_or_else(|err| panic!("manifest: {err}"));
     assert!(rest.trim().is_empty(), "manifest trailing");
     let obj = as_object(&value, "manifest").expect("manifest object");
-    assert_eq!(usize_field(obj, "vector_count").expect("vector_count"), EXPECTED_VECTOR_COUNT);
-    assert_eq!(string_field(obj, "vectors_sha256").expect("vectors_sha256"), digest);
+    assert_eq!(
+        usize_field(obj, "vector_count").expect("vector_count"),
+        EXPECTED_VECTOR_COUNT
+    );
+    assert_eq!(
+        string_field(obj, "vectors_sha256").expect("vectors_sha256"),
+        digest
+    );
     assert_eq!(
         string_field(obj, "generator").expect("generator"),
         "rust/parity/recipes/orphan-result-drop/generate"
     );
-    assert_eq!(string_field(obj, "recipe").expect("recipe"), "orphan-result-drop");
+    assert_eq!(
+        string_field(obj, "recipe").expect("recipe"),
+        "orphan-result-drop"
+    );
     assert_gap_list(obj);
 }
 
@@ -446,9 +543,30 @@ fn assert_bool_is_not_int() {
 fn orphan_source_events() -> Vec<SourceHashEvent> {
     [
         source_event("m0", None, 0, "user", "message", None),
-        source_event("tc1", Some("m0"), 1, "assistant", "tool_call", Some("corr-ok")),
-        source_event("tr1", Some("tc1"), 2, "tool", "tool_result", Some("corr-ok")),
-        source_event("tr_orph", Some("m0"), 3, "tool", "tool_result", Some("corr-orphan")),
+        source_event(
+            "tc1",
+            Some("m0"),
+            1,
+            "assistant",
+            "tool_call",
+            Some("corr-ok"),
+        ),
+        source_event(
+            "tr1",
+            Some("tc1"),
+            2,
+            "tool",
+            "tool_result",
+            Some("corr-ok"),
+        ),
+        source_event(
+            "tr_orph",
+            Some("m0"),
+            3,
+            "tool",
+            "tool_result",
+            Some("corr-orphan"),
+        ),
     ]
     .into_iter()
     .collect()
@@ -477,7 +595,9 @@ fn source_event(
 fn decode_events(items: &[JsonValue]) -> Vec<EventValue> {
     items
         .iter()
-        .map(|item| EventValue::from_session(decode_session(as_object(item, "event").expect("event"))))
+        .map(|item| {
+            EventValue::from_session(decode_session(as_object(item, "event").expect("event")))
+        })
         .collect()
 }
 
@@ -675,7 +795,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(name, _)| name == key) {
         Some((_, JsonValue::Array(items))) => Ok(items.as_slice()),
         Some(_) => Err(ParseError {
@@ -992,7 +1115,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)

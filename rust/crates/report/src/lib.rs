@@ -9,9 +9,9 @@ pub use error::ReportError;
 pub mod baseline;
 #[path = "schema/sesslint.baseline.v2.rs"]
 pub mod baseline_schema;
+pub mod html_report;
 pub mod progress;
 pub mod report;
-pub mod html_report;
 pub mod sarif;
 pub mod triage;
 #[path = "schema/sesslint.triage.v1.rs"]

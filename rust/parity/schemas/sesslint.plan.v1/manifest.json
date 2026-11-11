@@ -1,0 +1,8 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.plan.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "schema_file": "schemas/sesslint.plan.v1.json",
+  "vector_count": 8,
+  "generator": "rust/parity/schemas/sesslint.plan.v1/generate"
+}

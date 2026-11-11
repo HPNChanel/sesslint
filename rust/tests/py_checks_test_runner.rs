@@ -191,10 +191,7 @@ fn every_pinned_checks_test_runner_has_one_disposition() {
             row.name
         );
         match row.disposition {
-            Disposition::Covered {
-                vector_id,
-                needles,
-            } => {
+            Disposition::Covered { vector_id, needles } => {
                 let expected = expected_covered_ids(row.name)
                     .unwrap_or_else(|| panic!("{} is not a fully covered pin test", row.name));
                 assert!(
@@ -299,11 +296,7 @@ fn runner_integration_tests_are_not_applicable_in_parity_ledgers() {
     assert_coverage_rows_not_applicable(&executor_coverage, "repair.executor");
 
     for row in ROWS {
-        let Disposition::Covered {
-            vector_id,
-            needles,
-        } = row.disposition
-        else {
+        let Disposition::Covered { vector_id, needles } = row.disposition else {
             continue;
         };
         assert!(

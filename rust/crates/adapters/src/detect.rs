@@ -1978,7 +1978,10 @@ mod resolve_port {
                 high.to_string(),
                 "confidence_min must be strictly between 0.0 and 1.0 exclusive, got 2.0"
             );
-            assert!(matches!(high, ResolveFormatError::Detect(DetectError::Value(_))));
+            assert!(matches!(
+                high,
+                ResolveFormatError::Detect(DetectError::Value(_))
+            ));
 
             let margin = resolve_format(
                 Some("bogus"),
@@ -2065,20 +2068,17 @@ mod resolve_port {
             let (confidence_min, margin_min) = defaults();
             let from_none =
                 resolve_format(None, &file.path, confidence_min, margin_min).expect("none");
-            let from_auto = resolve_format(Some(FORMAT_AUTO), &file.path, confidence_min, margin_min)
-                .expect("auto");
+            let from_auto =
+                resolve_format(Some(FORMAT_AUTO), &file.path, confidence_min, margin_min)
+                    .expect("auto");
             assert_eq!(from_none, from_auto);
             assert_eq!(from_none.format, FORMAT_CANONICAL);
             assert_eq!(from_none.result.reason, REASON_CLEAR_WINNER);
             assert!(from_none.findings.is_empty());
 
-            let spaced_auto = resolve_format(
-                Some(" AUTO\t"),
-                &file.path,
-                confidence_min,
-                margin_min,
-            )
-            .expect("spaced auto");
+            let spaced_auto =
+                resolve_format(Some(" AUTO\t"), &file.path, confidence_min, margin_min)
+                    .expect("spaced auto");
             assert_eq!(spaced_auto, from_none);
 
             let from_bytes = resolve_format_bytes(
@@ -2196,13 +2196,19 @@ mod resolve_port {
             let (confidence_min, margin_min) = defaults();
             let err = resolve_format(Some(" auto "), missing, confidence_min, margin_min)
                 .expect_err("missing");
-            assert_eq!(err.to_string(), "Session file not found: sesslint-detect-02-missing.json");
-            assert!(matches!(err, ResolveFormatError::Detect(DetectError::NotFound(_))));
+            assert_eq!(
+                err.to_string(),
+                "Session file not found: sesslint-detect-02-missing.json"
+            );
+            assert!(matches!(
+                err,
+                ResolveFormatError::Detect(DetectError::NotFound(_))
+            ));
 
             let directory = temp_path("dir", true);
             fs::create_dir(&directory.path).expect("dir");
-            let dir_err = resolve_format(None, &directory.path, confidence_min, margin_min)
-                .expect_err("dir");
+            let dir_err =
+                resolve_format(None, &directory.path, confidence_min, margin_min).expect_err("dir");
             assert!(dir_err
                 .to_string()
                 .starts_with("Expected session file, got directory: "));
@@ -2234,14 +2240,16 @@ mod resolve_port {
             assert_eq!(empty.template, "Session input is empty [detail: EMPTY]");
             assert_eq!(EMPTY_INPUT_TEMPLATE, empty.template);
 
-            for reason in [REASON_TIE, REASON_LOW_CONFIDENCE, REASON_CLEAR_WINNER, "other"] {
+            for reason in [
+                REASON_TIE,
+                REASON_LOW_CONFIDENCE,
+                REASON_CLEAR_WINNER,
+                "other",
+            ] {
                 let ambiguous = failure_labels(failure_kind(reason));
                 assert_eq!(ambiguous.code, "SL302");
                 assert_eq!(ambiguous.severity, model::codes::Severity::Error);
-                assert_eq!(
-                    ambiguous.repairability,
-                    model::codes::Repairability::Manual
-                );
+                assert_eq!(ambiguous.repairability, model::codes::Repairability::Manual);
                 assert_eq!(
                     ambiguous.template,
                     "Unable to determine session format with sufficient confidence [detail: ambiguous_format]"

@@ -2,12 +2,12 @@
 
 use adapters::claude_code::{
     _process_claude_line, detect_claude_code, is_supported_claude_version, load_claude_code,
-    load_claude_code_session, normalize_version, ClaudeLineContext,
-    ClaudeLineLimits, ClaudeLoadSource, ClaudeRawLine, LoadClaudeCodeError,
-    SuppliedSecretScanTracker, ALL, CRITICAL_KEYS, DEFAULT_MAX_DEPTH, KNOWN_RECORD_KEYS,
-    OPEN_BYTE_SOURCE_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE, SESSION_METADATA_TYPES,
-    SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS, SUPPORTED_CLAUDE_VERSIONS, TYPE_MAP,
-    _safe_type_value, ProcessClaudeLineError,
+    load_claude_code_session, normalize_version, ClaudeLineContext, ClaudeLineLimits,
+    ClaudeLoadSource, ClaudeRawLine, LoadClaudeCodeError, ProcessClaudeLineError,
+    SuppliedSecretScanTracker, _safe_type_value, ALL, CRITICAL_KEYS, DEFAULT_MAX_DEPTH,
+    KNOWN_RECORD_KEYS, OPEN_BYTE_SOURCE_UNAVAILABLE, SECRET_SCAN_TRACKER_UNAVAILABLE,
+    SESSION_METADATA_TYPES, SUPPORTED_CLAUDE_APP_MAJOR_VERSIONS, SUPPORTED_CLAUDE_VERSIONS,
+    TYPE_MAP,
 };
 use adapters::safe_value::PyValue;
 use model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE;
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.claude_code/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 27;
 const EXPECTED_VECTORS_SHA256: &str =
-    "db1bc6c3aa7c29e86bf65c26a41a7b5fe72f7ca1de5ea115387bb29d3b5ca77d";
+    "61ba9d20c475c878f48e80b7f1341cf4e009db53346f3ec28b3777069d0c8fcd";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.claude_code";
@@ -27,7 +27,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_CLAUDE_PY_SHA256: &str =
     "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1";
 const EXPECTED_CLAUDE_RS_SHA256: &str =
-    "801bee2f275c752a443201cd3b3fec8220133c95ccb2a40d578bce2ae5cfe456";
+    "278a6818b3c872b38e5695328b07798d56f236268e3fe59d521076968d828f22";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -54,7 +54,12 @@ fn assert_case(case: &VectorCase) {
         "normalize_version" => {
             let text = string_field(&case.construct, "text").expect("text");
             let want = string_field(&case.expected, "text").expect("expected text");
-            assert_eq!(normalize_version(&text), want, "normalize_version {}", case.id);
+            assert_eq!(
+                normalize_version(&text),
+                want,
+                "normalize_version {}",
+                case.id
+            );
         }
         "detect_claude_code" => {
             let bytes = bytes_from_hex_field(&case.construct, "bytes_hex").expect("bytes");
@@ -134,8 +139,9 @@ fn assert_module_constants(case: &VectorCase) {
         let key = string_field(obj, "key").expect("key");
         let actor = string_field(obj, "actor").expect("actor");
         let kind = string_field(obj, "kind").expect("kind");
-        let Some((want_actor, want_kind)) =
-            TYPE_MAP.iter().find_map(|(name, a, k)| (*name == key).then_some((*a, *k)))
+        let Some((want_actor, want_kind)) = TYPE_MAP
+            .iter()
+            .find_map(|(name, a, k)| (*name == key).then_some((*a, *k)))
         else {
             panic!("unknown type {key} in {}", case.id);
         };
@@ -173,7 +179,8 @@ fn assert_load_claude_code(case: &VectorCase) {
     let source = object_field(&case.construct, "source").expect("source");
     let mut bytes_buf = Vec::new();
     let mut path_buf = String::new();
-    let src = decode_load_source(case, source, &mut bytes_buf, &mut path_buf).expect("source decode");
+    let src =
+        decode_load_source(case, source, &mut bytes_buf, &mut path_buf).expect("source decode");
     if let Ok(message) = string_field(&case.expected, "message") {
         let err = load_claude_code(src, None).expect_err("error");
         assert_eq!(
@@ -190,7 +197,12 @@ fn assert_load_claude_code(case: &VectorCase) {
     let err = load_claude_code(src, None).expect_err("gap");
     match mode.as_str() {
         "gap_secret_scan_tracker" => {
-            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                SECRET_SCAN_TRACKER_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(err, LoadClaudeCodeError::SecretScanTracker));
         }
         "gap_open_byte_source" => {
@@ -272,17 +284,32 @@ fn assert_process_claude_line(case: &VectorCase) {
         }
         "gap_fingerprint" => {
             let err = result.expect_err("fingerprint");
-            assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                FINGERPRINT_CODEC_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(err, ProcessClaudeLineError::Finding(_)));
         }
         "gap_canonical_json_bytes" => {
             let err = result.expect_err("canonical");
-            assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                CANONICAL_JSON_BYTES_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(err, ProcessClaudeLineError::Canonical(_)));
         }
         "gap_secret_scan_tracker" => {
             let err = result.expect_err("tracker");
-            assert_eq!(err.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE, "{}", case.id);
+            assert_eq!(
+                err.to_string(),
+                SECRET_SCAN_TRACKER_UNAVAILABLE,
+                "{}",
+                case.id
+            );
             assert!(matches!(err, ProcessClaudeLineError::SecretScanTracker));
         }
         other => panic!("unknown process mode {other} in {}", case.id),

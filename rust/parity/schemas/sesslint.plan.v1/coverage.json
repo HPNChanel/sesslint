@@ -1,0 +1,21 @@
+{
+  "module": "sesslint.plan.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "rows": [
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_plan_schema_loads_and_self_consistent",
+      "status": "not_applicable",
+      "reason": "missing stop: the schema file, its dialect, its id, and the step required keys together; one document check is not this"
+    },
+    {
+      "test": "tests/test_plan_bundle_schemas.py::test_conservative_plan_dict_validates",
+      "status": "not_applicable",
+      "reason": "missing stop: a conservative plan dict from the fixture helper; one synthetic document is not this"
+    },
+    {
+      "test": "tests/cli/test_plan_apply.py::test_plan_out_export_only",
+      "status": "not_applicable",
+      "reason": "missing stop: CLI exit, the plan file, seven keys, and the version together; one document check is not this"
+    }
+  ]
+}

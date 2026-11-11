@@ -105,7 +105,10 @@ fn adapters_package_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -188,11 +191,13 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     assert_eq!(py_all.len(), 40, "python_all length");
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
-    for prefix in ["GAP-adapters-dunder-all", "GAP-adapters-detect-load-vendors"] {
+    for prefix in [
+        "GAP-adapters-dunder-all",
+        "GAP-adapters-detect-load-vendors",
+    ] {
         assert!(
-            gaps.iter().any(|item| {
-                matches!(item, JsonValue::Str(s) if s.starts_with(prefix))
-            }),
+            gaps.iter()
+                .any(|item| { matches!(item, JsonValue::Str(s) if s.starts_with(prefix)) }),
             "expected gap {prefix}"
         );
     }
@@ -302,7 +307,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Array(items))) => Ok(items),
         _ => Err(ParseError {
@@ -323,10 +331,7 @@ fn string_field(obj: &[(String, JsonValue)], key: &str) -> Result<String, ParseE
     }
 }
 
-fn string_array_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Vec<String>, ParseError> {
+fn string_array_field(obj: &[(String, JsonValue)], key: &str) -> Result<Vec<String>, ParseError> {
     let items = array_field(obj, key)?;
     let mut out = Vec::with_capacity(items.len());
     for item in items {

@@ -6,14 +6,15 @@ mod error;
 
 pub use error::AdaptersError;
 
-pub mod links;
-pub mod synthetic;
-pub mod safe_value;
-pub mod drift;
-pub mod metadata;
 pub mod canonical;
 pub mod claude_code;
+pub mod drift;
+pub mod links;
+pub mod metadata;
 pub mod openai_agents;
+pub mod safe_value;
+pub mod synthetic;
+#[rustfmt::skip]
 pub mod codex_rollout;
 pub mod detect;
 pub mod load;
@@ -93,12 +94,9 @@ mod tests {
                 SupportedAdapter {
                     name: "canonical",
                     default_profile: "neutral",
-                    description: "sesslint.session/v1 canonical JSONL (SessLint's own interchange format)",
-                    versions_supported: vec![
-                        "1".to_owned(),
-                        "1.0".to_owned(),
-                        "1.0.0".to_owned(),
-                    ],
+                    description:
+                        "sesslint.session/v1 canonical JSONL (SessLint's own interchange format)",
+                    versions_supported: vec!["1".to_owned(), "1.0".to_owned(), "1.0.0".to_owned(),],
                 },
                 SupportedAdapter {
                     name: "claude-code-jsonl",

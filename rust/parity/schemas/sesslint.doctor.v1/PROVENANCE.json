@@ -1,0 +1,10 @@
+{
+  "contains_real_data": false,
+  "description": "Synthetic schema documents. No session text is stored.",
+  "generator": "rust/parity/schemas/sesslint.doctor.v1/generate",
+  "origin": "synthetic",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-doctor-emitter: CLI doctor JSON and the root sweep are not this validator. One synthetic document is not that sweep."
+  ]
+}

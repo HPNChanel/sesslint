@@ -5,8 +5,8 @@
 use repair::executor::{
     execute, is_live_store_path, load_plan, load_session_source, load_session_source_with_findings,
     load_source_for_format, ExecuteError, LoadPlanError, LoadPlanInput, LoadSessionError,
-    RelocateError, SourcePositionError, ALL, SQLITE_MAGIC, _ATOMIC_TEST_HOOKS, _ORIGIN_KEY,
-    _STEP_INDEX_LIST_PARAMS, _STEP_INDEX_PARAMS, _relocate_step, _source_positions,
+    RelocateError, SourcePositionError, _relocate_step, _source_positions, ALL, SQLITE_MAGIC,
+    _ATOMIC_TEST_HOOKS, _ORIGIN_KEY, _STEP_INDEX_LIST_PARAMS, _STEP_INDEX_PARAMS,
 };
 use repair::planner::{
     Loss, PlanKey, PlanStep, PlanStepFields, PlanValue, RepairPlan, RepairPlanFields, PLAN_VERSION,
@@ -128,13 +128,19 @@ fn synthetic_plan(steps: usize, policy: &str) -> RepairPlan {
 fn salvage_plan_mapping() -> PlanValue {
     let step = PlanValue::map(vec![
         (PlanKey::str_key("seq"), PlanValue::Int(1)),
-        (PlanKey::str_key("recipe"), PlanValue::Str("drop-record".into())),
+        (
+            PlanKey::str_key("recipe"),
+            PlanValue::Str("drop-record".into()),
+        ),
         (
             PlanKey::str_key("target_finding_fp"),
             PlanValue::Str("fp".into()),
         ),
         (PlanKey::str_key("target_index"), PlanValue::Int(0)),
-        (PlanKey::str_key("min_policy"), PlanValue::Str("salvage".into())),
+        (
+            PlanKey::str_key("min_policy"),
+            PlanValue::Str("salvage".into()),
+        ),
         (
             PlanKey::str_key("recipe_version"),
             PlanValue::Str("1.0.0".into()),
@@ -165,20 +171,14 @@ fn salvage_plan_mapping() -> PlanValue {
             PlanKey::str_key("loss_accounting"),
             PlanValue::map(vec![
                 (PlanKey::str_key("total_lost"), PlanValue::Int(0)),
-                (
-                    PlanKey::str_key("preview"),
-                    PlanValue::map(vec![]),
-                ),
+                (PlanKey::str_key("preview"), PlanValue::map(vec![])),
             ]),
         ),
         (
             PlanKey::str_key("fingerprint"),
             PlanValue::Str("abc".into()),
         ),
-        (
-            PlanKey::str_key("policy"),
-            PlanValue::Str("salvage".into()),
-        ),
+        (PlanKey::str_key("policy"), PlanValue::Str("salvage".into())),
     ])
 }
 
@@ -220,8 +220,7 @@ fn assert_case(case: &VectorCase) {
             );
             assert_string_list(&_STEP_INDEX_PARAMS, case, "step_index_params");
             assert_string_list(&_STEP_INDEX_LIST_PARAMS, case, "step_index_list_params");
-            let hook_names: Vec<&str> =
-                _ATOMIC_TEST_HOOKS.iter().map(|(name, _)| *name).collect();
+            let hook_names: Vec<&str> = _ATOMIC_TEST_HOOKS.iter().map(|(name, _)| *name).collect();
             assert_string_list(&hook_names, case, "atomic_hook_keys");
         }
         "is_live_store_path" => {
@@ -242,8 +241,8 @@ fn assert_case(case: &VectorCase) {
                 .ok()
                 .flatten()
                 .map(|b64| decode_b64(&b64));
-            let err = load_session_source_with_findings(&path, data.as_deref())
-                .expect_err(&case.id);
+            let err =
+                load_session_source_with_findings(&path, data.as_deref()).expect_err(&case.id);
             assert_session_not_found(&err, &want, &case.id);
         }
         "load_session_snapshot_seam" => {
@@ -252,7 +251,12 @@ fn assert_case(case: &VectorCase) {
                 "{}",
                 case.id
             );
-            assert_gap_mode(&case.expected, "snapshot", "snapshot_input_unavailable", &case.id);
+            assert_gap_mode(
+                &case.expected,
+                "snapshot",
+                "snapshot_input_unavailable",
+                &case.id,
+            );
             let fixture = string_field(&case.construct, "fixture").expect("fixture");
             let path = vector_root().join("fixtures").join(fixture);
             let err = load_session_source(&path).expect_err(&case.id);
@@ -303,14 +307,8 @@ fn assert_case(case: &VectorCase) {
         "source_positions_duplicate" => {
             let want = string_field(&case.expected, "message").expect("message");
             let events = vec![
-                PlanValue::map(vec![(
-                    PlanKey::str_key(_ORIGIN_KEY),
-                    PlanValue::Int(1),
-                )]),
-                PlanValue::map(vec![(
-                    PlanKey::str_key(_ORIGIN_KEY),
-                    PlanValue::Int(1),
-                )]),
+                PlanValue::map(vec![(PlanKey::str_key(_ORIGIN_KEY), PlanValue::Int(1))]),
+                PlanValue::map(vec![(PlanKey::str_key(_ORIGIN_KEY), PlanValue::Int(1))]),
             ];
             let err = _source_positions(&events).expect_err(&case.id);
             let SourcePositionError::Duplicate(inner) = err else {
@@ -320,13 +318,8 @@ fn assert_case(case: &VectorCase) {
         }
         "relocate_step_removed" => {
             let want = string_field(&case.expected, "message").expect("message");
-            let step = PlanStep::try_new(PlanStepFields::new(
-                7,
-                "drop-record",
-                "fp",
-                Some(2),
-            ))
-            .expect("step");
+            let step = PlanStep::try_new(PlanStepFields::new(7, "drop-record", "fp", Some(2)))
+                .expect("step");
             let positions = BTreeMap::from([(0, 0), (1, 1)]);
             let err = _relocate_step(&step, &positions, 3).expect_err(&case.id);
             let RelocateError::OutputInvalid(inner) = err else {
@@ -337,8 +330,8 @@ fn assert_case(case: &VectorCase) {
         "load_plan_salvage_policy_mismatch" => {
             let want = string_field(&case.expected, "message").expect("message");
             let mapping = salvage_plan_mapping();
-            let err =
-                load_plan(LoadPlanInput::Mapping(&mapping), Some("conservative")).expect_err(&case.id);
+            let err = load_plan(LoadPlanInput::Mapping(&mapping), Some("conservative"))
+                .expect_err(&case.id);
             let LoadPlanError::Policy(inner) = err else {
                 panic!("{} expected PolicyMismatch", case.id);
             };
@@ -396,7 +389,8 @@ fn executor_module_parity_vectors() {
         digest, EXPECTED_VECTORS_SHA256,
         "vectors.json sha256 must match generator"
     );
-    let cases = parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
+    let cases =
+        parse_document(&normalized).unwrap_or_else(|err| panic!("parse vectors.json: {err}"));
     assert_eq!(
         cases.len(),
         EXPECTED_VECTOR_COUNT,
@@ -428,7 +422,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -444,7 +444,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)
@@ -697,10 +698,7 @@ fn parse_number(input: &str) -> Result<(JsonValue, &str), ParseError> {
             end += 1;
         }
     }
-    Ok((
-        JsonValue::Number(input[..end].to_owned()),
-        &input[end..],
-    ))
+    Ok((JsonValue::Number(input[..end].to_owned()), &input[end..]))
 }
 
 fn parse_array(input: &str) -> Result<(JsonValue, &str), ParseError> {

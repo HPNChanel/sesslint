@@ -71,7 +71,10 @@ const PLAN_FINGERPRINT_VECTORS: &[(&str, &str)] = &[
 ];
 
 const EXECUTOR_VECTORS: &[(&str, &str)] = &[
-    ("load_plan_salvage_under_conservative", "load_plan_salvage_policy_mismatch"),
+    (
+        "load_plan_salvage_under_conservative",
+        "load_plan_salvage_policy_mismatch",
+    ),
     ("execute_fingerprint_import_seam", "execute_fingerprint_gap"),
 ];
 

@@ -1,6 +1,6 @@
 //! Parity for `sesslint.adapters.load` against pinned Python vectors.
 
-use adapters::load::{profile_key_for_format, FORMAT_PROFILE_KEYS, ALL};
+use adapters::load::{profile_key_for_format, ALL, FORMAT_PROFILE_KEYS};
 use sha2::Digest;
 use std::fmt;
 use std::path::PathBuf;
@@ -111,7 +111,10 @@ fn load_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -171,9 +174,8 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
         "GAP-load-payload-content-hash",
     ] {
         assert!(
-            gaps.iter().any(|item| {
-                matches!(item, JsonValue::Str(text) if text.starts_with(prefix))
-            }),
+            gaps.iter()
+                .any(|item| { matches!(item, JsonValue::Str(text) if text.starts_with(prefix)) }),
             "expected gap {prefix}"
         );
     }

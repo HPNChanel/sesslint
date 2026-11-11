@@ -4,8 +4,8 @@
 //! (`GAP-registry-configure-run`); vectors do not assert argparse callable behavior.
 
 use cli::registry::{
-    build_dispatch, import_cli_context, Command, Dispatch, RegistryError,
-    CLI_CONTEXT_UNAVAILABLE, COMMANDS, REMOVED_COMMANDS, REMOVED_FLAGS,
+    build_dispatch, import_cli_context, Command, Dispatch, RegistryError, CLI_CONTEXT_UNAVAILABLE,
+    COMMANDS, REMOVED_COMMANDS, REMOVED_FLAGS,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -148,7 +148,8 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter().any(|item| gap_contains(item, GAP_CONFIGURE_RUN)),
+        gaps.iter()
+            .any(|item| gap_contains(item, GAP_CONFIGURE_RUN)),
         "vectors.json must list {GAP_CONFIGURE_RUN}"
     );
 }
@@ -175,8 +176,18 @@ fn assert_commands(case: &VectorCase) {
         let name = string_field(obj, "name").expect("name");
         let aliases = string_list_field(obj, "aliases").expect("aliases");
         let command = &COMMANDS[index];
-        assert_eq!(command.name, name.as_str(), "name row {index} for {}", case.id);
-        assert_eq!(command.aliases.len(), aliases.len(), "alias len {index} for {}", case.id);
+        assert_eq!(
+            command.name,
+            name.as_str(),
+            "name row {index} for {}",
+            case.id
+        );
+        assert_eq!(
+            command.aliases.len(),
+            aliases.len(),
+            "alias len {index} for {}",
+            case.id
+        );
         for (alias_index, alias) in command.aliases.iter().enumerate() {
             assert_eq!(
                 *alias,
@@ -208,7 +219,12 @@ fn assert_removed_commands(case: &VectorCase) {
 
 fn assert_removed_flags(case: &VectorCase) {
     let rows = array_field(&case.expected, "entries").expect("entries");
-    assert_eq!(rows.len(), REMOVED_FLAGS.len(), "entries len for {}", case.id);
+    assert_eq!(
+        rows.len(),
+        REMOVED_FLAGS.len(),
+        "entries len for {}",
+        case.id
+    );
     for (index, row) in rows.iter().enumerate() {
         let obj = as_object(row, "entry").expect("entry");
         let key = string_field(obj, "key").expect("key");
@@ -418,7 +434,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
         .filter(|(k, _)| *k != "vectors")
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 

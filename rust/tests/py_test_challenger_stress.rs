@@ -245,7 +245,10 @@ const EXECUTOR_VECTORS: &[(&str, &str)] = &[
     ),
     ("execute_cap_257", "execute_cap"),
     ("execute_fingerprint_import_seam", "execute_fingerprint_gap"),
-    ("source_positions_duplicate_origin", "source_positions_duplicate"),
+    (
+        "source_positions_duplicate_origin",
+        "source_positions_duplicate",
+    ),
     ("relocate_step_removed_target", "relocate_step_removed"),
     (
         "load_plan_salvage_under_conservative",
@@ -324,10 +327,7 @@ const VETTING_VECTORS: &[(&str, &str)] = &[
         "vet_plan",
     ),
     ("vet_plan_source_hash_mismatch_abc_vs_ab", "vet_plan"),
-    (
-        "vet_plan_source_hash_mismatch_abc_vs_zzabczz",
-        "vet_plan",
-    ),
+    ("vet_plan_source_hash_mismatch_abc_vs_zzabczz", "vet_plan"),
     ("vet_plan_source_hash_mismatch_empty_vs_caller", "vet_plan"),
     ("vet_plan_matching_caller_hash", "vet_plan"),
     ("vet_plan_matching_caller_empty_hash", "vet_plan"),
@@ -761,7 +761,9 @@ fn cited_challenger_stress_vectors_are_present() {
     assert!(small.contains("\"type\": \"compute_plan_fingerprint\""));
     assert!(small.contains("\"id\": \"s1\""));
     assert!(small.contains("\"policy\": \"conservative\""));
-    assert!(vector_slice(&fingerprint, "module_all_export_order").contains("compute_plan_fingerprint"));
+    assert!(
+        vector_slice(&fingerprint, "module_all_export_order").contains("compute_plan_fingerprint")
+    );
     assert_absent(
         &fingerprint,
         "fingerprint",

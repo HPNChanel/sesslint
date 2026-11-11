@@ -146,8 +146,8 @@ fn assert_configure_case(case: &VectorCase) {
     let expected_shell_help = string_field(&case.expected, "shell_help").expect("shell_help");
     let expected_shell_positional =
         bool_field(&case.expected, "shell_positional").expect("shell_positional");
-    let expected_choices = string_array_field(&case.expected, "shell_choices")
-        .expect("shell_choices");
+    let expected_choices =
+        string_array_field(&case.expected, "shell_choices").expect("shell_choices");
 
     assert_eq!(NAME, expected_name, "NAME mismatch for {}", case.id);
 
@@ -250,11 +250,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 

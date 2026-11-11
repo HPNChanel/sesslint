@@ -1,0 +1,68 @@
+{
+  "schema": "sesslint.parity-module-vectors/v1",
+  "module": "sesslint.preview.v1",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
+  "known_parity_gaps": [
+    "GAP-preview-emitter: CLI preview JSON and the repair preview sweep are not this validator. One synthetic document is not that sweep."
+  ],
+  "vectors": [
+    {
+      "id": "minimal_ok",
+      "document": "{\"blocked\":[],\"counts\":{\"drop\":1},\"plan_fingerprint\":\"synthetic\",\"policy\":\"conservative\",\"schema\":\"sesslint.preview/v1\",\"source\":\"synthetic\",\"steps\":[{\"action\":\"drop\",\"event_id\":\"e1\",\"kind\":\"note\",\"reason_code\":\"SL001\",\"recipe\":\"drop\",\"source_line\":1}]}",
+      "expected": {
+        "result": "ok"
+      },
+      "rust": {
+        "result": "ok"
+      }
+    },
+    {
+      "id": "bad_schema",
+      "document": "{\"blocked\":[],\"counts\":{\"drop\":1},\"plan_fingerprint\":\"synthetic\",\"policy\":\"conservative\",\"schema\":\"sesslint.preview/v0\",\"source\":\"synthetic\",\"steps\":[{\"action\":\"drop\",\"event_id\":\"e1\",\"kind\":\"note\",\"reason_code\":\"SL001\",\"recipe\":\"drop\",\"source_line\":1}]}",
+      "expected": {
+        "result": "reject",
+        "keyword": "const"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "const"
+      }
+    },
+    {
+      "id": "bad_action",
+      "document": "{\"blocked\":[],\"counts\":{\"drop\":1},\"plan_fingerprint\":\"synthetic\",\"policy\":\"conservative\",\"schema\":\"sesslint.preview/v1\",\"source\":\"synthetic\",\"steps\":[{\"action\":\"invent\",\"event_id\":\"e1\",\"kind\":\"note\",\"reason_code\":\"SL001\",\"recipe\":\"drop\",\"source_line\":1}]}",
+      "expected": {
+        "result": "reject",
+        "keyword": "enum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "enum"
+      }
+    },
+    {
+      "id": "extra_step",
+      "document": "{\"blocked\":[],\"counts\":{\"drop\":1},\"plan_fingerprint\":\"synthetic\",\"policy\":\"conservative\",\"schema\":\"sesslint.preview/v1\",\"source\":\"synthetic\",\"steps\":[{\"action\":\"drop\",\"event_id\":\"e1\",\"kind\":\"note\",\"reason_code\":\"SL001\",\"recipe\":\"drop\",\"source_line\":1,\"payload\":\"no\"}]}",
+      "expected": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "additionalProperties"
+      }
+    },
+    {
+      "id": "low_line",
+      "document": "{\"blocked\":[],\"counts\":{\"drop\":1},\"plan_fingerprint\":\"synthetic\",\"policy\":\"conservative\",\"schema\":\"sesslint.preview/v1\",\"source\":\"synthetic\",\"steps\":[{\"action\":\"drop\",\"event_id\":\"e1\",\"kind\":\"note\",\"reason_code\":\"SL001\",\"recipe\":\"drop\",\"source_line\":0}]}",
+      "expected": {
+        "result": "reject",
+        "keyword": "minimum"
+      },
+      "rust": {
+        "result": "reject",
+        "keyword": "minimum"
+      }
+    }
+  ]
+}

@@ -66,7 +66,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[test]
 fn assessment_module_parity_vectors() {
     let path = vectors_path();
-    let raw = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let raw =
+        fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
     assert_eq!(
         sha256_hex(normalized.as_bytes()),
@@ -106,8 +107,14 @@ struct ParsedDocument {
 }
 
 fn assert_root_meta(meta: &[(String, JsonValue)]) {
-    assert_eq!(string_field(meta, "schema").expect("schema"), EXPECTED_SCHEMA);
-    assert_eq!(string_field(meta, "module").expect("module"), EXPECTED_MODULE);
+    assert_eq!(
+        string_field(meta, "schema").expect("schema"),
+        EXPECTED_SCHEMA
+    );
+    assert_eq!(
+        string_field(meta, "module").expect("module"),
+        EXPECTED_MODULE
+    );
     assert_eq!(
         string_field(meta, "python_commit").expect("python_commit"),
         EXPECTED_PYTHON_COMMIT
@@ -122,7 +129,9 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("gaps");
     assert!(
-        gaps.iter().any(|item| matches!(item, JsonValue::Str(s) if s.contains("GAP-assessment-check-impl"))),
+        gaps.iter().any(
+            |item| matches!(item, JsonValue::Str(s) if s.contains("GAP-assessment-check-impl"))
+        ),
         "missing check_impl gap"
     );
 }
@@ -149,9 +158,8 @@ fn assert_assess_raises(case: &VectorCase) {
         assert_eq!(mode, "io_error", "{}", case.id);
         let want_kind = string_field(assertion, "kind").expect("kind");
         let path = resolve_raises_path(case);
-        let cap = max_bytes_from_construct(&case.construct).unwrap_or(MaxFileBytes::Int(
-            DEFAULT_MAX_FILE_BYTES,
-        ));
+        let cap = max_bytes_from_construct(&case.construct)
+            .unwrap_or(MaxFileBytes::Int(DEFAULT_MAX_FILE_BYTES));
         let err = stop(&path, None, cap);
         match &err {
             AssessmentError::Io(source) => {
@@ -166,9 +174,8 @@ fn assert_assess_raises(case: &VectorCase) {
     let want_raises = string_field(&case.expected, "raises").expect("raises");
     let want_msg = string_field(&case.expected, "message").expect("message");
     let path = resolve_raises_path(case);
-    let cap = max_bytes_from_construct(&case.construct).unwrap_or(MaxFileBytes::Int(
-        DEFAULT_MAX_FILE_BYTES,
-    ));
+    let cap = max_bytes_from_construct(&case.construct)
+        .unwrap_or(MaxFileBytes::Int(DEFAULT_MAX_FILE_BYTES));
     let err = stop(&path, None, cap);
     match want_raises.as_str() {
         "ValueError" => {
@@ -410,9 +417,12 @@ fn object_field<'a>(
     obj: &'a [(String, JsonValue)],
     key: &str,
 ) -> Result<&'a [(String, JsonValue)], ParseError> {
-    let value = obj.iter().find(|(k, _)| k == key).ok_or_else(|| ParseError {
-        message: format!("missing key {key}"),
-    })?;
+    let value = obj
+        .iter()
+        .find(|(k, _)| k == key)
+        .ok_or_else(|| ParseError {
+            message: format!("missing key {key}"),
+        })?;
     as_object(&value.1, key)
 }
 

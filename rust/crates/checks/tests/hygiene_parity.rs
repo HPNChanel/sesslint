@@ -359,8 +359,16 @@ fn assert_evidence_rows(case_id: &str, got: &[SecretEvidenceRow], exp: &[JsonVal
             i64_field(exp_obj, "occurrence_count").expect("occurrence_count"),
             "{case_id}"
         );
-        assert_eq!(row.match_len, i64_field(exp_obj, "match_len").expect("match_len"), "{case_id}");
-        assert_eq!(row.truncated, bool_field(exp_obj, "truncated").expect("truncated"), "{case_id}");
+        assert_eq!(
+            row.match_len,
+            i64_field(exp_obj, "match_len").expect("match_len"),
+            "{case_id}"
+        );
+        assert_eq!(
+            row.truncated,
+            bool_field(exp_obj, "truncated").expect("truncated"),
+            "{case_id}"
+        );
         assert_eq!(
             row.line_number,
             optional_i64_field(exp_obj, "line").expect("line"),

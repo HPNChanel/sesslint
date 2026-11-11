@@ -1,9 +1,10 @@
 //! Byte-exact parity for `sesslint.api` against pinned Python vectors.
 
 use cli::api::{
-    build_internal_error_envelope, check, check_bytes, check_dir, check_file, discover_session_roots,
-    plan, repair, validate_session, ApiError, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILE_BYTES,
-    DEFAULT_MAX_FILES, DEFAULT_PROFILE, InMemoryPlan, ValidateSessionError,
+    build_internal_error_envelope, check, check_bytes, check_dir, check_file,
+    discover_session_roots, plan, repair, validate_session, ApiError, InMemoryPlan,
+    ValidateSessionError, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_FILE_BYTES,
+    DEFAULT_PROFILE,
 };
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -249,7 +250,12 @@ fn assert_module_all_case(case: &VectorCase) {
     let exports = string_list_field(&case.expected, "exports").expect("exports");
     assert_eq!(exports.len(), EXPECTED_EXPORTS.len(), "{}", case.id);
     for (index, name) in exports.iter().enumerate() {
-        assert_eq!(name.as_str(), EXPECTED_EXPORTS[index], "export[{index}] {}", case.id);
+        assert_eq!(
+            name.as_str(),
+            EXPECTED_EXPORTS[index],
+            "export[{index}] {}",
+            case.id
+        );
     }
 }
 
@@ -490,9 +496,9 @@ fn exec_discover_session_roots(case: &VectorCase, args: &[(String, JsonValue)]) 
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     let agents_owned = parse_agents(args);
-    let agents_refs: Option<Vec<&str>> = agents_owned.as_ref().map(|items| {
-        items.iter().map(String::as_str).collect::<Vec<_>>()
-    });
+    let agents_refs: Option<Vec<&str>> = agents_owned
+        .as_ref()
+        .map(|items| items.iter().map(String::as_str).collect::<Vec<_>>());
     let agents = agents_refs.as_deref();
     let result = discover_session_roots(
         agents,
@@ -507,7 +513,9 @@ fn assert_expected<E: fmt::Display>(case: &VectorCase, result: Result<(), E>) {
     let kind = string_field(&case.expected, "kind").expect("kind");
     match kind.as_str() {
         "raises" => {
-            let message = result.expect_err(&format!("{} expected error", case.id)).to_string();
+            let message = result
+                .expect_err(&format!("{} expected error", case.id))
+                .to_string();
             let exc_type = string_field(&case.expected, "exc_type").expect("exc_type");
             assert_raises_payload(case, &message, &exc_type);
         }
@@ -586,9 +594,9 @@ fn assert_discover_roots(case: &VectorCase, want_items: &[JsonValue]) {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     let agents_owned = parse_agents(args);
-    let agents_refs: Option<Vec<&str>> = agents_owned.as_ref().map(|items| {
-        items.iter().map(String::as_str).collect::<Vec<_>>()
-    });
+    let agents_refs: Option<Vec<&str>> = agents_owned
+        .as_ref()
+        .map(|items| items.iter().map(String::as_str).collect::<Vec<_>>());
     let roots = discover_session_roots(
         agents_refs.as_deref(),
         &env_refs,
@@ -599,7 +607,12 @@ fn assert_discover_roots(case: &VectorCase, want_items: &[JsonValue]) {
     assert_eq!(roots.len(), want_items.len(), "root count {}", case.id);
     for (index, (root, want)) in roots.iter().zip(want_items.iter()).enumerate() {
         let obj = as_object(want, "root").expect("root object");
-        assert_eq!(root.agent(), string_field(obj, "agent").expect("agent"), "{index} agent {}", case.id);
+        assert_eq!(
+            root.agent(),
+            string_field(obj, "agent").expect("agent"),
+            "{index} agent {}",
+            case.id
+        );
         assert_eq!(
             relative_fixture_path(root.path()),
             string_field(obj, "path").expect("path"),
@@ -681,8 +694,7 @@ fn resolve_path(rel: &str) -> PathBuf {
 }
 
 fn optional_resolved_path(args: &[(String, JsonValue)], key: &str) -> Option<PathBuf> {
-    arg_optional_str(args, key)
-        .map(|text| resolve_path(&text))
+    arg_optional_str(args, key).map(|text| resolve_path(&text))
 }
 
 fn relative_fixture_path(path: &Path) -> String {
@@ -827,9 +839,9 @@ fn arg_optional_f64(args: &[(String, JsonValue)], key: &str) -> Option<f64> {
     match args.iter().find(|(k, _)| k == key) {
         None => None,
         Some((_, JsonValue::Null)) => None,
-        Some((_, JsonValue::Number(text))) => Some(number_to_f64(text).unwrap_or_else(|_| {
-            panic!("{key} must be f64")
-        })),
+        Some((_, JsonValue::Number(text))) => {
+            Some(number_to_f64(text).unwrap_or_else(|_| panic!("{key} must be f64")))
+        }
         _ => panic!("{key} must be number or null"),
     }
 }
@@ -847,10 +859,10 @@ fn base64_decode(input: &str) -> Vec<u8> {
     const DECODE: [i8; 128] = [
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1,
-        -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4, 5,
-        6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1,
-        -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
-        47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
+        -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4,
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1,
+        -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
     ];
     let mut out = Vec::with_capacity(input.len() * 3 / 4);
     let mut buf = 0u32;
@@ -949,11 +961,11 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases: Vec<VectorCase> = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
-    let meta: Vec<(String, JsonValue)> = root
-        .into_iter()
-        .filter(|(k, _)| k != "vectors")
-        .collect();
+    let cases: Vec<VectorCase> = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
+    let meta: Vec<(String, JsonValue)> = root.into_iter().filter(|(k, _)| k != "vectors").collect();
     Ok(ParsedDocument { meta, cases })
 }
 

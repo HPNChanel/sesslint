@@ -3,9 +3,9 @@
   "module": "sesslint.repair.recipes_conservative",
   "recipe": "seq-renumber",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
-  "recipes_conservative_rs_sha256": "694cf75d86b333083898f4cf3a12c92d65b6e1bc63c1d2b0aeed7745214632d8",
+  "recipes_conservative_rs_sha256": "69981810065940902863ee14dce7816d78db56886c822ca515d24e73897e9ef8",
   "vector_count": 3,
-  "vectors_sha256": "b60a764ad25f9ee837771d13c7cb1f2b2746cbab2d6b69cf1617dacaf66eef99",
+  "vectors_sha256": "cc4e22da044acd758ec4ddccc29909518d00ff798c02d255259783f0db6b1556",
   "generator": "rust/parity/recipes/seq-renumber/generate",
   "known_parity_gaps": [
     "GAP-seq-renumber-affected-region: Python affected_region_seq_renumber returns an empty sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",

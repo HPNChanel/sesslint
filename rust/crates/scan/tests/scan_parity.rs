@@ -3,8 +3,8 @@
 use model::codes::{Repairability, Severity};
 use model::finding::{DictValue, Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION};
 use scan::scan::{
-    aggregate_scan, looks_pathy, rollout_uuid, FileResult, ScanSummary,
-    SessionLink, Verdict, DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, SCAN_SCHEMA_VERSION,
+    aggregate_scan, looks_pathy, rollout_uuid, FileResult, ScanSummary, SessionLink, Verdict,
+    DEFAULT_MAX_BYTES, DEFAULT_MAX_FILES, SCAN_SCHEMA_VERSION,
 };
 use sha2::Digest;
 use std::fmt;
@@ -368,7 +368,10 @@ fn scan_module_parity_vectors() {
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let normalized = raw.replace("\r\n", "\n");
-    assert!(!normalized.contains('\r'), "vectors.json must not contain CR");
+    assert!(
+        !normalized.contains('\r'),
+        "vectors.json must not contain CR"
+    );
     assert!(
         !normalized.contains(BANNED_CHECKOUT_MARK),
         "vectors.json must not name checkout paths"
@@ -512,7 +515,10 @@ fn as_object<'a>(value: &'a JsonValue, ctx: &str) -> Result<&'a [(String, JsonVa
     }
 }
 
-fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(String, JsonValue)], ParseError> {
+fn object_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [(String, JsonValue)], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Object(items))) => Ok(items),
         Some((_, JsonValue::Null)) => Err(ParseError {
@@ -524,7 +530,10 @@ fn object_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [(S
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         Some((_, JsonValue::Array(items))) => Ok(items),
         _ => Err(ParseError {

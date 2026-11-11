@@ -100,7 +100,8 @@ fn assert_emit_parametrize(case: &VectorCase) {
 
 fn assert_emit_vendor_bytes(case: &VectorCase) {
     let source = decode_b64(&string_field(&case.construct, "source_b64").expect("source_b64"));
-    let source_events = events_from_json(array_field(&case.construct, "source_events").expect("source_events"));
+    let source_events =
+        events_from_json(array_field(&case.construct, "source_events").expect("source_events"));
     let output_events =
         events_from_json(array_field(&case.construct, "output_events").expect("output_events"));
     let format = string_field(&case.construct, "emit_format").expect("emit_format");
@@ -125,7 +126,9 @@ fn assert_emit_vendor_bytes(case: &VectorCase) {
 fn assert_comparable_refusal(case: &VectorCase, err: &WritebackError) {
     let want_msg = string_field(&case.expected, "message").expect("message");
     let want_reason = string_field(&case.expected, "reason").expect("reason");
-    let refused = err.refusal().unwrap_or_else(|| panic!("{} expected refusal", case.id));
+    let refused = err
+        .refusal()
+        .unwrap_or_else(|| panic!("{} expected refusal", case.id));
     assert_eq!(refused.message(), want_msg, "{}", case.id);
     assert_eq!(refused.reason(), want_reason, "{}", case.id);
     assert_eq!(err.to_string(), want_msg, "{}", case.id);
@@ -143,7 +146,11 @@ fn assert_comparable_refusal(case: &VectorCase, err: &WritebackError) {
 fn assert_rust_seam(case: &VectorCase, err: &WritebackError) {
     let seam = string_field(&case.expected, "seam").expect("seam");
     assert_eq!(err.to_string(), seam, "{}", case.id);
-    assert!(err.refusal().is_none(), "{} refusal must be absent", case.id);
+    assert!(
+        err.refusal().is_none(),
+        "{} refusal must be absent",
+        case.id
+    );
     match seam.as_str() {
         HASHLIB_SHA256_UNAVAILABLE => {
             assert!(
@@ -202,12 +209,7 @@ fn events_from_json(items: &[JsonValue]) -> Vec<WritebackEvent> {
         let id = optional_string_field(spec, "id").unwrap_or_default();
         let identity = optional_string_field(spec, "identity").unwrap_or_default();
         let record_hash = record_hash_from_json(lookup(spec, "source_record_hash"));
-        out.push(WritebackEvent::new(
-            source_line,
-            id,
-            identity,
-            record_hash,
-        ));
+        out.push(WritebackEvent::new(source_line, id, identity, record_hash));
     }
     out
 }
@@ -243,10 +245,10 @@ fn decode_b64(text: &str) -> Vec<u8> {
     const TABLE: [i8; 128] = [
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1,
-        -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4, 5,
-        6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1,
-        -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
-        47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
+        -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4,
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1,
+        -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
     ];
     let mut out = Vec::new();
     let mut buffer = 0_u32;
@@ -306,7 +308,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
         0xc67178f2,
     ];
     let mut h = [
-        0x6a09e667_u32, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
         0x5be0cd19,
     ];
     let bit_len = (data.len() as u64) * 8;
@@ -322,7 +330,8 @@ fn sha256(data: &[u8]) -> [u8; 32] {
             w[idx] = u32::from_be_bytes(word.try_into().unwrap());
         }
         for idx in 16..64 {
-            let s0 = w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
+            let s0 =
+                w[idx - 15].rotate_right(7) ^ w[idx - 15].rotate_right(18) ^ (w[idx - 15] >> 3);
             let s1 = w[idx - 2].rotate_right(17) ^ w[idx - 2].rotate_right(19) ^ (w[idx - 2] >> 10);
             w[idx] = w[idx - 16]
                 .wrapping_add(s0)
@@ -447,7 +456,10 @@ fn object_field<'a>(
     }
 }
 
-fn array_field<'a>(obj: &'a [(String, JsonValue)], key: &str) -> Result<&'a [JsonValue], ParseError> {
+fn array_field<'a>(
+    obj: &'a [(String, JsonValue)],
+    key: &str,
+) -> Result<&'a [JsonValue], ParseError> {
     match lookup(obj, key) {
         Some(JsonValue::Array(items)) => Ok(items),
         _ => Err(ParseError {

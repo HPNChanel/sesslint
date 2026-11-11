@@ -125,8 +125,7 @@ fn assert_case(case: &VectorCase) {
     let kind = string_field(&case.construct, "type").expect("construct type");
     match kind.as_str() {
         "ordering_events" => {
-            let events =
-                decode_event_value_list(&case.construct, "events").expect("events");
+            let events = decode_event_value_list(&case.construct, "events").expect("events");
             let skew = optional_i64_field(&case.construct, "timestamp_skew_ms")
                 .expect("timestamp_skew_ms field");
 
@@ -140,9 +139,7 @@ fn assert_case(case: &VectorCase) {
 
             let record = ordering_record(&events, None, skew)
                 .unwrap_or_else(|err| panic!("{}: ordering_record: {err}", case.id));
-            if bool_field(&case.expected, "ordering_record_none")
-                .expect("ordering_record_none")
-            {
+            if bool_field(&case.expected, "ordering_record_none").expect("ordering_record_none") {
                 assert!(record.is_none(), "{}", case.id);
             }
 
@@ -156,10 +153,7 @@ fn assert_case(case: &VectorCase) {
     }
 }
 
-fn optional_i64_field(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<Option<i64>, ParseError> {
+fn optional_i64_field(obj: &[(String, JsonValue)], key: &str) -> Result<Option<i64>, ParseError> {
     match obj.iter().find(|(k, _)| k == key) {
         None => Ok(None),
         Some((_, JsonValue::Number(n))) => Ok(Some(*n)),

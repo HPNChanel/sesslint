@@ -17,7 +17,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.canonical/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 44;
 const EXPECTED_VECTORS_SHA256: &str =
-    "d28643fa5aa980b057e492cdae61d762bd4d200cddd87056ac89d4fb8000a6f1";
+    "11adcffedc5f779096d92b4db17aa315a2daef6a3a0d1884f3bab4f00d96742d";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.canonical";
@@ -25,7 +25,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_CANONICAL_PY_SHA256: &str =
     "1b47487f9b63697087937c009c2222dccb9a9e3131f4e807733b30bac0bbe28e";
 const EXPECTED_CANONICAL_RS_SHA256: &str =
-    "5fdccf9ac434b2f5447573a858545f0bf97fa03a492fea5766b84932cdb06be5";
+    "b013a5e5bc88bb863f4443e21c67caab28e70d099f9fb4f97a794576574704cb";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -46,7 +46,12 @@ fn assert_case(case: &VectorCase) {
         "normalize_version" => {
             let text = string_field(&case.construct, "text").expect("text");
             let want = string_field(&case.expected, "text").expect("expected text");
-            assert_eq!(normalize_version(&text), want, "normalize_version {}", case.id);
+            assert_eq!(
+                normalize_version(&text),
+                want,
+                "normalize_version {}",
+                case.id
+            );
         }
         "detect_canonical" => {
             let bytes = bytes_from_hex_field(&case.construct, "bytes_hex").expect("bytes");
@@ -102,14 +107,21 @@ fn assert_module_constants(case: &VectorCase) {
     assert_string_array_exact(
         case,
         "required_event_keys",
-        &REQUIRED_EVENT_KEYS.iter().map(|s| (*s).to_string()).collect::<Vec<_>>(),
+        &REQUIRED_EVENT_KEYS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>(),
     );
     assert_sorted_string_array(case, "known_top_keys", sorted_const(&KNOWN_TOP_KEYS));
     assert_sorted_string_array(case, "known_event_keys", sorted_const(&KNOWN_EVENT_KEYS));
     assert_sorted_string_array(case, "critical_keys", sorted_const(&CRITICAL_KEYS));
     assert_sorted_string_array(case, "critical_top_keys", sorted_const(&CRITICAL_TOP_KEYS));
     let max = i64_field(&case.expected, "default_max_file_bytes").expect("max");
-    assert_eq!(max, DEFAULT_MAX_FILE_BYTES, "default_max_file_bytes {}", case.id);
+    assert_eq!(
+        max, DEFAULT_MAX_FILE_BYTES,
+        "default_max_file_bytes {}",
+        case.id
+    );
 }
 
 fn sorted_const<const N: usize>(items: &[&str; N]) -> Vec<String> {
@@ -236,10 +248,7 @@ impl SourceOwned {
     }
 }
 
-fn decode_source_owned(
-    obj: &[(String, JsonValue)],
-    key: &str,
-) -> Result<SourceOwned, ParseError> {
+fn decode_source_owned(obj: &[(String, JsonValue)], key: &str) -> Result<SourceOwned, ParseError> {
     let spec = object_field(obj, key)?;
     let kind = string_field(spec, "kind")?;
     match kind.as_str() {
@@ -309,9 +318,8 @@ fn decode_payload_from_spec(spec: &[(String, JsonValue)]) -> Result<Payload, Par
         "bool" => Ok(Payload::bool_value(bool_field(spec, "value")?)),
         "int" => Ok(Payload::int(i64_field(spec, "value")?)),
         "float" => {
-            let raw = string_field(spec, "value").or_else(|_| {
-                f64_field(spec, "value").map(|value| value.to_string())
-            })?;
+            let raw = string_field(spec, "value")
+                .or_else(|_| f64_field(spec, "value").map(|value| value.to_string()))?;
             let value: f64 = raw.parse().map_err(|_| ParseError {
                 message: "bad float".into(),
             })?;
@@ -498,7 +506,10 @@ fn parse_document_with_meta(input: &str) -> Result<ParsedDocument, ParseError> {
             message: "vectors must be array".into(),
         });
     };
-    let cases = items.iter().map(parse_vector_case).collect::<Result<_, _>>()?;
+    let cases = items
+        .iter()
+        .map(parse_vector_case)
+        .collect::<Result<_, _>>()?;
     Ok(ParsedDocument { meta, cases })
 }
 
