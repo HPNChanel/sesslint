@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.graph",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_graph_rs_sha256": "3bdd9fa51178eb7bc7ce232cdaa01ce3b3fff5a43b7face1458e03bf1210f382",
+  "checks_graph_rs_sha256": "276ea283a055caa34aa96de8c408c3bb58d9a43c933c915d19844f5800fb340e",
   "known_parity_gaps": [
     "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python str(float), str(list), and str(mapping) for event fields; Rust returns typed errors and does not invent Python repr strings.",

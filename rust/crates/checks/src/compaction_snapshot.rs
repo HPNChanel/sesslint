@@ -587,12 +587,11 @@ pub const ALL: [&str; 1] = ["check_compaction_snapshot"];
 #[cfg(test)]
 mod tests {
     use super::{
-        check_compaction_snapshot, compaction_snapshot_divergences, CompactionSnapshotError, ALL,
-        MSG_CORR, MSG_FUTURE, MSG_TYPE,
+        check_compaction_snapshot, compaction_snapshot_divergences, ALL, MSG_CORR, MSG_FUTURE,
+        MSG_TYPE,
     };
     use model::canonical::{Payload, SessionEvent};
     use model::events::{EventField, EventMapping, EventValue};
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     fn session_event(id: &str, seq: i64, kind: &str, extra: Payload) -> EventValue {
         let mut event = SessionEvent::new(id, None, seq, "2024-02-29T00:00:00Z", "assistant", kind);
@@ -638,12 +637,6 @@ mod tests {
 
     fn is_lower_hex16(text: &str) -> bool {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
-    }
-
-    fn assert_codec_unavailable(err: CompactionSnapshotError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     #[test]
@@ -753,8 +746,12 @@ mod tests {
         assert_eq!(records[0].occurrences, 1);
         assert_eq!(records[0].snapshot_item_type.as_deref(), Some("reasoning"));
         assert_eq!(records[0].stream_item_type.as_deref(), Some("message"));
-        let err = check_compaction_snapshot(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_compaction_snapshot(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL208");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -777,8 +774,12 @@ mod tests {
         assert_eq!(records[0].item_id, "evt-a-synthetic");
         assert_eq!(records[0].snapshot_correlator.as_deref(), Some("corr-only"));
         assert_eq!(records[0].stream_correlator, None);
-        let err = check_compaction_snapshot(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_compaction_snapshot(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL208");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -797,8 +798,12 @@ mod tests {
         assert_eq!(records[0].item_id, "evt-late-synthetic");
         assert_eq!(records[0].boundary_index, 0);
         assert_eq!(records[0].item_index, 1);
-        let err = check_compaction_snapshot(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_compaction_snapshot(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL208");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -820,8 +825,12 @@ mod tests {
         assert_eq!(records[0].divergence, "type-mismatch");
         assert_eq!(records[0].item_id, "evt-a-synthetic");
         assert_eq!(records[0].occurrences, 2);
-        let err = check_compaction_snapshot(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_compaction_snapshot(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL208");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]

@@ -389,8 +389,6 @@ mod tests {
     };
     use model::canonical::{Payload, SessionEvent};
     use model::events::{EventField, EventMapping, EventValue};
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
-
     fn session(id: &str, line: Option<i64>, extra: Payload) -> EventValue {
         let mut event = SessionEvent::new(id, None, 0, "", "user", "user_message");
         event.source_line = line;
@@ -433,10 +431,12 @@ mod tests {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
     }
 
-    fn assert_codec_unavailable(err: super::WritersError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+    fn assert_emitted(findings: &[model::finding::Finding]) {
+        assert!(!findings.is_empty());
+        for finding in findings {
+            assert_eq!(finding.code(), "SL010");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     fn assert_silent(events: &[EventValue]) {
@@ -506,8 +506,8 @@ mod tests {
             record.writer_hashes,
             vec!["c6aff657".to_owned(), "de823d83".to_owned()]
         );
-        let err = check_writers(&events, Some("synth.jsonl"), None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_writers(&events, Some("synth.jsonl"), None).unwrap();
+        assert_emitted(&findings);
         assert_eq!(
             MSG_SL010,
             "Interleaved writer markers in session file for record {record_id}"
@@ -528,8 +528,8 @@ mod tests {
         assert_eq!(record.event_index, 2);
         assert_eq!(record.distinct_writer_count, 3);
         assert_eq!(record.transition_count, 3);
-        let err = check_writers(&events, Some("synth.jsonl"), None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_writers(&events, Some("synth.jsonl"), None).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]

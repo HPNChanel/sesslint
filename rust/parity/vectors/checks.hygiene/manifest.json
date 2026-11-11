@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.hygiene",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_hygiene_rs_sha256": "e353fd94ef34279648afa57ba9b699a74d47053b9d699064528ee58a6257387c",
+  "checks_hygiene_rs_sha256": "14b3b269d71269a2121956db14716e5f0b53e827599a811c92acac81a3df407f",
   "vector_count": 95,
-  "vectors_sha256": "0fb94c77ee6210f3b3a399212074caa5e70d5b99fb45d9937a4cf09b6b2bfda7",
+  "vectors_sha256": "2f3187e06b3ad42a25ed34cd7fe1dc5a5f15ba31728ed8e029e53eb16bb9358e",
   "generator": "rust/parity/vectors/checks.hygiene/generate",
   "known_parity_gaps": [
     "When SecretScanTracker has hits, into_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Vectors compare evidence_rows (or empty into_findings) only \u2014 not Python Finding objects.",

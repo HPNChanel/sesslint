@@ -1628,8 +1628,9 @@ mod tests {
         ambiguous_head_ids, cap_graph_findings, check_components, check_cycles, check_graph,
         check_heads, check_missing_parent, compute_graph_fingerprint, cycle_paths, event_seq_safe,
         extra_components, find_qualifying_parent_candidates, is_qualifying_parent_candidate,
-        safe_id, same_compaction_segment, Confinement, GraphEndpoint, GraphError, GraphScalar,
-        OccurrenceGraph, ALL, CONF_SEG_KEY, MSG_SL004, PYTHON_EVENT_INDEX_UNREPRESENTABLE,
+        safe_id, same_compaction_segment, Confinement, GraphEndpoint, GraphScalar,
+        OccurrenceGraph, ALL, CONF_SEG_KEY, MSG_OVERFLOW, MSG_SL004,
+        PYTHON_EVENT_INDEX_UNREPRESENTABLE,
     };
     use crate::context::CheckContext;
     use model::canonical::SessionEvent;
@@ -1639,7 +1640,7 @@ mod tests {
         PYTHON_STR_UNREPRESENTABLE,
     };
     use model::finding::{
-        make_finding, MakeFindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+        make_finding, MakeFindingInput, PyValue, SourceRef,
     };
 
     fn mapping(entries: &[(&str, EventField)]) -> EventValue {
@@ -2007,11 +2008,12 @@ mod tests {
             Some("main"),
             "message",
         )];
-        let err = check_missing_parent(&events, None, None, None, None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
-        assert!(!matches!(err, GraphError::BorrowedLookup));
+        let findings = check_missing_parent(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL004");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2087,10 +2089,13 @@ mod tests {
     fn cap_over_the_limit_returns_the_codec_error() {
         let first = finding_with_id("evt-b-synthetic", "bbbbbbbbbbbbbbbb");
         let second = finding_with_id("evt-a-synthetic", "aaaaaaaaaaaaaaaa");
-        let err = cap_graph_findings(vec![first, second], SL004, Some(1), None, None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+        let findings = cap_graph_findings(vec![first, second], SL004, Some(1), None, None).unwrap();
+        assert_eq!(findings.len(), 2);
+        assert!(findings.iter().any(|finding| finding.message() == MSG_OVERFLOW));
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL004");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2114,12 +2119,6 @@ mod tests {
         ])];
         let container_err = OccurrenceGraph::new(&container_parent, "<canonical>").unwrap_err();
         assert_eq!(container_err.to_string(), PYTHON_STR_UNREPRESENTABLE);
-    }
-
-    fn assert_codec_unavailable(err: GraphError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     #[test]
@@ -2157,8 +2156,12 @@ mod tests {
                 "loop-synthetic".to_owned()
             ]]
         );
-        let err = check_cycles(&events, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_cycles(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL005");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2189,8 +2192,12 @@ mod tests {
                 "evt-a-synthetic".to_owned(),
             ]]
         );
-        let err = check_cycles(&events, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_cycles(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL005");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2267,8 +2274,12 @@ mod tests {
         assert_eq!(extras.len(), 1);
         assert_eq!(extras[0].root_id, "root-c-synthetic");
         assert_eq!(extras[0].size, 1);
-        let err = check_components(&unequal, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_components(&unequal, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL006");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
 
         let equal = vec![
             event("root-a-synthetic", None, 0, None, "message"),
@@ -2279,8 +2290,12 @@ mod tests {
         assert_eq!(extras.len(), 1);
         assert_eq!(extras[0].root_id, "root-c-synthetic");
         assert_eq!(extras[0].size, 1);
-        let err = check_components(&equal, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let equal_findings = check_components(&equal, None, None, None, None).unwrap();
+        assert!(!equal_findings.is_empty());
+        for finding in &equal_findings {
+            assert_eq!(finding.code(), "SL006");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2359,8 +2374,12 @@ mod tests {
             ]]
         );
         assert!(extra_components(&graph, events.len()).is_empty());
-        let err = check_cycles(&events, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_cycles(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL005");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
         let findings = check_components(&events, None, None, None, None).unwrap();
         assert!(findings.is_empty());
     }
@@ -2401,8 +2420,12 @@ mod tests {
             ambiguous_head_ids(&graph),
             vec!["evt-a-synthetic".to_owned(), "evt-b-synthetic".to_owned()]
         );
-        let err = check_heads(&events, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_heads(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL007");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2428,8 +2451,12 @@ mod tests {
             ambiguous_head_ids(&graph),
             vec!["evt-a-synthetic".to_owned(), "evt-b-synthetic".to_owned()]
         );
-        let err = check_heads(&events, None, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_heads(&events, None, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL007");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2487,8 +2514,15 @@ mod tests {
             None,
             "message",
         )];
-        let err = check_graph(&events, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_graph(&events, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert!(matches!(
+                finding.code(),
+                "SL004" | "SL005" | "SL006" | "SL007"
+            ));
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -2516,8 +2550,15 @@ mod tests {
         assert!(cycles.is_empty());
         let components = check_components(&events, None, None, None, None).unwrap();
         assert!(components.is_empty());
-        let err = check_graph(&events, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_graph(&events, None, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert!(matches!(
+                finding.code(),
+                "SL004" | "SL005" | "SL006" | "SL007"
+            ));
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]

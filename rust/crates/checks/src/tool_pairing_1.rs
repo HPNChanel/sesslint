@@ -1569,6 +1569,14 @@ mod tests {
         assert!(matches!(err, ToolPairing1Error::Finding(_)));
     }
 
+    fn assert_emitted(findings: &[model::finding::Finding], code: &str) {
+        assert!(!findings.is_empty());
+        for finding in findings {
+            assert_eq!(finding.code(), code);
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
+    }
+
     #[test]
     fn constants_match_the_pin() {
         assert_eq!(MAX_PAIRING_FINDINGS, 500);
@@ -1935,7 +1943,7 @@ mod tests {
     #[test]
     fn result_without_a_call_is_an_orphan() {
         let events = [session(KIND_TOOL_RESULT, Some("corr-synth"))];
-        assert_codec_unavailable(check_orphans(&events, None, None, None).unwrap_err());
+        assert_emitted(&check_orphans(&events, None, None, None).unwrap(), "SL101");
         assert!(check_dangling(&events, None, None, None)
             .unwrap()
             .is_empty());
@@ -1946,14 +1954,17 @@ mod tests {
     fn call_without_a_result_is_dangling() {
         let events = [session(KIND_TOOL_CALL, Some("corr-synth"))];
         assert!(check_orphans(&events, None, None, None).unwrap().is_empty());
-        assert_codec_unavailable(check_dangling(&events, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_dangling(&events, None, None, None).unwrap(),
+            "SL102",
+        );
         assert!(check_reused(&events, None, None, None).unwrap().is_empty());
     }
 
     #[test]
     fn null_result_on_the_default_adapter_is_an_orphan() {
         let events = [session(KIND_TOOL_RESULT, None)];
-        assert_codec_unavailable(check_orphans(&events, None, None, None).unwrap_err());
+        assert_emitted(&check_orphans(&events, None, None, None).unwrap(), "SL101");
         let indexer = ToolPairingIndexer::new(&events, None).unwrap();
         let records = record_orphans(&indexer, "<canonical>", "unknown").unwrap();
         assert_eq!(records.len(), 1);
@@ -1979,7 +1990,10 @@ mod tests {
     fn declared_orphan_still_flags_on_codex_rollout() {
         let events = [session(KIND_TOOL_RESULT, Some("corr-synth"))];
         let ctx = adapter_ctx("codex-rollout");
-        assert_codec_unavailable(check_orphans(&events, None, None, Some(&ctx)).unwrap_err());
+        assert_emitted(
+            &check_orphans(&events, None, None, Some(&ctx)).unwrap(),
+            "SL101",
+        );
     }
 
     #[test]
@@ -1989,7 +2003,10 @@ mod tests {
         assert!(check_orphans(&events, None, None, Some(&ctx))
             .unwrap()
             .is_empty());
-        assert_codec_unavailable(check_dangling(&events, None, None, Some(&ctx)).unwrap_err());
+        assert_emitted(
+            &check_dangling(&events, None, None, Some(&ctx)).unwrap(),
+            "SL102",
+        );
         assert!(check_reused(&events, None, None, Some(&ctx))
             .unwrap()
             .is_empty());
@@ -2011,7 +2028,7 @@ mod tests {
         assert!(check_dangling(&events, None, None, None)
             .unwrap()
             .is_empty());
-        assert_codec_unavailable(check_reused(&events, None, None, None).unwrap_err());
+        assert_emitted(&check_reused(&events, None, None, None).unwrap(), "SL103");
         let indexer = ToolPairingIndexer::new(&events, None).unwrap();
         let records = record_reused(&indexer, "<canonical>").unwrap();
         assert_eq!(records.len(), 1);
@@ -2053,7 +2070,7 @@ mod tests {
         assert_eq!(records[0].related_ids, vec!["a-corr-synth".to_owned()]);
         assert_eq!(records[1].correlation_id.as_deref(), Some("z-corr-synth"));
         assert_eq!(records[1].index, 0);
-        assert_codec_unavailable(check_orphans(&events, None, None, None).unwrap_err());
+        assert_emitted(&check_orphans(&events, None, None, None).unwrap(), "SL101");
     }
 
     #[test]
@@ -2253,7 +2270,10 @@ mod tests {
         assert_eq!(records[0].related_ids, records[0].result_ids);
         assert_eq!(records[0].record_id.as_deref(), Some("res-a-synth"));
         assert_eq!(records[0].correlation_id, "corr-synth");
-        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_multi_results(&events, None, None, None).unwrap(),
+            "SL104",
+        );
     }
 
     #[test]
@@ -2268,8 +2288,12 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].repairability, Repairability::Deterministic);
         assert_eq!(records[0].count, 2);
-        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
-        assert_codec_unavailable(check_tool_pairing_1(&events, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_multi_results(&events, None, None, None).unwrap(),
+            "SL104",
+        );
+        let findings = check_tool_pairing_1(&events, None, None, None).unwrap();
+        assert_emitted(&findings, "SL104");
     }
 
     #[test]
@@ -2297,14 +2321,17 @@ mod tests {
     #[test]
     fn a_result_with_no_call_returns_the_orphan_codec_error_not_the_hash_error() {
         let one = [session(KIND_TOOL_RESULT, Some("corr-synth"))];
-        assert_codec_unavailable(check_tool_pairing_1(&one, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_tool_pairing_1(&one, None, None, None).unwrap(),
+            "SL101",
+        );
 
         let two = [
             session_named("res-a-synth", KIND_TOOL_RESULT, Some("corr-synth")),
             session_named("res-b-synth", KIND_TOOL_RESULT, Some("corr-synth")),
         ];
         assert_hash_unavailable(check_multi_results(&two, None, None, None).unwrap_err());
-        assert_codec_unavailable(check_tool_pairing_1(&two, None, None, None).unwrap_err());
+        assert_hash_unavailable(check_tool_pairing_1(&two, None, None, None).unwrap_err());
     }
 
     #[test]
@@ -2425,7 +2452,10 @@ mod tests {
         assert_eq!(records[0].result_indexes, vec![2, 3]);
         assert_eq!(records[1].correlation_id, "z-corr-synth");
         assert_eq!(records[1].result_indexes, vec![0, 1]);
-        assert_codec_unavailable(check_multi_results(&events, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_multi_results(&events, None, None, None).unwrap(),
+            "SL104",
+        );
     }
 
     #[test]

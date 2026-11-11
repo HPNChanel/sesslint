@@ -620,12 +620,10 @@ pub const ALL: [&str; 1] = ["check_ordering"];
 #[cfg(test)]
 mod tests {
     use super::{
-        check_ordering, ordering_record, OrderingError, ALL, MSG_SL008,
-        TIMESTAMP_SKEW_MS_MUST_BE_NONNEGATIVE,
+        check_ordering, ordering_record, ALL, MSG_SL008, TIMESTAMP_SKEW_MS_MUST_BE_NONNEGATIVE,
     };
     use model::canonical::SessionEvent;
     use model::events::EventValue;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     fn session_event(id: &str, parent_id: Option<&str>, ts: &str) -> EventValue {
         EventValue::from_session(SessionEvent::new(
@@ -640,12 +638,6 @@ mod tests {
 
     fn is_lower_hex16(text: &str) -> bool {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
-    }
-
-    fn assert_codec_unavailable(err: OrderingError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     fn parent_child(child_ts: &str, parent_ts: &str) -> Vec<EventValue> {
@@ -758,8 +750,10 @@ mod tests {
         assert_eq!(record.parent_index, 0);
         assert_eq!(record.record_ordinal, 1);
         assert_eq!(record.timestamp_skew_ms, 0);
-        let err = check_ordering(&events, None, None, None, Some(0)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_ordering(&events, None, None, None, Some(0)).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL008");
+        assert!(is_lower_hex16(findings[0].fingerprint()));
     }
 
     #[test]
@@ -787,8 +781,10 @@ mod tests {
         assert_eq!(record.child_index, 1);
         assert_eq!(record.record_ordinal, 1);
         assert_eq!(record.parent_id, "evt-parent-synthetic");
-        let err = check_ordering(&events, None, None, None, Some(0)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_ordering(&events, None, None, None, Some(0)).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL008");
+        assert!(is_lower_hex16(findings[0].fingerprint()));
     }
 
     #[test]

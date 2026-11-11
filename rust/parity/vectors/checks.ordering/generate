@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ORDERING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ORDERING_RS_SHA256 = (
-    "6e6a911807df01701dc7ccadbbb177016c997cb106594f7b9f475fa04297e446"
+    "2a44d443a10f0aa06359959131665391dd504a8d46873f7f56d5deeb8d769a43"
 )
 MODULE = "sesslint.checks.ordering"
 NEGATIVE_SKEW_MSG = "timestamp_skew_ms must be a nonnegative integer"

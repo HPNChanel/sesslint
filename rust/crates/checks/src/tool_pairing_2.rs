@@ -1882,6 +1882,14 @@ mod tests {
         EventField::Str(value.to_owned())
     }
 
+    fn assert_emitted(findings: &[model::finding::Finding], code: &str) {
+        assert!(!findings.is_empty());
+        for finding in findings {
+            assert_eq!(finding.code(), code);
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
+    }
+
     fn assert_codec_unavailable(err: ToolPairing2Error) {
         assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
         assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
@@ -2551,11 +2559,13 @@ mod tests {
         assert_eq!(records[0].correlation_id, "corr-synth");
         assert_eq!(records[0].related_ids, vec!["corr-synth".to_owned()]);
         assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
-        assert_codec_unavailable(
-            check_reversed_order(&events, None, None, None, None).unwrap_err(),
+        assert_emitted(
+            &check_reversed_order(&events, None, None, None, None).unwrap(),
+            "SL105",
         );
-        assert_codec_unavailable(
-            check_reversed_order(&[], None, None, None, Some(&indexer)).unwrap_err(),
+        assert_emitted(
+            &check_reversed_order(&[], None, None, None, Some(&indexer)).unwrap(),
+            "SL105",
         );
     }
 
@@ -2644,7 +2654,10 @@ mod tests {
             records[0].related_ids,
             vec!["evt-result-synthetic".to_owned()]
         );
-        assert_codec_unavailable(check_cross_branch(&events, None, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_cross_branch(&events, None, None, None, None).unwrap(),
+            "SL106",
+        );
     }
 
     #[test]
@@ -2752,7 +2765,10 @@ mod tests {
         );
         assert_eq!(records[0].call_agent_id, None);
         assert_eq!(records[0].result_agent_id, None);
-        assert_codec_unavailable(check_cross_branch(&events, None, None, None, None).unwrap_err());
+        assert_emitted(
+            &check_cross_branch(&events, None, None, None, None).unwrap(),
+            "SL106",
+        );
     }
 
     #[test]
@@ -2796,8 +2812,8 @@ mod tests {
         assert_eq!(records[0].correlation_id, "corr-synth");
         assert_eq!(records[0].related_ids, vec!["corr-synth".to_owned()]);
         assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
-        assert_codec_unavailable(
-            check_adjacency(
+        assert_emitted(
+            &check_adjacency(
                 &events,
                 None,
                 None,
@@ -2806,7 +2822,8 @@ mod tests {
                 None,
                 None,
             )
-            .unwrap_err(),
+            .unwrap(),
+            "SL107",
         );
     }
 
@@ -2985,8 +3002,8 @@ mod tests {
         assert_eq!(records[0].use_index, 0);
         assert_eq!(records[0].result_index, 2);
         assert_eq!(records[0].record_id.as_deref(), Some("evt-call-synthetic"));
-        assert_codec_unavailable(
-            check_compaction_split(
+        assert_emitted(
+            &check_compaction_split(
                 &events,
                 None,
                 None,
@@ -2995,7 +3012,8 @@ mod tests {
                 None,
                 None,
             )
-            .unwrap_err(),
+            .unwrap(),
+            "SL108",
         );
     }
 
@@ -3074,7 +3092,9 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert_codec_unavailable(err);
+        assert_eq!(err.to_string(), PROFILES_UNAVAILABLE);
+        assert_eq!(err.message(), "sesslint.profiles is not available");
+        assert!(matches!(err, ToolPairing2Error::ProfilesUnavailable));
     }
 
     #[test]

@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_1",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_1_rs_sha256": "220c027221d3dcf8a6e932fb536359726e49e0940337651ebc21617950f4c5fe",
+  "checks_tool_pairing_1_rs_sha256": "702adad87171771521c77b5d6df4afb9ac628c6ac70f1a8a7547f4e4f3af15a0",
   "python_all": [
     "CALL_KINDS",
     "MAX_INDEX_SAMPLE_SIZE",

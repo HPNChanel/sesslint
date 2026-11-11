@@ -603,12 +603,10 @@ pub const ALL: [&str; 1] = ["check_durable_prefix"];
 #[cfg(test)]
 mod tests {
     use super::{
-        check_durable_prefix, durable_prefix_records, DurablePrefixError, ALL, MSG_FIELD, MSG_GAP,
-        MSG_TRAILING,
+        check_durable_prefix, durable_prefix_records, ALL, MSG_FIELD, MSG_GAP, MSG_TRAILING,
     };
     use model::canonical::{Payload, SessionEvent};
     use model::events::EventValue;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     fn session_event(id: &str, extra: Payload) -> EventValue {
         let mut event =
@@ -631,12 +629,6 @@ mod tests {
 
     fn is_lower_hex16(text: &str) -> bool {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
-    }
-
-    fn assert_codec_unavailable(err: DurablePrefixError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     #[test]
@@ -719,8 +711,12 @@ mod tests {
         assert_eq!(records[0].expected_durable_ordinal, Some(2));
         assert_eq!(records[0].last_durable_ordinal, Some(0));
         assert_eq!(records[0].inherited_prefix_ordinal, Some(2));
-        let err = check_durable_prefix(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_durable_prefix(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL206");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -747,8 +743,12 @@ mod tests {
         assert_eq!(records[0].missing_ordinal, Some(1));
         assert_eq!(records[0].expected_durable_ordinal, Some(1));
         assert_eq!(records[0].last_durable_ordinal, Some(2));
-        let err = check_durable_prefix(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_durable_prefix(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL206");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -834,8 +834,12 @@ mod tests {
         assert_eq!(records[0].missing_count, Some(1));
         assert_eq!(records[0].present_count, Some(1));
         assert_eq!(records[0].first_missing_ordinal, Some(2));
-        let err = check_durable_prefix(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_durable_prefix(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL206");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]

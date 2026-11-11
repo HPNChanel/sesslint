@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.foreign_shape",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_foreign_shape_rs_sha256": "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb",
+  "checks_foreign_shape_rs_sha256": "936d45d5a77a496d44765e2b432972f7a89d9477c776ccc690dc33a70f9c5e31",
   "vector_count": 5,
-  "vectors_sha256": "afd259148d735ae5273c6e1664637cf6b4bbc205f88adb08f33474217a4a9e6d",
+  "vectors_sha256": "64a37d53f27ba6cc2246f3887ab453f90cd870727ce19ae07995c0804f034078",
   "generator": "rust/parity/vectors/checks.foreign_shape/generate",
   "known_parity_gaps": [
     "shape array or other calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",

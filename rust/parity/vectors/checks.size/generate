@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 SIZE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 SIZE_RS_SHA256 = (
-    "a20813bedab53701d557a78e88e6786a7300e02f63aac3c7fb61cd1b217b08fb"
+    "3941c9cd2d3dc8f3d62bce9b442c2a14e9ac98f51dc69b50035263900020d84c"
 )
 MODULE = "sesslint.checks.size"
 

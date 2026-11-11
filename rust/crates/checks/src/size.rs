@@ -315,11 +315,10 @@ pub const ALL: [&str; 5] = [
 #[cfg(test)]
 mod tests {
     use super::{
-        check_size_anomaly, check_sl011, size_anomaly_record, SizeError, ALL, PYTHON_INT_UNBOUNDED,
+        check_size_anomaly, check_sl011, size_anomaly_record, ALL, PYTHON_INT_UNBOUNDED,
         SIZE_FLOOR_BYTES, SIZE_MIN_RECORDS, SIZE_RATIO_K,
     };
     use crate::context::CheckContext;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
     use serde_json::Value;
     use std::collections::BTreeMap;
 
@@ -357,10 +356,12 @@ mod tests {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
     }
 
-    fn assert_codec_unavailable(err: SizeError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+    fn assert_emitted(findings: &[model::finding::Finding]) {
+        assert!(!findings.is_empty());
+        for finding in findings {
+            assert_eq!(finding.code(), "SL011");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     fn assert_ratio_bits(got: Option<f64>, expected: Option<f64>) {
@@ -417,8 +418,8 @@ mod tests {
         assert_eq!(record.record_index, 7);
         assert_eq!(record.file_median_bytes, 1);
         assert_ratio_bits(record.ratio, Some(262145.0));
-        let err = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]
@@ -429,8 +430,8 @@ mod tests {
         assert_eq!(record.record_bytes, 262145);
         assert_eq!(record.record_index, 0);
         assert_eq!(record.file_median_bytes, 1);
-        let err = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]
@@ -459,8 +460,8 @@ mod tests {
         assert_eq!(record.file_median_bytes, 0);
         assert_eq!(record.record_bytes, 262145);
         assert_ratio_bits(record.ratio, None);
-        let err = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_size_anomaly(&[], "synth.jsonl", Some(&ctx)).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]
@@ -487,8 +488,8 @@ mod tests {
         let mut values = vec![1_i64; 7];
         values.push(262145);
         let ctx = context_with(Some(array_ints(&values)));
-        let err = check_sl011(&[], "synth.jsonl", Some(&ctx)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_sl011(&[], "synth.jsonl", Some(&ctx)).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]

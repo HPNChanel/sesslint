@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 FOREIGN_SHAPE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 FOREIGN_SHAPE_RS_SHA256 = (
-    "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb"
+    "936d45d5a77a496d44765e2b432972f7a89d9477c776ccc690dc33a70f9c5e31"
 )
 MODULE = "sesslint.checks.foreign_shape"
 

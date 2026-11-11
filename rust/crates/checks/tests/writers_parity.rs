@@ -17,9 +17,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.writers";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_WRITERS_RS_SHA256: &str =
-    "b5250a9a6fc864986ddb43bc57a3ee2f7d304041cb8e7d9989c3bd2c1c4eecf5";
+    "2391907cbb69723d5a8de43f536191f85527224581cd599450a0f9d8e2ede3c5";
 const EXPECTED_VECTORS_SHA256: &str =
-    "e9233efd305a2d700965b795f1f705bb5aad9dd24a867c0822553abc1f3c0ec3";
+    "6a602d046cab03ab3e8dcb4175b8fc66cec4f1ff04c018a87775329cf8863865";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

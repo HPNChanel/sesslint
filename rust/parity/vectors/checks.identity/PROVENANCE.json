@@ -7,7 +7,7 @@
   "known_parity_gaps": [
     "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
     "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. Do not build the provenance dict and do not hash.",
-    "Overflow cap_findings calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python appends an overflow finding.",
+    "Overflow cap_findings keeps the Python prefix and appends an SL003 finding. This card does not pin that fingerprint because cap, total_duplicate_ids, and truncated_count are outside the evidence allowlist.",
     "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. Python returns field names. Do not invent names.",
     "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
     "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",

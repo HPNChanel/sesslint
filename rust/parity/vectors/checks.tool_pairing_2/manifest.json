@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_2",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_2_rs_sha256": "3cf94a430e3810d77f0633e513aed1428a43c79d1c37ddea8101849e622e271f",
+  "checks_tool_pairing_2_rs_sha256": "f50cc61cfde6a2f1ffc0a3bad288cae94f873b7cb661c1b39f5cf4dd060b4557",
   "vector_count": 9,
-  "vectors_sha256": "ccdec29cdd0156784407a02d8571f4ac615e4f76aaaf66f1be1df8f4d1ee459e",
+  "vectors_sha256": "a4a855c5598c8caf29a6728e5cce3908aeed251e42fc2d78bd21e31fa7cc38ef",
   "generator": "rust/parity/vectors/checks.tool_pairing_2/generate",
   "known_parity_gaps": [
     "Offender path calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or SL108.",

@@ -394,12 +394,11 @@ pub fn check_foreign_shape(
 #[cfg(test)]
 mod tests {
     use super::{
-        check_foreign_shape, foreign_shape_record, ForeignShapeError, MSG_FOREIGN, SHAPE_VIOLATION,
+        check_foreign_shape, foreign_shape_record, MSG_FOREIGN, SHAPE_VIOLATION,
     };
     use crate::context::CheckContext;
     use model::canonical::{Payload, SessionEvent};
     use model::events::EventValue;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
     use std::collections::BTreeMap;
 
     fn session_event(id: &str, extra: Payload) -> EventValue {
@@ -436,12 +435,6 @@ mod tests {
 
     fn is_lower_hex16(text: &str) -> bool {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
-    }
-
-    fn assert_codec_unavailable(err: ForeignShapeError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     #[test]
@@ -487,8 +480,12 @@ mod tests {
         assert_eq!(record.item_count, 1);
         assert_eq!(record.shape_violation, SHAPE_VIOLATION);
         assert_eq!(record.event_index, 0);
-        let err = check_foreign_shape(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_foreign_shape(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL305");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
         assert_eq!(
             MSG_FOREIGN,
             "Record shape outside the replay vocabulary on line {line} for record {record_id}"
@@ -506,8 +503,12 @@ mod tests {
         assert_eq!(record.event_index, 0);
         assert_eq!(record.item_count, 2);
         assert_eq!(record.first_ordinal, Some(2));
-        let err = check_foreign_shape(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_foreign_shape(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL305");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -519,8 +520,12 @@ mod tests {
         )];
         let record = foreign_shape_record(&events, None).unwrap().expect("fires");
         assert_eq!(record.first_ordinal, None);
-        let err = check_foreign_shape(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_foreign_shape(&events, None, None).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL305");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -540,7 +545,11 @@ mod tests {
             .expect("fires");
         assert_eq!(record.declared_provider_hash.as_deref(), Some("7d3194f7"));
         assert!(record.declared_originator_present);
-        let err = check_foreign_shape(&events, None, Some(&ctx)).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_foreign_shape(&events, None, Some(&ctx)).unwrap();
+        assert!(!findings.is_empty());
+        for finding in &findings {
+            assert_eq!(finding.code(), "SL305");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 }

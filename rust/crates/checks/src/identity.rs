@@ -19,10 +19,8 @@
 //! overflow flag; this one does not.
 //!
 //! Under the cap, [`cap_findings`] returns the sorted list and does not
-//! call [`make_finding`]. Over the cap, [`make_finding`] is called with the
-//! fingerprint omitted and returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. That
-//! error is propagated. This module does not append a synthetic overflow
-//! finding and does not return the kept prefix as if that finding existed.
+//! call [`make_finding`]. Over the cap it keeps the Python prefix and
+//! appends the SL003 overflow finding from [`make_finding`].
 //!
 //! [`identity_overflow`] describes overflow evidence without hashing.
 //!
@@ -53,8 +51,9 @@
 //! * [`to_canonical_dict`] does not build a dict
 //!   ([`model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE`]). Differing
 //!   field names are not invented.
-//! * Overflow [`make_finding`] does not produce a digest
-//!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//! * Overflow [`make_finding`] appends an SL003 finding. `cap`,
+//!   `total_duplicate_ids`, and `truncated_count` are outside the
+//!   fingerprint evidence allowlist.
 //! * A float id is [`model::events::PYTHON_FLOAT_STR_UNREPRESENTABLE`].
 //!   Rust `Display` is not used.
 //! * A list or mapping id is [`model::events::PYTHON_STR_UNREPRESENTABLE`].
@@ -81,7 +80,6 @@ use model::events::{
 };
 use model::finding::{
     make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue, SourceRef,
-    FINGERPRINT_CODEC_UNAVAILABLE,
 };
 use sha2::{Digest, Sha256};
 
@@ -305,6 +303,10 @@ pub fn cap_findings(
         return Ok(sorted);
     }
 
+    let keep = kept_prefix_len(sorted.len(), max_findings)?;
+    let mut kept = sorted;
+    kept.truncate(keep);
+
     let overflow = identity_overflow(max_findings, total_count, source_path, context)?;
     let source = SourceRef::try_new(&overflow.source_path, None, overflow.record_id.as_deref())?;
     match make_finding(&MakeFindingInput {
@@ -343,10 +345,24 @@ pub fn cap_findings(
         context: None,
     }) {
         Err(error) => Err(error.into()),
-        Ok(_finding) => Err(IdentityError::Finding(FindingError::new(
-            FINGERPRINT_CODEC_UNAVAILABLE,
-        ))),
+        Ok(finding) => {
+            kept.push(finding);
+            Ok(kept)
+        }
     }
+}
+
+/// Python `sorted_findings[:max_findings]`. A negative cap drops from the end.
+fn kept_prefix_len(len: usize, max_findings: i64) -> Result<usize, IdentityError> {
+    if max_findings >= 0 {
+        let max = usize::try_from(max_findings).map_err(|_| IdentityError::PythonIntUnbounded)?;
+        return Ok(max.min(len));
+    }
+    let drop = max_findings
+        .checked_neg()
+        .ok_or(IdentityError::PythonIntUnbounded)?;
+    let drop = usize::try_from(drop).map_err(|_| IdentityError::PythonIntUnbounded)?;
+    Ok(len.saturating_sub(drop))
 }
 
 /// Duplicate-id group without hashing. No payload content.
@@ -562,7 +578,7 @@ mod tests {
         PYTHON_STR_UNREPRESENTABLE,
     };
     use model::finding::{
-        Finding, FindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
+        Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION,
     };
 
     fn is_lower_hex16(text: &str) -> bool {
@@ -695,13 +711,15 @@ mod tests {
     }
 
     #[test]
-    fn one_finding_over_a_max_of_zero_returns_the_codec_error() {
+    fn one_finding_over_a_max_of_zero_appends_the_overflow_finding() {
         let item = finding(SL003, Some("evt-a-synthetic"), "aaaaaaaaaaaaaaaa", None);
-        let err = cap_findings(vec![item], Some(0), None, None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
-        assert!(matches!(err, IdentityError::Finding(_)));
+        let out = cap_findings(vec![item], Some(0), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), SL003);
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert_eq!(out[0].source().path(), "<canonical>");
+        assert_eq!(out[0].source().record_id(), None);
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]
@@ -745,9 +763,11 @@ mod tests {
         assert_eq!(overflow.source_path, "a/b");
         assert_eq!(overflow.line, None);
         assert_eq!(overflow.record_id, None);
-        let err = cap_findings(Vec::new(), Some(-1), None, None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+        let out = cap_findings(Vec::new(), Some(-1), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), SL003);
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]

@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.context_pressure",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_context_pressure_rs_sha256": "ebbbb259b2b972e4266d5817e19560e9b5f46f5800cd99f80884c52df53df507",
+  "checks_context_pressure_rs_sha256": "9e58f3a25a07fb1656340c44dc2aef9a502d88b66155a92c07d0b70c9b6be860",
   "vector_count": 5,
-  "vectors_sha256": "88e29ade173ae254c148e2f3b0aadcf7771e5c9cdebb8d55c3d498157224474c",
+  "vectors_sha256": "11c7acb67506ef1c63d789be7c4abbfaa1a567af56940cc294e7094e5d610a51",
   "generator": "rust/parity/vectors/checks.context_pressure/generate",
   "known_parity_gaps": [
     "A real under-15% marker calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (known gap).",

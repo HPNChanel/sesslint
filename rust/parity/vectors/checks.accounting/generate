@@ -16,7 +16,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ACCOUNTING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ACCOUNTING_RS_SHA256 = (
-    "f5fefc1989cb29e65f9f1059c7c0f9cdfff5c58b4656f180b1bdabb35371e4de"
+    "69c5665c6b3cb427dafc7100ec3230d0008c8ccb6b3fae86b253507586f75b49"
 )
 MODULE = "sesslint.checks.accounting"
 

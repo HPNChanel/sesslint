@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CONTEXT_PRESSURE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CONTEXT_PRESSURE_RS_SHA256 = (
-    "ebbbb259b2b972e4266d5817e19560e9b5f46f5800cd99f80884c52df53df507"
+    "9e58f3a25a07fb1656340c44dc2aef9a502d88b66155a92c07d0b70c9b6be860"
 )
 MODULE = "sesslint.checks.context_pressure"
 

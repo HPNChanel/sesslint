@@ -380,12 +380,10 @@ pub const ALL: [&str; 1] = ["check_accounting"];
 #[cfg(test)]
 mod tests {
     use super::{
-        accounting_mismatches, check_accounting, AccountingError, ALL, MSG_SL204,
-        PYTHON_INT_UNBOUNDED,
+        accounting_mismatches, check_accounting, ALL, MSG_SL204, PYTHON_INT_UNBOUNDED,
     };
     use model::canonical::{Payload, SessionEvent};
     use model::events::{EventField, EventMapping, EventValue};
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     fn session_event(id: &str, seq: i64, kind: &str, extra: Payload) -> EventValue {
         let mut event = SessionEvent::new(id, None, seq, "2024-02-29T00:00:00Z", "system", kind);
@@ -432,10 +430,12 @@ mod tests {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
     }
 
-    fn assert_codec_unavailable(err: AccountingError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+    fn assert_emitted(findings: &[model::finding::Finding]) {
+        assert!(!findings.is_empty());
+        for finding in findings {
+            assert_eq!(finding.code(), "SL204");
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
@@ -489,8 +489,8 @@ mod tests {
         assert_eq!(mismatches[0].window_start_index, 0);
         assert_eq!(mismatches[0].window_end_index, 1);
         assert_eq!(mismatches[0].record_ordinal, 1);
-        let err = check_accounting(&events, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_accounting(&events, None, None, None).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]
@@ -547,8 +547,8 @@ mod tests {
         assert_eq!(mismatches[0].expected_total, 100);
         assert_eq!(mismatches[0].observed_total, 50);
         assert_eq!(mismatches[0].record_ordinal, 2);
-        let err = check_accounting(&events, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_accounting(&events, None, None, None).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]
@@ -563,8 +563,8 @@ mod tests {
         assert_eq!(mismatches[0].observed_total, 3);
         assert_eq!(mismatches[1].expected_total, 4);
         assert_eq!(mismatches[1].observed_total, 9);
-        let err = check_accounting(&events, None, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_accounting(&events, None, None, None).unwrap();
+        assert_emitted(&findings);
     }
 
     #[test]

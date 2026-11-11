@@ -16,7 +16,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 GRAPH_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 GRAPH_RS_SHA256 = (
-    "3bdd9fa51178eb7bc7ce232cdaa01ce3b3fff5a43b7face1458e03bf1210f382"
+    "276ea283a055caa34aa96de8c408c3bb58d9a43c933c915d19844f5800fb340e"
 )
 MODULE = "sesslint.checks.graph"
 

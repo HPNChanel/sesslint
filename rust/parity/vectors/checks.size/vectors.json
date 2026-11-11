@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.size",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_size_rs_sha256": "a20813bedab53701d557a78e88e6786a7300e02f63aac3c7fb61cd1b217b08fb",
+  "checks_size_rs_sha256": "3941c9cd2d3dc8f3d62bce9b442c2a14e9ac98f51dc69b50035263900020d84c",
   "python_all": [
     "SIZE_FLOOR_BYTES",
     "SIZE_MIN_RECORDS",

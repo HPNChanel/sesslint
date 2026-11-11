@@ -316,12 +316,11 @@ pub fn check_context_pressure(
 #[cfg(test)]
 mod tests {
     use super::{
-        check_context_pressure, last_pressure_marker, ContextPressureError, HEADROOM_DEN,
-        HEADROOM_NUM, MSG_PRESSURE, THRESHOLD_SOURCE,
+        check_context_pressure, last_pressure_marker, HEADROOM_DEN, HEADROOM_NUM, MSG_PRESSURE,
+        THRESHOLD_SOURCE,
     };
     use model::canonical::{Payload, SessionEvent};
     use model::events::EventValue;
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     fn session_event(id: &str, extra: Payload) -> EventValue {
         let mut event =
@@ -352,12 +351,6 @@ mod tests {
 
     fn is_lower_hex16(text: &str) -> bool {
         text.len() == 16 && text.chars().all(|ch| matches!(ch, '0'..='9' | 'a'..='f'))
-    }
-
-    fn assert_codec_unavailable(err: ContextPressureError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
     }
 
     #[test]
@@ -400,8 +393,10 @@ mod tests {
         assert_eq!(marker.window, 10000);
         assert_eq!(marker.headroom, 1499);
         assert_eq!(marker.event_index, 0);
-        let err = check_context_pressure(&events, None, None).unwrap_err();
-        assert_codec_unavailable(err);
+        let findings = check_context_pressure(&events, None, None).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL207");
+        assert!(is_lower_hex16(findings[0].fingerprint()));
     }
 
     #[test]

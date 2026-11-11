@@ -923,8 +923,8 @@ mod tests {
     use super::{
         gate_maybe_contains_secret, json_escape_boundary_shadow, kw_assignment_present,
         line_gate_maybe_contains_secret, looks_like_placeholder, match_sha256_hex,
-        secret_evidence_rows, short_prefix_present, HitAgg, HitKey, HygieneError,
-        SecretScanTracker, CASEFOLDED_FAMILY_LITERALS, CASEFOLDED_GATE_LITERALS, GATE_KEYWORDS,
+        secret_evidence_rows, short_prefix_present, HitAgg, HitKey, SecretScanTracker,
+        CASEFOLDED_FAMILY_LITERALS, CASEFOLDED_GATE_LITERALS, GATE_KEYWORDS,
         GATE_KW_MID, GATE_KW_SEP, GATE_LITERALS, GATE_SHORT_PREFIXES, GATE_WINDOW_BYTES,
         MAX_DIGESTS_PER_FINDING, MAX_SECRET_FINDINGS_PER_FILE, PLACEHOLDER_VALUES,
         SECRET_FAMILY_IDS, SECRET_FAMILY_SET_VERSION, TOKEN_BYTES,
@@ -1445,14 +1445,6 @@ mod tests {
         raw
     }
 
-    fn assert_codec(err: &HygieneError) {
-        assert_eq!(
-            err.to_string(),
-            model::finding::FINGERPRINT_CODEC_UNAVAILABLE
-        );
-        assert_eq!(err.message(), model::finding::FINGERPRINT_CODEC_UNAVAILABLE);
-    }
-
     fn evidence_keys(row: &super::SecretEvidenceRow) -> Vec<String> {
         let model::finding::PyValue::Map(entries) = row.evidence() else {
             return Vec::new();
@@ -1803,8 +1795,10 @@ mod tests {
         assert!(!evidence_keys(&rows[0])
             .iter()
             .any(|key| key == "record_ordinal"));
-        let err = tracker.into_findings("synth.jsonl").unwrap_err();
-        assert_codec(&err);
+        let findings = tracker.into_findings("synth.jsonl").unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL009");
+        assert_eq!(findings[0].fingerprint().len(), 16);
         assert_eq!(tracker.evidence_rows().len(), 1);
     }
 
@@ -1824,10 +1818,12 @@ mod tests {
         let token = openai(b'd', 20);
         let mut tracker = SecretScanTracker::new();
         tracker.feed(&token, Some(3), Some(0), Some(8), Some(1));
-        let err = tracker.into_findings("synth.jsonl").unwrap_err();
-        assert_codec(&err);
+        let findings = tracker.into_findings("synth.jsonl").unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL009");
         let secret = String::from_utf8_lossy(&token);
-        assert!(!err.to_string().contains(secret.as_ref()));
+        assert!(!findings[0].message().contains(secret.as_ref()));
+        assert!(!findings[0].fingerprint().contains(secret.as_ref()));
         let mut again = SecretScanTracker::new();
         again.feed(&token, Some(3), None, None, None);
         let source_err = again.into_findings("  ").unwrap_err();
@@ -1838,7 +1834,10 @@ mod tests {
         assert!(!source_err.to_string().contains(secret.as_ref()));
         let mut missing_line = SecretScanTracker::new();
         missing_line.feed(&token, None, None, None, None);
-        assert_codec(&missing_line.into_findings("synth.jsonl").unwrap_err());
+        let missing = missing_line.into_findings("synth.jsonl").unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].code(), "SL009");
+        assert!(!missing[0].message().contains(secret.as_ref()));
     }
 
     #[test]

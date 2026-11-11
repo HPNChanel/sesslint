@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 DURABLE_PREFIX_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 DURABLE_PREFIX_RS_SHA256 = (
-    "d8f230ca9534583298dacdf6cac1a866e0f8280083180b5ee55cf1da4e9584bd"
+    "9ad7a5963b9eee06bf3e020818b38ec013828faa4bf7e0b8a68e868ac6c609e5"
 )
 MODULE = "sesslint.checks.durable_prefix"
 

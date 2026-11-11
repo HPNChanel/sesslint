@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_RS_SHA256 = (
-    "3cf94a430e3810d77f0633e513aed1428a43c79d1c37ddea8101849e622e271f"
+    "f50cc61cfde6a2f1ffc0a3bad288cae94f873b7cb661c1b39f5cf4dd060b4557"
 )
 MODULE = "sesslint.checks.tool_pairing_2"
 

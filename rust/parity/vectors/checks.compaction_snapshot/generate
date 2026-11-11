@@ -17,7 +17,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 COMPACTION_SNAPSHOT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 COMPACTION_SNAPSHOT_RS_SHA256 = (
-    "ae86c60f5a595e8f955a4f109f2d7e4438a85b9603dd6cb54c1baacb6ba3db88"
+    "3dbe2d2ac077cb9032fa8d126133412f8c1e3de660358cb4f24554e2d82d9176"
 )
 MODULE = "sesslint.checks.compaction_snapshot"
 
