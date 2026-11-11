@@ -784,6 +784,18 @@ impl Payload {
         ListWalk::Done
     }
 
+    /// Visit tuple items in stored order. A list is [`ListWalk::NotAList`].
+    /// A tuple is not behind `RefCell`, so this walk cannot report [`ListWalk::Borrowed`].
+    pub fn walk_tuple_items(&self, mut visit: impl FnMut(usize, &Payload)) -> ListWalk {
+        let PayloadKind::Tuple(items) = &*self.kind else {
+            return ListWalk::NotAList;
+        };
+        for (index, item) in items.iter().enumerate() {
+            visit(index, item);
+        }
+        ListWalk::Done
+    }
+
     fn is_container(&self) -> bool {
         matches!(
             &*self.kind,

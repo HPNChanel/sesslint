@@ -8,12 +8,12 @@
 //! head that is already matched is skipped. Pass 2 pairs the indexes still
 //! unmatched by `(kind, parent_id or "", content hash)`.
 //!
-//! [`codec::canonical_codec::content_identity_hash`] is called while building
-//! each unmatched B fallback key, then each unmatched A fallback key, then
-//! during the content comparison of every pair after the kind and parent
-//! checks. The first error is returned immediately. Deltas already built are
-//! discarded, and removed rows, added rows, and the final sort do not run.
-//! Empty sequences do not call it.
+//! [`DiffEvent`] has `id`, `kind`, and `parent_id` only. It returns
+//! `sesslint.canonical.SessionEvent is not available` from the fallback key
+//! and from the content comparison, because those calls need `seq`, `ts`,
+//! `actor`, and `payload`. The first error is returned immediately. Deltas
+//! already built are discarded, and removed rows, added rows, and the final
+//! sort do not run. Empty sequences do not hash.
 //!
 //! [`SessionDiff::to_dict`] and [`SessionDiff::render_human`] stop on
 //! `sesslint.report.minimize_path` before a dictionary or text exists.
@@ -161,10 +161,12 @@ pub struct DiffEvent {
 impl DiffEvent {
     /// Python `SessionEvent.content_identity_hash`.
     ///
-    /// Calls [`codec::canonical_codec::content_identity_hash`]. No digest is
-    /// stored on the event, and this does not hash with `sha2`.
+    /// This stand-in has no `seq`, `ts`, `actor`, or `payload`, so it does not
+    /// call the codec hasher and does not invent those fields.
     fn content_identity_hash(&self) -> Result<String, CanonicalError> {
-        codec::canonical_codec::content_identity_hash()
+        Err(CanonicalError::Unsupported(
+            "sesslint.canonical.SessionEvent is not available",
+        ))
     }
 }
 
@@ -769,7 +771,7 @@ mod tests {
     use std::error::Error;
     use std::path::Path;
 
-    use codec::canonical_codec::{content_identity_hash, CanonicalError};
+    use codec::canonical_codec::CanonicalError;
 
     // rustfmt 1.91 panics while ordering this import list.
     #[rustfmt::skip]
@@ -959,7 +961,7 @@ mod tests {
 
     #[test]
     fn any_event_returns_the_content_hash_seam() {
-        let expected = content_identity_hash().unwrap_err();
+        let expected = CanonicalError::Unsupported(HASH_SEAM);
         assert_eq!(expected.to_string(), HASH_SEAM);
         let samples = [
             (vec![event("e0", "span", None)], vec![]),

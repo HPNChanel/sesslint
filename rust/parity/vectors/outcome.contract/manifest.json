@@ -1,5 +1,5 @@
 {
-  "codec_sha256": "459bebc65da604a295226527c2797443fc60eb5aabab5aaf5279b02d2721ea31",
+  "codec_sha256": "96bbaf0fbcd78599199797f4e8df69733242e10c435ea2f28a80c8f9826a2560",
   "generator": "rust/parity/vectors/outcome.contract/generate",
   "module": "sesslint.outcome.contract",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",

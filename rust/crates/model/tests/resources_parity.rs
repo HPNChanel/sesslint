@@ -37,11 +37,7 @@ fn rel_posix(base: &Path, path: &Path) -> String {
 
 fn assert_case(case: &VectorCase) {
     let kind = string_field(&case.construct, "type").expect("construct type");
-    assert_eq!(
-        kind, "schema_path",
-        "unsupported construct in {}",
-        case.id
-    );
+    assert_eq!(kind, "schema_path", "unsupported construct in {}", case.id);
     let name = string_field(&case.construct, "name").expect("name");
     let dev_rel = string_field(&case.construct, "development_path").expect("development_path");
     let root = vectors_root();

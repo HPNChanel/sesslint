@@ -2,7 +2,8 @@
 
 use codec::canonical_codec::{
     canonical_json_bytes, content_identity_bytes, content_identity_hash, payload_content_hash,
-    plan_fingerprint, CanonicalError, ObjectKey, Value, ALL, CODEC_INTERFACE_VERSION,
+    plan_fingerprint, CanonicalError, ObjectKey, Payload, SessionEvent, Value, ALL,
+    CODEC_INTERFACE_VERSION,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -132,13 +133,71 @@ fn assert_schema_message(error: CanonicalError, want: &str, id: &str) {
     }
 }
 
-fn assert_unsupported_message(error: CanonicalError, want: &str, id: &str) {
-    match error {
-        CanonicalError::Unsupported(message) => {
-            assert_eq!(message, want, "Unsupported message for {id}");
+fn payload_from_json(json: &JsonValue) -> Payload {
+    match json {
+        JsonValue::Null => Payload::null(),
+        JsonValue::Bool(value) => Payload::bool_value(*value),
+        JsonValue::Str(value) => Payload::string(value.clone()),
+        JsonValue::Number(raw) => {
+            if raw.contains('.') || raw.contains('e') || raw.contains('E') {
+                Payload::float(
+                    raw.parse::<f64>()
+                        .unwrap_or_else(|_| panic!("bad float in event payload: {raw}")),
+                )
+            } else {
+                Payload::int(
+                    raw.parse::<i64>()
+                        .unwrap_or_else(|_| panic!("bad int in event payload: {raw}")),
+                )
+            }
         }
-        other => panic!("expected Unsupported for {id}, got {other:?}"),
+        JsonValue::Array(items) => Payload::list(items.iter().map(payload_from_json).collect()),
+        JsonValue::Object(entries) => Payload::map(
+            entries
+                .iter()
+                .map(|(name, item)| (Payload::string(name.clone()), payload_from_json(item)))
+                .collect(),
+        ),
     }
+}
+
+fn nullable_string(obj: &[(String, JsonValue)], key: &str) -> Option<String> {
+    match obj.iter().find(|(name, _)| name == key) {
+        None | Some((_, JsonValue::Null)) => None,
+        Some((_, JsonValue::Str(value))) => Some(value.clone()),
+        Some(_) => panic!("{key} must be a string or null"),
+    }
+}
+
+fn optional_i64(obj: &[(String, JsonValue)], key: &str) -> Option<i64> {
+    match obj.iter().find(|(name, _)| name == key) {
+        None | Some((_, JsonValue::Null)) => None,
+        Some((_, JsonValue::Number(raw))) => Some(
+            raw.parse::<i64>()
+                .unwrap_or_else(|_| panic!("{key} must be an i64")),
+        ),
+        Some(_) => panic!("{key} must be a number or null"),
+    }
+}
+
+fn session_event_from_construct(construct: &[(String, JsonValue)]) -> SessionEvent {
+    let mut event = SessionEvent::new(
+        string_field(construct, "id").expect("id"),
+        nullable_string(construct, "parent_id"),
+        optional_i64(construct, "seq").expect("seq"),
+        string_field(construct, "ts").expect("ts"),
+        string_field(construct, "actor").expect("actor"),
+        string_field(construct, "kind").expect("kind"),
+    );
+    let payload = object_field(construct, "payload").expect("payload");
+    event.payload = payload_from_json(&JsonValue::Object(payload.to_vec()));
+    event.content_hash = nullable_string(construct, "content_hash");
+    event.source_line = optional_i64(construct, "source_line");
+    event.source_location = nullable_string(construct, "source_location");
+    event.source_record_hash = nullable_string(construct, "source_record_hash");
+    let extra = object_field(construct, "extra_fields").expect("extra_fields");
+    event.extra_fields = payload_from_json(&JsonValue::Object(extra.to_vec()));
+    event
 }
 
 fn assert_case(case: &VectorCase) {
@@ -178,16 +237,18 @@ fn assert_case(case: &VectorCase) {
             assert_eq!(got, want, "plan_fingerprint for {}", case.id);
         }
         "content_identity_bytes" => {
-            let err =
-                content_identity_bytes().expect_err(&format!("expected error for {}", case.id));
-            let message = string_field(&case.expected, "exact_message").expect("exact_message");
-            assert_unsupported_message(err, &message, &case.id);
+            let event = session_event_from_construct(&case.construct);
+            let got = content_identity_bytes(&event)
+                .unwrap_or_else(|err| panic!("{} content_identity_bytes: {err}", case.id));
+            let want_b64 = string_field(&case.expected, "bytes_b64").expect("bytes_b64");
+            assert_eq!(got, decode_b64(&want_b64), "bytes mismatch for {}", case.id);
         }
         "content_identity_hash" => {
-            let err =
-                content_identity_hash().expect_err(&format!("expected error for {}", case.id));
-            let message = string_field(&case.expected, "exact_message").expect("exact_message");
-            assert_unsupported_message(err, &message, &case.id);
+            let event = session_event_from_construct(&case.construct);
+            let got = content_identity_hash(&event)
+                .unwrap_or_else(|err| panic!("{} content_identity_hash: {err}", case.id));
+            let want = string_field(&case.expected, "digest").expect("digest");
+            assert_eq!(got, want, "content_identity_hash for {}", case.id);
         }
         "module_all" => {
             let names_json = array_field(&case.expected, "names").expect("names");

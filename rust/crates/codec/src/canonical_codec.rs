@@ -9,9 +9,9 @@
 //! `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)`
 //! encoded as UTF-8, plus a trailing `\n` when `newline` is set. This is not RFC 8785 / JCS.
 //!
-//! `sesslint.canonical.SessionEvent` is not ported. Content-identity methods fail closed
-//! instead of hashing a stand-in event. Provenance names are owned by that path and are
-//! not stripped from [`PurePythonCanonicalCodec::canonical_json_bytes`].
+//! Content identity takes [`SessionEvent`] from `model` and strips
+//! `source_line`, `source_location`, and `source_record_hash`. Those names stay
+//! in [`PurePythonCanonicalCodec::canonical_json_bytes`].
 //!
 //! Python binds `_ACTIVE_CODEC` at import. Rust has no import, so the cell is resolved
 //! on the first [`get_active_codec`] and then only [`set_active_codec`] replaces it.
@@ -23,6 +23,8 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use model::canonical::{ListWalk, MapWalk};
+pub use model::canonical::{Payload, SessionEvent};
 use model::errors::SchemaError;
 use sha2::{Digest, Sha256};
 
@@ -38,8 +40,6 @@ pub const PROVENANCE_FIELD_NAMES: [&str; 3] =
 
 /// Python: `_NON_STRING_KEY_ERROR`.
 pub const NON_STRING_KEY_ERROR: &str = "Non-string dictionary key rejected by SessLint codec: ";
-
-const SESSION_EVENT_UNAVAILABLE: &str = "sesslint.canonical.SessionEvent is not available";
 
 const CYCLE_MESSAGE: &str = "Cyclic reference detected during canonical serialization";
 
@@ -334,17 +334,252 @@ pub fn is_provenance_field(name: &str) -> bool {
     PROVENANCE_FIELD_NAMES.contains(&name)
 }
 
+fn push_identity_field(
+    entries: &mut Vec<(ObjectKey, Value)>,
+    names: &mut Vec<String>,
+    name: &str,
+    value: Value,
+) {
+    names.push(name.to_string());
+    entries.push((ObjectKey::string(name), value));
+}
+
+fn push_optional_string(
+    entries: &mut Vec<(ObjectKey, Value)>,
+    names: &mut Vec<String>,
+    name: &str,
+    value: &Option<String>,
+) {
+    if let Some(text) = value {
+        push_identity_field(entries, names, name, Value::string(text.clone()));
+    }
+}
+
+/// Python `PurePythonCanonicalCodec.content_identity_bytes` field selection.
+///
+/// Provenance names are omitted here. `json.dumps(..., sort_keys=True)` is
+/// [`PurePythonCanonicalCodec::canonical_json_bytes`] on the resulting object.
+fn session_event_identity_value(event: &SessionEvent) -> Result<Value, CanonicalError> {
+    let mut entries = Vec::new();
+    let mut names = Vec::new();
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "actor",
+        Value::string(event.actor.clone()),
+    );
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "id",
+        Value::string(event.id.clone()),
+    );
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "kind",
+        Value::string(event.kind.clone()),
+    );
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "parent_id",
+        match &event.parent_id {
+            Some(parent) => Value::string(parent.clone()),
+            None => Value::null(),
+        },
+    );
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "payload",
+        payload_to_value(&event.payload, 0)?,
+    );
+    push_identity_field(&mut entries, &mut names, "seq", Value::int(event.seq));
+    push_identity_field(
+        &mut entries,
+        &mut names,
+        "ts",
+        Value::string(event.ts.clone()),
+    );
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "content_hash",
+        &event.content_hash,
+    );
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "correlation_id",
+        &event.correlation_id,
+    );
+    push_optional_string(&mut entries, &mut names, "branch_id", &event.branch_id);
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "interaction_id",
+        &event.interaction_id,
+    );
+    push_optional_string(&mut entries, &mut names, "agent_id", &event.agent_id);
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "execution_state",
+        &event.execution_state,
+    );
+    push_optional_string(&mut entries, &mut names, "original_id", &event.original_id);
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "source_adapter",
+        &event.source_adapter,
+    );
+    push_optional_string(
+        &mut entries,
+        &mut names,
+        "side_effects",
+        &event.side_effects,
+    );
+    hoist_experimental_fields(&event.extra_fields, &mut entries, &names)?;
+    Ok(Value::object(entries))
+}
+
+fn hoist_experimental_fields(
+    extra_fields: &Payload,
+    entries: &mut Vec<(ObjectKey, Value)>,
+    names: &[String],
+) -> Result<(), CanonicalError> {
+    let mut error = None;
+    let walk = extra_fields.walk_string_entries(|key, child| {
+        if error.is_some()
+            || !key.starts_with("experimental_")
+            || names.iter().any(|name| name == key)
+        {
+            return;
+        }
+        match payload_to_value(child, 0) {
+            Ok(value) => entries.push((ObjectKey::string(key), value)),
+            Err(err) => error = Some(err),
+        }
+    });
+    if let Some(err) = error {
+        return Err(err);
+    }
+    match walk {
+        MapWalk::Done | MapWalk::NotAMap => Ok(()),
+        MapWalk::Borrowed => Err(CanonicalError::schema(CYCLE_MESSAGE)),
+    }
+}
+
+fn payload_to_value(payload: &Payload, depth: usize) -> Result<Value, CanonicalError> {
+    if payload.is_null() {
+        return Ok(Value::null());
+    }
+    if let Some(value) = payload.as_bool() {
+        return Ok(Value::bool(value));
+    }
+    if let Some(value) = payload.as_int() {
+        return Ok(Value::int(value));
+    }
+    if let Some(value) = payload.as_float() {
+        return Ok(Value::float(value));
+    }
+    if let Some(value) = payload.as_str() {
+        return Ok(Value::string(value));
+    }
+    if depth >= ENCODE_MAX_CONTAINERS {
+        return Err(CanonicalError::schema(DEPTH_MESSAGE));
+    }
+    if payload.is_map() {
+        return payload_map_to_value(payload, depth);
+    }
+    if payload.is_list() {
+        return payload_sequence_to_value(payload, depth, true);
+    }
+    if payload.is_tuple() {
+        return payload_sequence_to_value(payload, depth, false);
+    }
+    Err(CanonicalError::schema(
+        "Canonical serialization error: Object of type Payload is not JSON serializable",
+    ))
+}
+
+fn payload_map_to_value(payload: &Payload, depth: usize) -> Result<Value, CanonicalError> {
+    let mut entries = Vec::new();
+    let mut error = None;
+    let walk = payload.walk_string_entries(|key, child| {
+        if error.is_some() {
+            return;
+        }
+        match payload_to_value(child, depth + 1) {
+            Ok(value) => entries.push((ObjectKey::string(key), value)),
+            Err(err) => error = Some(err),
+        }
+    });
+    if let Some(err) = error {
+        return Err(err);
+    }
+    match walk {
+        MapWalk::Done => Ok(Value::object(entries)),
+        MapWalk::Borrowed => Err(CanonicalError::schema(CYCLE_MESSAGE)),
+        MapWalk::NotAMap => Err(CanonicalError::schema(
+            "Canonical serialization error: payload map walk failed",
+        )),
+    }
+}
+
+fn payload_sequence_to_value(
+    payload: &Payload,
+    depth: usize,
+    list: bool,
+) -> Result<Value, CanonicalError> {
+    let mut items = Vec::new();
+    let mut error = None;
+    let walk = if list {
+        payload.walk_list_items(|_index, child| {
+            if error.is_some() {
+                return;
+            }
+            match payload_to_value(child, depth + 1) {
+                Ok(value) => items.push(value),
+                Err(err) => error = Some(err),
+            }
+        })
+    } else {
+        payload.walk_tuple_items(|_index, child| {
+            if error.is_some() {
+                return;
+            }
+            match payload_to_value(child, depth + 1) {
+                Ok(value) => items.push(value),
+                Err(err) => error = Some(err),
+            }
+        })
+    };
+    if let Some(err) = error {
+        return Err(err);
+    }
+    match walk {
+        ListWalk::Done => Ok(Value::array(items)),
+        ListWalk::Borrowed => Err(CanonicalError::schema(CYCLE_MESSAGE)),
+        ListWalk::NotAList => Err(CanonicalError::schema(
+            "Canonical serialization error: payload sequence walk failed",
+        )),
+    }
+}
+
 /// Strict contract for canonical serialization and hashing.
 ///
-/// `content_identity_bytes` and `content_identity_hash` have no event argument:
-/// `SessionEvent` is not ported, and the methods do not hash a plain JSON object
-/// in its place.
+/// `content_identity_bytes` and `content_identity_hash` take a [`SessionEvent`].
+/// They hash that event with provenance fields removed. They do not hash a
+/// plain JSON object in its place.
 pub trait CanonicalCodec {
     fn codec_name(&self) -> &str;
     fn codec_version(&self) -> &str;
     fn canonical_json_bytes(&self, obj: &Value, newline: bool) -> Result<Vec<u8>, CanonicalError>;
-    fn content_identity_bytes(&self) -> Result<Vec<u8>, CanonicalError>;
-    fn content_identity_hash(&self) -> Result<String, CanonicalError>;
+    fn content_identity_bytes(&self, event: &SessionEvent) -> Result<Vec<u8>, CanonicalError>;
+    fn content_identity_hash(&self, event: &SessionEvent) -> Result<String, CanonicalError>;
     fn payload_content_hash(&self, payload: &Value) -> Result<String, CanonicalError>;
     fn plan_fingerprint(
         &self,
@@ -417,20 +652,13 @@ impl CanonicalCodec for PurePythonCanonicalCodec {
         Ok(encoded)
     }
 
-    fn content_identity_bytes(&self) -> Result<Vec<u8>, CanonicalError> {
-        // Late import: `from sesslint.canonical import SessionEvent`.
-        // The exclusion list stays on this path and is not applied to canonical JSON.
-        if PROVENANCE_FIELD_NAMES.iter().any(|name| name.is_empty()) {
-            return Err(CanonicalError::schema(
-                "Canonical serialization error: provenance exclusion set is incomplete",
-            ));
-        }
-        let _ = is_provenance_field(PROVENANCE_FIELD_NAMES[0]);
-        Err(CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE))
+    fn content_identity_bytes(&self, event: &SessionEvent) -> Result<Vec<u8>, CanonicalError> {
+        let identity = session_event_identity_value(event)?;
+        self.canonical_json_bytes(&identity, false)
     }
 
-    fn content_identity_hash(&self) -> Result<String, CanonicalError> {
-        let bytes = self.content_identity_bytes()?;
+    fn content_identity_hash(&self, event: &SessionEvent) -> Result<String, CanonicalError> {
+        let bytes = self.content_identity_bytes(event)?;
         Ok(sha256_hex(&bytes))
     }
 
@@ -1513,18 +1741,15 @@ pub fn canonical_json_bytes(obj: &Value, newline: bool) -> Result<Vec<u8>, Canon
 
 /// Python `content_identity_bytes`.
 ///
-/// `SessionEvent` is not ported, so this takes no event and does not hash a
-/// plain JSON object in its place. The active pure codec returns
-/// [`CanonicalError::Unsupported`] with
-/// `sesslint.canonical.SessionEvent is not available`.
-pub fn content_identity_bytes() -> Result<Vec<u8>, CanonicalError> {
-    get_active_codec()?.content_identity_bytes()
+/// Provenance fields on `event` are omitted. The active codec encodes the
+/// remaining fields.
+pub fn content_identity_bytes(event: &SessionEvent) -> Result<Vec<u8>, CanonicalError> {
+    get_active_codec()?.content_identity_bytes(event)
 }
 
-/// Python `content_identity_hash`. Same `SessionEvent` gap as
-/// [`content_identity_bytes`].
-pub fn content_identity_hash() -> Result<String, CanonicalError> {
-    get_active_codec()?.content_identity_hash()
+/// Python `content_identity_hash`. SHA-256 hex of [`content_identity_bytes`].
+pub fn content_identity_hash(event: &SessionEvent) -> Result<String, CanonicalError> {
+    get_active_codec()?.content_identity_hash(event)
 }
 
 /// Python `payload_content_hash`. Delegates to the active codec.
@@ -1557,6 +1782,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    const SESSION_EVENT_UNAVAILABLE: &str = "sesslint.canonical.SessionEvent is not available";
 
     fn codec() -> PurePythonCanonicalCodec {
         PurePythonCanonicalCodec::new()
@@ -1824,18 +2051,57 @@ mod tests {
     }
 
     #[test]
-    fn content_identity_fails_closed_without_session_event() {
+    fn content_identity_matches_python_and_strips_provenance() {
         let implementation = codec();
-        let bytes_error = implementation.content_identity_bytes().unwrap_err();
-        let hash_error = implementation.content_identity_hash().unwrap_err();
-        assert_eq!(
-            bytes_error,
-            CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE)
+        let mut minimal = SessionEvent::new(
+            "evt-synthetic",
+            None,
+            0,
+            "2026-01-02T00:00:00Z",
+            "user",
+            "message",
         );
-        assert_eq!(bytes_error, hash_error);
+        minimal.payload = Payload::map(vec![
+            (Payload::string("b"), Payload::int(1)),
+            (Payload::string("a"), Payload::string("cafe")),
+        ]);
         assert_eq!(
-            bytes_error.message(),
-            "sesslint.canonical.SessionEvent is not available"
+            implementation
+                .content_identity_bytes(&minimal)
+                .unwrap()
+                .as_slice(),
+            br#"{"actor":"user","id":"evt-synthetic","kind":"message","parent_id":null,"payload":{"a":"cafe","b":1},"seq":0,"ts":"2026-01-02T00:00:00Z"}"#
+        );
+        let mut rich = SessionEvent::new(
+            "evt-synthetic",
+            Some("parent-synthetic".to_string()),
+            2,
+            "2026-01-02T00:00:00Z",
+            "assistant",
+            "tool_result",
+        );
+        rich.content_hash = Some("ab".to_string());
+        rich.source_line = Some(4);
+        rich.source_location = Some("synthetic".to_string());
+        rich.source_record_hash = Some("abc".to_string());
+        rich.extra_fields = Payload::map(vec![
+            (
+                Payload::string("experimental_flag"),
+                Payload::bool_value(true),
+            ),
+            (Payload::string("writer"), Payload::string("hidden")),
+        ]);
+        let rich_bytes = implementation.content_identity_bytes(&rich).unwrap();
+        assert_eq!(
+            rich_bytes.as_slice(),
+            br#"{"actor":"assistant","content_hash":"ab","experimental_flag":true,"id":"evt-synthetic","kind":"tool_result","parent_id":"parent-synthetic","payload":{},"seq":2,"ts":"2026-01-02T00:00:00Z"}"#
+        );
+        assert!(!rich_bytes
+            .windows(11)
+            .any(|window| window == b"source_line"));
+        assert_eq!(
+            implementation.content_identity_hash(&rich).unwrap(),
+            "15227655ad2152dd5ac2946ffbd9fd7c4fd882fca7f77dde01c981178f7dd651"
         );
     }
 
@@ -1963,11 +2229,11 @@ mod tests {
             Ok(self.json.to_vec())
         }
 
-        fn content_identity_bytes(&self) -> Result<Vec<u8>, CanonicalError> {
+        fn content_identity_bytes(&self, _event: &SessionEvent) -> Result<Vec<u8>, CanonicalError> {
             Err(CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE))
         }
 
-        fn content_identity_hash(&self) -> Result<String, CanonicalError> {
+        fn content_identity_hash(&self, _event: &SessionEvent) -> Result<String, CanonicalError> {
             Err(CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE))
         }
 
@@ -2112,20 +2378,29 @@ mod tests {
     }
 
     #[test]
-    fn free_content_identity_bytes_returns_unsupported() {
+    fn free_content_identity_matches_the_pure_codec() {
         let _lock = lock_cell_tests();
         let _restore = RestorePureCodec;
         set_active_codec(Arc::new(PurePythonCanonicalCodec::new())).unwrap();
-        let error = content_identity_bytes().unwrap_err();
-        assert_eq!(
-            error,
-            CanonicalError::Unsupported(SESSION_EVENT_UNAVAILABLE)
+        let event = SessionEvent::new(
+            "evt-synthetic",
+            None,
+            0,
+            "2026-01-02T00:00:00Z",
+            "user",
+            "message",
         );
+        let free = content_identity_bytes(&event).unwrap();
+        let pure = PurePythonCanonicalCodec::new()
+            .content_identity_bytes(&event)
+            .unwrap();
+        assert_eq!(free, pure);
         assert_eq!(
-            error.message(),
-            "sesslint.canonical.SessionEvent is not available"
+            content_identity_hash(&event).unwrap(),
+            PurePythonCanonicalCodec::new()
+                .content_identity_hash(&event)
+                .unwrap()
         );
-        assert_eq!(error, content_identity_hash().unwrap_err());
     }
 
     #[test]

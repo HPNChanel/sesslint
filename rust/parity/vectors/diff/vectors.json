@@ -3,7 +3,7 @@
   "module": "sesslint.diff",
   "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
   "diff_py_sha256": "2d597dad56536db2bba2372c6e809ef31bb5784c31442e06ba8f7c34851ddbcf",
-  "diff_rs_sha256": "5d8f763884f4d11944bef2c9939ce4a88b453a06659f1b0bc92b2800dbb9fa73",
+  "diff_rs_sha256": "05a251ed85fc87ff5620726ebce9ab8db6156b757b46563884b4526ccfe4f77f",
   "known_parity_gaps": [
     "GAP-diff-minimize-path: SessionDiff.to_dict, to_json, and render_human import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available.",
     "GAP-diff-resolve-format: diff_sessions and _load_side call sesslint.adapters.detect.resolve_format once both paths are files; Rust returns sesslint.adapters.detect.resolve_format is not available and builds no SessionDiff.",

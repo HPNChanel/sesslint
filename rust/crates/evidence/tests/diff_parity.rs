@@ -24,9 +24,9 @@ const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
 const EXPECTED_DIFF_PY_SHA256: &str =
     "2d597dad56536db2bba2372c6e809ef31bb5784c31442e06ba8f7c34851ddbcf";
 const EXPECTED_DIFF_RS_SHA256: &str =
-    "5d8f763884f4d11944bef2c9939ce4a88b453a06659f1b0bc92b2800dbb9fa73";
+    "05a251ed85fc87ff5620726ebce9ab8db6156b757b46563884b4526ccfe4f77f";
 const EXPECTED_VECTORS_SHA256: &str =
-    "6b15fc355c25cef262fcc8af5f377bff0811a2ac7ada1286ef5ce133c7ec3bbe";
+    "3eaa60004d670ca53951d68dc7d3eae265d2dba60321aeb56cddec31040d1fcd";
 
 const HASH_SEAM: &str = "sesslint.canonical.SessionEvent is not available";
 

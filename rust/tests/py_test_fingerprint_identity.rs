@@ -351,9 +351,14 @@ fn read_vectors(rel: &str, module: &str) -> String {
     let path = vectors_path(rel);
     let json =
         fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let commit = if rel == DETERMINISM_VECTORS_REL {
+        "02694d537104659df66cdd084354739f3cccc440"
+    } else {
+        PIN
+    };
     assert!(
-        json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "{rel} vectors are pinned to {PIN}"
+        json.contains(&format!("\"python_commit\": \"{commit}\"")),
+        "{rel} vectors are pinned to {commit}"
     );
     assert!(json.contains(&format!("\"module\": \"{module}\"")));
     json

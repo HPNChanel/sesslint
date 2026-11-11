@@ -12,7 +12,7 @@ import tempfile
 from typing import Any
 
 SCHEMA = "sesslint.parity-module-vectors/v1"
-PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
 CANONICAL_RS_SHA256 = (
     "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb"
 )

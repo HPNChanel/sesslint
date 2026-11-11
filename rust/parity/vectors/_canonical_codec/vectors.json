@@ -1,11 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint._canonical_codec",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",
   "known_parity_gaps": [
     "normalize_canonical_key_order: Rust reify uses BTreeMap sorted keys; Python dict normalization keeps insertion order until json.dumps sort_keys. Parity compares canonical_json_bytes only, not normalize_canonical map order.",
-    "session_event_content_identity: SessionEvent is not ported; content_identity_bytes/hash return Unsupported until the type exists.",
     "active_codec_env: parity does not set SESSLINT_DISABLE_ACCEL or call set_active_codec; unit tests cover those paths."
   ],
   "vectors": [
@@ -226,25 +225,49 @@
       }
     },
     {
-      "id": "content_identity_bytes_unsupported",
+      "id": "content_identity_bytes_minimal",
       "construct": {
-        "type": "content_identity_bytes"
+        "type": "content_identity_bytes",
+        "id": "evt-synthetic",
+        "parent_id": null,
+        "seq": 0,
+        "ts": "2026-01-02T00:00:00Z",
+        "actor": "user",
+        "kind": "message",
+        "payload": {
+          "b": 1,
+          "a": "cafe"
+        },
+        "extra_fields": {}
       },
       "expected": {
-        "result": "error",
-        "raises": "Unsupported",
-        "exact_message": "sesslint.canonical.SessionEvent is not available"
+        "result": "ok",
+        "bytes_b64": "eyJhY3RvciI6InVzZXIiLCJpZCI6ImV2dC1zeW50aGV0aWMiLCJraW5kIjoibWVzc2FnZSIsInBhcmVudF9pZCI6bnVsbCwicGF5bG9hZCI6eyJhIjoiY2FmZSIsImIiOjF9LCJzZXEiOjAsInRzIjoiMjAyNi0wMS0wMlQwMDowMDowMFoifQ=="
       }
     },
     {
-      "id": "content_identity_hash_unsupported",
+      "id": "content_identity_hash_provenance_stripped",
       "construct": {
-        "type": "content_identity_hash"
+        "type": "content_identity_hash",
+        "id": "evt-synthetic",
+        "parent_id": "parent-synthetic",
+        "seq": 2,
+        "ts": "2026-01-02T00:00:00Z",
+        "actor": "assistant",
+        "kind": "tool_result",
+        "payload": {},
+        "extra_fields": {
+          "experimental_flag": true,
+          "writer": "hidden"
+        },
+        "content_hash": "ab",
+        "source_line": 4,
+        "source_location": "synthetic",
+        "source_record_hash": "abc"
       },
       "expected": {
-        "result": "error",
-        "raises": "Unsupported",
-        "exact_message": "sesslint.canonical.SessionEvent is not available"
+        "result": "ok",
+        "digest": "15227655ad2152dd5ac2946ffbd9fd7c4fd882fca7f77dde01c981178f7dd651"
       }
     },
     {

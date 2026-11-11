@@ -10,12 +10,11 @@
 //! of these nine names.
 //! `parity/vectors/api/vectors.json` is at this pin with 77 ids. None of
 //! those 77 is one of these nine names.
-//! `parity/vectors/determinism/vectors.json` is pinned to
-//! `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. That old pin is not a Covered
-//! source.
-//! `parity/vectors/_canonical_codec/vectors.json` is pinned to
-//! `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. A codec vector that only sorts
-//! keys is not the whole pytest. That old pin is not a Covered source.
+//! `parity/vectors/determinism/vectors.json` records
+//! `02694d537104659df66cdd084354739f3cccc440`. A determinism vector is not one
+//! of these nine tests.
+//! `parity/vectors/_canonical_codec/vectors.json` records the same commit.
+//! A codec vector that only sorts keys is not the whole pytest.
 //! `parity/vectors/repair.fingerprint/vectors.json` is pinned to
 //! `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. That old pin is not a Covered
 //! source.

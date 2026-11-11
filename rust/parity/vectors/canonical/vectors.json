@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.canonical",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "canonical_rs_sha256": "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb",
   "known_parity_gaps": [
     "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call — parity not required here.",

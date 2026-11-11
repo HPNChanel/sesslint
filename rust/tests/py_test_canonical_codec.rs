@@ -15,7 +15,8 @@ use std::path::PathBuf;
 
 use sesslint_rust_workspace::PACKAGE_NAME;
 
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+/// `_canonical_codec.py` matches `e91d50b2ecea57ef4dd900e3b0b87b14946e847e` and this commit.
+const CORPUS_PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 17;
 const CANONICAL_CODEC_VECTOR_COUNT: usize = 17;
 const VECTORS_REL: &str = "parity/vectors/_canonical_codec/vectors.json";
@@ -121,11 +122,11 @@ const ROWS: &[Row] = &[
             ],
         },
     },
-    // The pinned calls succeed. Both identity vectors return Unsupported.
+    // The pinned test compares two events. One hash is not that pair.
     Row {
         name: "test_content_identity_excludes_provenance",
         disposition: Disposition::NotApplicable(
-            "content identity succeeds and drops provenance; both identity vectors return Unsupported",
+            "content identity succeeds and drops provenance; content_identity_hash_provenance_stripped hashes one event and is not the pair comparison",
         ),
     },
     // One digest does not cover equality of a second key order.
@@ -266,8 +267,8 @@ fn covered_vector_ids_are_present_in_canonical_codec_vectors() {
     let json =
         fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     assert!(
-        json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "_canonical_codec vectors are pinned to {PIN}"
+        json.contains(&format!("\"python_commit\": \"{CORPUS_PIN}\"")),
+        "_canonical_codec vectors are pinned to {CORPUS_PIN}"
     );
     assert!(json.contains("\"module\": \"sesslint._canonical_codec\""));
 

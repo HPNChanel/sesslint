@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.canonical parity (parse_session_header, parse_session_event, parse_session, parse_session_lines, load_session_file, validate_rfc3339_utc).",
   "generator": "rust/parity/vectors/canonical/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call \u2014 parity not required here.",
     "get_session_schema_path and load_session_schema: Rust does not read schemas/ \u2014 parity not required here.",

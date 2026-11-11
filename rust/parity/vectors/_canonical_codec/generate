@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "sesslint.parity-module-vectors/v1"
-PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
 CANONICAL_CODEC_SHA256 = "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee"
 
 KNOWN_PARITY_GAPS = [
@@ -20,10 +20,6 @@ KNOWN_PARITY_GAPS = [
         "normalize_canonical_key_order: Rust reify uses BTreeMap sorted keys; "
         "Python dict normalization keeps insertion order until json.dumps sort_keys. "
         "Parity compares canonical_json_bytes only, not normalize_canonical map order."
-    ),
-    (
-        "session_event_content_identity: SessionEvent is not ported; "
-        "content_identity_bytes/hash return Unsupported until the type exists."
     ),
     (
         "active_codec_env: parity does not set SESSLINT_DISABLE_ACCEL or call "
@@ -50,9 +46,10 @@ def load_codec_module():
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
     from sesslint import _canonical_codec as codec  # noqa: WPS433
+    from sesslint.canonical import SessionEvent  # noqa: WPS433
     from sesslint.errors import SchemaError  # noqa: WPS433
 
-    return codec, SchemaError
+    return codec, SchemaError, SessionEvent
 
 
 def b64(data: bytes) -> str:
@@ -71,14 +68,6 @@ def schema_error(message: str) -> dict[str, Any]:
     }
 
 
-def unsupported(message: str) -> dict[str, Any]:
-    return {
-        "result": "error",
-        "raises": "Unsupported",
-        "exact_message": message,
-    }
-
-
 def nested_dicts(wraps: int) -> dict[str, Any]:
     value: dict[str, Any] = {"leaf": 1}
     for _ in range(wraps):
@@ -92,7 +81,35 @@ def make_cyclic_dict() -> dict[str, Any]:
     return cyclic
 
 
-def vector_specs(codec: Any, SchemaError: Any) -> list[dict[str, Any]]:
+def identity_construct(
+    call: str,
+    event: Any,
+    payload: dict[str, Any],
+    extra_fields: dict[str, Any],
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "type": call,
+        "id": event.id,
+        "parent_id": event.parent_id,
+        "seq": event.seq,
+        "ts": event.ts,
+        "actor": event.actor,
+        "kind": event.kind,
+        "payload": payload,
+        "extra_fields": extra_fields,
+    }
+    if event.content_hash is not None:
+        body["content_hash"] = event.content_hash
+    if event.source_line is not None:
+        body["source_line"] = event.source_line
+    if event.source_location is not None:
+        body["source_location"] = event.source_location
+    if event.source_record_hash is not None:
+        body["source_record_hash"] = event.source_record_hash
+    return body
+
+
+def vector_specs(codec: Any, SchemaError: Any, SessionEvent: Any) -> list[dict[str, Any]]:
     canonical_json_bytes = codec.canonical_json_bytes
     payload_content_hash = codec.payload_content_hash
     plan_fingerprint = codec.plan_fingerprint
@@ -236,16 +253,40 @@ def vector_specs(codec: Any, SchemaError: Any) -> list[dict[str, Any]]:
         {"result": "ok", "fingerprint": plan_fingerprint(plan, policy="conservative")},
     )
 
-    session_unavailable = "sesslint.canonical.SessionEvent is not available"
-    add(
-        "content_identity_bytes_unsupported",
-        {"type": "content_identity_bytes"},
-        unsupported(session_unavailable),
+    minimal_payload = {"b": 1, "a": "cafe"}
+    minimal = SessionEvent(
+        id="evt-synthetic",
+        parent_id=None,
+        seq=0,
+        ts="2026-01-02T00:00:00Z",
+        actor="user",
+        kind="message",
+        payload=minimal_payload,
     )
     add(
-        "content_identity_hash_unsupported",
-        {"type": "content_identity_hash"},
-        unsupported(session_unavailable),
+        "content_identity_bytes_minimal",
+        identity_construct("content_identity_bytes", minimal, minimal_payload, {}),
+        ok_bytes(codec.content_identity_bytes(minimal)),
+    )
+    rich_extra = {"experimental_flag": True, "writer": "hidden"}
+    rich = SessionEvent(
+        id="evt-synthetic",
+        parent_id="parent-synthetic",
+        seq=2,
+        ts="2026-01-02T00:00:00Z",
+        actor="assistant",
+        kind="tool_result",
+        payload={},
+        content_hash="ab",
+        source_line=4,
+        source_location="synthetic",
+        source_record_hash="abc",
+        extra_fields=rich_extra,
+    )
+    add(
+        "content_identity_hash_provenance_stripped",
+        identity_construct("content_identity_hash", rich, {}, rich_extra),
+        {"result": "ok", "digest": codec.content_identity_hash(rich)},
     )
 
     add(
@@ -258,9 +299,9 @@ def vector_specs(codec: Any, SchemaError: Any) -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    codec, SchemaError = load_codec_module()
+    codec, SchemaError, SessionEvent = load_codec_module()
     out_dir = Path(__file__).resolve().parent
-    specs = vector_specs(codec, SchemaError)
+    specs = vector_specs(codec, SchemaError, SessionEvent)
     vectors: list[dict[str, Any]] = []
     for row in specs:
         vectors.append(

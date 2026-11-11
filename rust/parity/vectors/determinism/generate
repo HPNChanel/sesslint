@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "sesslint.parity-module-vectors/v1"
-PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
 DETERMINISM_PY_SHA256 = (
     "29738711c24991243a7bd38de59665f9e1bb85b5aa38c4dbb1c62901ae153a08"
 )

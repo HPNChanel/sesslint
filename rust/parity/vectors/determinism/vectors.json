@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.determinism",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "determinism_py_sha256": "29738711c24991243a7bd38de59665f9e1bb85b5aa38c4dbb1c62901ae153a08",
   "known_parity_gaps": [
     "NaN, Infinity: canonical_json_bytes rejects non-finite floats; Rust codec error text may differ from Python json module errors - do not assert message parity for these cases.",
