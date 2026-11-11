@@ -842,9 +842,11 @@ mod tests {
             None,
             None,
         );
-        let err = tracker.into_findings("x").expect_err("codec");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let findings = tracker.into_findings("x").expect("findings");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code(), "SL304");
+        assert_eq!(findings[0].fingerprint(), "e82699e8fc2aefab");
+        assert!(findings[0].message().contains("Format signature"));
     }
 
     #[test]

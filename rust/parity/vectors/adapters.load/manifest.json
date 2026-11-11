@@ -4,6 +4,6 @@
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "load_py_sha256": "7347f2916d1d76169b872825f25d4a4dceff7eccc30a9957ba39f13f7ae87e43",
   "vector_count": 5,
-  "vectors_sha256": "eb4f003546864aee600daa7fcdf169e1e06bc0f353571892696f6804384aa04c",
+  "vectors_sha256": "7c92a94df242bc9fe4ffe85d6159e9d7c9939433fd3858f3fc8b76f1b864e843",
   "generator": "rust/parity/vectors/adapters.load/generate"
 }

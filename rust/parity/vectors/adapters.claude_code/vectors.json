@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.claude_code",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "claude_code_py_sha256": "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1",
-  "claude_code_rs_sha256": "278a6818b3c872b38e5695328b07798d56f236268e3fe59d521076968d828f22",
+  "claude_code_rs_sha256": "20b598165bec1ff08eb1b94e6c81eef4a8d854c7d08f196c765ce0f336b15551",
   "known_parity_gaps": [
     "GAP-claude-secret-scan-tracker: _load_claude_code_internal stops at sesslint.checks.hygiene.SecretScanTracker for bytes and streams. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
     "GAP-claude-open-byte-source: a path that passes stat checks stops at sesslint.adapters.claude_code._open_byte_source. Rust does not read the file or construct SecretScanTracker on that arm.",

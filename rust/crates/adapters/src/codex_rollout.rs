@@ -2369,11 +2369,9 @@ mod rollout_record_tests {
 // - The first `canonical_bytes(envelope)` failure sets the synthetic payload
 //   length to 0 and continues. A successful encoding whose length does not
 //   fit in `i64` is [`ProcessRolloutRecordError::CanonicalLen`].
-// - [`compute_content_hash`] is called before [`SessionEvent`] is built. Its
-//   Display is `sesslint._canonical_codec.payload_content_hash is not available`.
-//   No digest is invented.
-// - The later `canonical_bytes` that would build `source_record_hash` is not
-//   caught. Its Display is
+// - [`compute_content_hash`] stores `sha256:<hex>` of the payload. The later
+//   `canonical_bytes` that would build `source_record_hash` is not caught.
+//   Its Display is
 //   `sesslint._canonical_codec.canonical_json_bytes is not available`.
 //   No sha256 is invented. The event is not appended. `check_event` is not
 //   called on that arm.
@@ -2576,10 +2574,9 @@ struct GuardianMark {
 /// ordinal. The same exclusion applies to usage counters, context pressure,
 /// and `subagent_history_start_ordinal`.
 ///
-/// [`compute_content_hash`] runs before [`SessionEvent`] is built. Its
-/// Display is `sesslint._canonical_codec.payload_content_hash is not available`.
-/// The later [`canonical_bytes`] call that builds `source_record_hash` is not
-/// caught. Its Display is
+/// [`compute_content_hash`] runs before [`SessionEvent`] is built and stores
+/// `sha256:<hex>`. The later [`canonical_bytes`] call that builds
+/// `source_record_hash` is not caught. Its Display is
 /// `sesslint._canonical_codec.canonical_json_bytes is not available`. That arm
 /// does not invent a sha256, does not append the event, and does not call
 /// `check_event`.
@@ -2589,7 +2586,7 @@ struct GuardianMark {
 /// A sequence length or canonical length outside `i64`, an unrenderable
 /// `str()`, a guard collision, [`_check_version`], [`_emit_sl302`],
 /// [`_tool_input_payload`], unordered keys, a guardian length outside `i64`,
-/// a malformed links entry, the content-hash seam, or the record-hash seam.
+/// a malformed links entry, or the record-hash seam.
 #[allow(clippy::too_many_arguments)] // pinned keyword list, in that order
 #[must_use = "the codec seam or the seen flag is the result"]
 pub fn _process_rollout_record(
@@ -3983,7 +3980,8 @@ mod process_rollout_tests {
     };
     use crate::synthetic::{synthetic_event_id, SyntheticIdCollisionGuard};
     use model::canonical::{
-        SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+        compute_content_hash, Payload, SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE,
+        PAYLOAD_CONTENT_HASH_UNAVAILABLE,
     };
     use model::codes::{Repairability, Severity};
     use model::finding::PyValue as FindingValue;
@@ -4097,11 +4095,11 @@ mod process_rollout_tests {
         .expect("finding")
     }
 
-    fn hash_seam(err: &ProcessRolloutRecordError) {
-        assert!(matches!(err, ProcessRolloutRecordError::ContentHash(_)));
-        assert_eq!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+    fn record_hash_seam(err: &ProcessRolloutRecordError) {
+        assert!(matches!(err, ProcessRolloutRecordError::RecordHash(_)));
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert_ne!(err.to_string(), PAYLOAD_CONTENT_HASH_UNAVAILABLE);
         assert!(!err.to_string().contains("sha256"));
-        assert_ne!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
         assert_ne!(
             err.to_string(),
             "sesslint.canonical.SessionEvent is not available"
@@ -4169,7 +4167,12 @@ mod process_rollout_tests {
         let envelope = empty_payload("event_msg");
         let mut held = bag();
         let err = run(&mut held, &envelope, input(), None, None).unwrap_err();
-        hash_seam(&err);
+        record_hash_seam(&err);
+        let empty = Payload::map(Vec::new());
+        assert_eq!(
+            compute_content_hash(&empty).expect("empty payload digest"),
+            "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        );
         assert_eq!(canonical_payload_len(&envelope).expect("len"), 0);
         let expected = synthetic_event_id("codex_rollout", 0, PATH, 0);
         assert!(held.guard.seen_synthetic_ids().contains(&expected));
@@ -4218,7 +4221,7 @@ mod process_rollout_tests {
             ]),
         );
         let mut held = bag();
-        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
         assert!(held.events.is_empty());
         assert!(held.findings.is_empty());
     }
@@ -4329,7 +4332,7 @@ mod process_rollout_tests {
         let mut options = input();
         options.last_id = Some("prior");
         options.last_ordinal = Some(1);
-        hash_seam(&run(&mut held, &bool_ordinal, options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &bool_ordinal, options, None, None).unwrap_err());
         assert!(held.events.is_empty());
 
         let max_ordinal = MapValue::new(vec![
@@ -4341,7 +4344,7 @@ mod process_rollout_tests {
         let mut max_options = input();
         max_options.last_id = Some("prior");
         max_options.last_ordinal = Some(i64::MAX);
-        hash_seam(&run(&mut again, &max_ordinal, max_options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut again, &max_ordinal, max_options, None, None).unwrap_err());
         assert!(again.events.is_empty());
     }
 
@@ -4377,7 +4380,7 @@ mod process_rollout_tests {
         let mut drift = DriftTracker::new("codex-rollout");
         let mut options = input();
         options.seen = true;
-        hash_seam(&run(&mut held, &envelope, options, Some(&mut drift), None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, options, Some(&mut drift), None).unwrap_err());
         assert_eq!(raw(&held.meta), Some("9"));
         assert!(drift.into_findings(PATH).expect("suppressed").is_empty());
         assert!(held.events.is_empty());
@@ -4409,7 +4412,7 @@ mod process_rollout_tests {
         entries.insert(1, kv("rollout_version", MetaValue::Bool(false)));
         let envelope = MapValue::new(entries);
         let mut held = bag();
-        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
         assert_eq!(raw(&held.meta), Some("1"));
         assert!(held.events.is_empty());
     }
@@ -4421,7 +4424,7 @@ mod process_rollout_tests {
             MapValue::new(vec![kv("rollout_version", s("1"))]),
         );
         let mut held = bag();
-        hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, input(), None, None).unwrap_err());
         assert_eq!(raw(&held.meta), Some("1"));
         assert!(held.events.is_empty());
     }
@@ -4465,7 +4468,7 @@ mod process_rollout_tests {
         let mut options = input();
         options.start = Some(10);
         options.end = Some(18);
-        hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
         assert_eq!(stored_session(&held.meta), "thread-1");
         assert!(held.guard.seen_real_ids().contains("thread-1"));
         assert_eq!(sizes(&held.meta), vec![8]);
@@ -4501,7 +4504,7 @@ mod process_rollout_tests {
             ]),
         );
         let mut held = bag();
-        hash_seam(&run(&mut held, &bool_id, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &bool_id, input(), None, None).unwrap_err());
         assert_eq!(stored_session(&held.meta), "sess-9");
         assert!(held.events.is_empty());
 
@@ -4514,7 +4517,7 @@ mod process_rollout_tests {
             ]),
         );
         let mut again = bag();
-        hash_seam(&run(&mut again, &int_id, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut again, &int_id, input(), None, None).unwrap_err());
         assert_eq!(stored_session(&again.meta), "42");
         assert!(again.guard.seen_real_ids().contains("42"));
         assert!(again.events.is_empty());
@@ -4528,7 +4531,7 @@ mod process_rollout_tests {
         );
         let mut held = bag();
         held.meta.insert("links", MetaValue::List(Vec::new()));
-        hash_seam(&run(&mut held, &bool_parent, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &bool_parent, input(), None, None).unwrap_err());
         assert_eq!(held.meta.get("links"), Some(&MetaValue::List(Vec::new())));
 
         let int_parent = typed(
@@ -4537,7 +4540,7 @@ mod process_rollout_tests {
         );
         let mut again = bag();
         again.meta.insert("links", MetaValue::List(Vec::new()));
-        hash_seam(&run(&mut again, &int_parent, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut again, &int_parent, input(), None, None).unwrap_err());
         let Some(MetaValue::List(links)) = again.meta.get("links") else {
             panic!("links");
         };
@@ -4651,7 +4654,7 @@ mod process_rollout_tests {
             )]),
         );
         let mut held = bag();
-        hash_seam(&run(&mut held, &usage, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &usage, input(), None, None).unwrap_err());
         assert!(held.events.is_empty());
 
         let raising = typed(
@@ -4677,7 +4680,7 @@ mod process_rollout_tests {
             )]),
         );
         let mut again = bag();
-        hash_seam(&run(&mut again, &compacted, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut again, &compacted, input(), None, None).unwrap_err());
         assert!(again.events.is_empty());
     }
 
@@ -4689,18 +4692,19 @@ mod process_rollout_tests {
         );
         let mut held = bag();
         held.findings.push(marker());
-        finding_seam(&run(&mut held, &item, input(), None, None).unwrap_err());
-        assert_eq!(held.findings.len(), 1);
+        record_hash_seam(&run(&mut held, &item, input(), None, None).unwrap_err());
+        assert_eq!(held.findings.len(), 2);
+        assert_eq!(held.findings[1].code(), "SL306");
+        assert_eq!(held.findings[1].fingerprint().len(), 16);
         assert!(held.events.is_empty());
 
         let mut tracker = UnknownMetadataTracker::new();
         let mut noted = bag();
-        hash_seam(&run(&mut noted, &item, input(), None, Some(&mut tracker)).unwrap_err());
-        assert!(tracker.findings(PATH).is_err());
-        assert_eq!(
-            tracker.findings(PATH).unwrap_err().to_string(),
-            FINGERPRINT_CODEC_UNAVAILABLE
-        );
+        record_hash_seam(&run(&mut noted, &item, input(), None, Some(&mut tracker)).unwrap_err());
+        let noted_findings = tracker.findings(PATH).expect("noted");
+        assert_eq!(noted_findings.len(), 1);
+        assert_eq!(noted_findings[0].code(), "SL306");
+        assert_eq!(noted_findings[0].fingerprint().len(), 16);
         assert!(noted.events.is_empty());
         assert!(noted.findings.is_empty());
 
@@ -4730,7 +4734,7 @@ mod process_rollout_tests {
         let opaque = empty_payload("widget");
         let mut opaque_tracker = UnknownMetadataTracker::new();
         let mut opaque_bag = bag();
-        hash_seam(
+        record_hash_seam(
             &run(
                 &mut opaque_bag,
                 &opaque,
@@ -4740,7 +4744,10 @@ mod process_rollout_tests {
             )
             .unwrap_err(),
         );
-        assert!(opaque_tracker.findings(PATH).is_err());
+        let opaque_findings = opaque_tracker.findings(PATH).expect("opaque notes");
+        assert_eq!(opaque_findings.len(), 1);
+        assert_eq!(opaque_findings[0].code(), "SL306");
+        assert_eq!(opaque_findings[0].fingerprint().len(), 16);
         assert!(opaque_bag.events.is_empty());
     }
 
@@ -4750,7 +4757,7 @@ mod process_rollout_tests {
         let mut tracker = UnknownMetadataTracker::new();
         let mut drift = DriftTracker::new("codex-rollout");
         let mut held = bag();
-        hash_seam(
+        record_hash_seam(
             &run(
                 &mut held,
                 &summary,
@@ -4760,10 +4767,10 @@ mod process_rollout_tests {
             )
             .unwrap_err(),
         );
-        assert_eq!(
-            drift.into_findings(PATH).unwrap_err().to_string(),
-            FINGERPRINT_CODEC_UNAVAILABLE
-        );
+        let flushed = drift.into_findings(PATH).expect("signature");
+        assert_eq!(flushed.len(), 1);
+        assert_eq!(flushed[0].code(), "SL304");
+        assert_eq!(flushed[0].fingerprint(), "c4b0ee57e4463a49");
         assert!(held.events.is_empty());
 
         let mut versions = DriftTracker::new("codex-rollout");
@@ -4773,7 +4780,7 @@ mod process_rollout_tests {
             kv("payload", MetaValue::Map(MapValue::new(vec![]))),
         ]);
         let mut first_bag = bag();
-        hash_seam(&run(&mut first_bag, &first, input(), Some(&mut versions), None).unwrap_err());
+        record_hash_seam(&run(&mut first_bag, &first, input(), Some(&mut versions), None).unwrap_err());
         assert!(versions.into_findings(PATH).expect("baseline").is_empty());
         let second = MapValue::new(vec![
             kv("type", s("event_msg")),
@@ -4781,11 +4788,11 @@ mod process_rollout_tests {
             kv("payload", MetaValue::Map(MapValue::new(vec![]))),
         ]);
         let mut second_bag = bag();
-        hash_seam(&run(&mut second_bag, &second, input(), Some(&mut versions), None).unwrap_err());
-        assert_eq!(
-            versions.into_findings(PATH).unwrap_err().to_string(),
-            FINGERPRINT_CODEC_UNAVAILABLE
-        );
+        record_hash_seam(&run(&mut second_bag, &second, input(), Some(&mut versions), None).unwrap_err());
+        let version_findings = versions.into_findings(PATH).expect("version");
+        assert_eq!(version_findings.len(), 1);
+        assert_eq!(version_findings[0].code(), "SL304");
+        assert_eq!(version_findings[0].fingerprint().len(), 16);
         assert!(first_bag.events.is_empty());
         assert!(second_bag.events.is_empty());
     }
@@ -4819,7 +4826,7 @@ mod process_rollout_tests {
         let mut held = bag();
         let mut options = input();
         options.ordinal = Some(4);
-        hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &envelope, options, None, None).unwrap_err());
         let used = synthetic_event_id("codex_rollout", 4, PATH, 0);
         let unused = synthetic_event_id("codex_rollout", 0, PATH, 0);
         assert!(held.guard.seen_synthetic_ids().contains(&used));
@@ -4843,7 +4850,7 @@ mod process_rollout_tests {
             "system",
             "opaque",
         ));
-        hash_seam(&run(&mut prior, &envelope, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut prior, &envelope, input(), None, None).unwrap_err());
         let from_len = synthetic_event_id("codex_rollout", 2, PATH, 0);
         assert!(prior.guard.seen_synthetic_ids().contains(&from_len));
         assert_eq!(prior.events.len(), 2);
@@ -4890,7 +4897,7 @@ mod process_rollout_tests {
             kv("payload", MetaValue::Map(MapValue::new(vec![]))),
         ]);
         let mut held = bag();
-        hash_seam(&run(&mut held, &live, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &live, input(), None, None).unwrap_err());
         assert!(held.events.is_empty());
     }
 
@@ -4906,7 +4913,7 @@ mod process_rollout_tests {
             ]),
         );
         let mut held = bag();
-        hash_seam(&run(&mut held, &message, input(), None, None).unwrap_err());
+        record_hash_seam(&run(&mut held, &message, input(), None, None).unwrap_err());
         assert!(held.guard.seen_real_ids().contains("m1"));
         assert!(held.guard.seen_synthetic_ids().is_empty());
         assert!(held.events.is_empty());
@@ -4962,7 +4969,7 @@ mod process_rollout_tests {
         let mut zero_options = input();
         zero_options.start = Some(4);
         zero_options.end = Some(4);
-        hash_seam(&run(&mut zero, &envelope, zero_options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut zero, &envelope, zero_options, None, None).unwrap_err());
         assert_eq!(sizes(&zero.meta), vec![0]);
 
         let mut backwards = bag();
@@ -4972,7 +4979,7 @@ mod process_rollout_tests {
         let mut back_options = input();
         back_options.start = Some(5);
         back_options.end = Some(4);
-        hash_seam(&run(&mut backwards, &envelope, back_options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut backwards, &envelope, back_options, None, None).unwrap_err());
         assert!(sizes(&backwards.meta).is_empty());
 
         let mut tuple = bag();
@@ -4982,7 +4989,7 @@ mod process_rollout_tests {
         let mut tuple_options = input();
         tuple_options.start = Some(1);
         tuple_options.end = Some(2);
-        hash_seam(&run(&mut tuple, &envelope, tuple_options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut tuple, &envelope, tuple_options, None, None).unwrap_err());
         assert_eq!(
             tuple.meta.get("record_sizes"),
             Some(&MetaValue::Tuple(vec![MetaValue::Int(4)]))
@@ -4995,7 +5002,7 @@ mod process_rollout_tests {
         let mut overflow_options = input();
         overflow_options.start = Some(i64::MIN);
         overflow_options.end = Some(i64::MAX);
-        hash_seam(&run(&mut overflow, &envelope, overflow_options, None, None).unwrap_err());
+        record_hash_seam(&run(&mut overflow, &envelope, overflow_options, None, None).unwrap_err());
         assert!(sizes(&overflow.meta).is_empty());
         assert!(zero.events.is_empty());
     }
@@ -5035,9 +5042,10 @@ mod process_rollout_tests {
 //   finding is not appended. Duplicate-key findings therefore do not
 //   continue into [`_process_rollout_record`].
 // - A dict that passes those checks calls [`_process_rollout_record`].
-//   That function's content-hash Display is
-//   `sesslint._canonical_codec.payload_content_hash is not available`.
-//   This slice does not hash and does not push an event.
+//   The payload content hash is `sha256:<hex>`. The record then stops at
+//   `source_record_hash`, whose Display is
+//   `sesslint._canonical_codec.canonical_json_bytes is not available`.
+//   This slice does not push an event.
 // - JSON is hand-walked. There is no `regex` crate and no `serde_json`.
 //   `true` and `false` are bools. An integer outside `i64` is a decode
 //   defect, not a bool and not a float.
@@ -5280,9 +5288,9 @@ impl Error for ProcessJsonlLineError {
 /// is not appended.
 ///
 /// A record that reaches [`_process_rollout_record`] returns that function's
-/// error. The content-hash arm's Display is
-/// `sesslint._canonical_codec.payload_content_hash is not available`. No
-/// digest is invented. This function does not push an event.
+/// error. The payload content hash is computed. The record-hash arm's Display
+/// is `sesslint._canonical_codec.canonical_json_bytes is not available`.
+/// This function does not push an event.
 ///
 /// # Errors
 ///
@@ -6735,7 +6743,7 @@ mod process_jsonl_line_tests {
 
     const EVENT: &str = r#"{"type":"event_msg","payload":{}}"#;
     const FINGERPRINT: &str = "sesslint.determinism.canonical_json_bytes is not available";
-    const CONTENT_HASH: &str = "sesslint._canonical_codec.payload_content_hash is not available";
+    const RECORD_HASH: &str = "sesslint._canonical_codec.canonical_json_bytes is not available";
     const SECRET: &str = "sesslint.checks.hygiene.SecretScanTracker is not available";
 
     struct Hold {
@@ -6865,16 +6873,16 @@ mod process_jsonl_line_tests {
         assert!(matches!(
             err,
             ProcessJsonlLineError::Record(ref error)
-                if matches!(error.as_ref(), ProcessRolloutRecordError::ContentHash(_))
+                if matches!(error.as_ref(), ProcessRolloutRecordError::RecordHash(_))
         ));
-        assert_eq!(err.to_string(), CONTENT_HASH);
-        assert_eq!(err.message(), CONTENT_HASH);
+        assert_eq!(err.to_string(), RECORD_HASH);
+        assert_eq!(err.message(), RECORD_HASH);
         unchanged(&held);
 
         let mut ordinal = hold();
         let bool_line = br#"{"type":"event_msg","payload":{},"ordinal":true}"#;
         let bool_err = run(&mut ordinal, bool_line, false, 2, None).expect_err("bool ordinal");
-        assert_eq!(bool_err.to_string(), CONTENT_HASH);
+        assert_eq!(bool_err.to_string(), RECORD_HASH);
         unchanged(&ordinal);
         assert_eq!(field(r#"{"ordinal":true}"#, "ordinal"), MetaValue::Bool(true));
         assert_eq!(field(r#"{"ordinal":1}"#, "ordinal"), MetaValue::Int(1));
@@ -7886,7 +7894,7 @@ mod rollout_loader {
         use crate::codex_rollout::SuppliedSecretScanTracker;
 
         const FINGERPRINT: &str = "sesslint.determinism.canonical_json_bytes is not available";
-        const CONTENT_HASH: &str = "sesslint._canonical_codec.payload_content_hash is not available";
+        const RECORD_HASH: &str = "sesslint._canonical_codec.canonical_json_bytes is not available";
         const MARKER: &str = "SYNTHETIC-MARKER-CODEX-05";
 
         fn limits(max_file_bytes: i64, max_line_bytes: i64, max_records: Option<i64>) -> CodexLoadLimits {
@@ -8225,17 +8233,17 @@ mod rollout_loader {
             let object = b"{\"type\":\"event_msg\",\"payload\":{}}\n";
             let hashed = load_bytes(object, None, None);
             assert!(matches!(hashed, LoadCodexRolloutError::Line(_)));
-            assert_eq!(hashed.to_string(), CONTENT_HASH);
+            assert_eq!(hashed.to_string(), RECORD_HASH);
             assert_not_a_session(&hashed.to_string());
             assert_same_session(object, None, None);
 
             let boolean = b"{\"type\":\"event_msg\",\"payload\":{},\"ordinal\":true}\n";
             let flag = load_bytes(boolean, None, None);
-            assert_eq!(flag.to_string(), CONTENT_HASH);
+            assert_eq!(flag.to_string(), RECORD_HASH);
             assert_ne!(flag.to_string(), "1");
             let one = b"{\"type\":\"event_msg\",\"payload\":{},\"ordinal\":1}\n";
             let number = load_bytes(one, None, None);
-            assert_eq!(number.to_string(), CONTENT_HASH);
+            assert_eq!(number.to_string(), RECORD_HASH);
 
             let torn = load_bytes(b"{\n", None, None);
             assert!(matches!(torn, LoadCodexRolloutError::Line(_)));
@@ -8267,7 +8275,7 @@ mod rollout_loader {
 
             let second = b"{\"type\":\"event_msg\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{}}\n";
             let first_wins = load_bytes(second, Some(limits(100, 64, Some(1))), None);
-            assert_eq!(first_wins.to_string(), CONTENT_HASH);
+            assert_eq!(first_wins.to_string(), RECORD_HASH);
             let both_capped = load_bytes(second, Some(limits(100, 64, Some(0))), None);
             assert_eq!(both_capped.to_string(), "Record count 1 exceeds limit of 0");
 

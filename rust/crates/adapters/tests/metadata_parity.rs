@@ -15,7 +15,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.metadata/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 123;
 const EXPECTED_VECTORS_SHA256: &str =
-    "37b46f9025b847a1e35a5083f9449110d80208021946557237a4c7ced18eac29";
+    "31e52b304803e59cec668ccda12772ef20469bd56f0323fb56df01875fcb3e8b";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.metadata";
@@ -23,7 +23,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_METADATA_PY_SHA256: &str =
     "0476945fab0e06501492c2e773aac50c57484b0e7bfc22c1fb98575177bdeac0";
 const EXPECTED_METADATA_RS_SHA256: &str =
-    "8256a693817a3af850588b5887cc390fd5dd6660b6d69f0be8a26ba9ec984f69";
+    "497a1044a02881566ee7200b2e9a3cede22b0ecddc537a071109fb72fa6185fd";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -92,9 +92,12 @@ fn assert_tracker_run(case: &VectorCase) {
 
 fn actual_flush_mode(tracker: &UnknownMetadataTracker, path: &str) -> FlushMode {
     match tracker.findings(path) {
+        Ok(findings) if findings.is_empty() => FlushMode::EmptyOk,
         Ok(findings) => {
-            assert!(findings.is_empty());
-            FlushMode::EmptyOk
+            assert!(findings.iter().all(|finding| {
+                finding.code() == "SL306" && finding.fingerprint().len() == 16
+            }));
+            FlushMode::GapFingerprint
         }
         Err(err) => {
             let text = err.to_string();

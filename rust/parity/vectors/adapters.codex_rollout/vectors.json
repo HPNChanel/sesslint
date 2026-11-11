@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.codex_rollout",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "codex_rollout_py_sha256": "b6c87bb5d5d761d24dbc4df2170dd05bfe73c4ba3b4ffffb553f1e9a5e462be7",
-  "codex_rollout_rs_sha256": "fe81e4d0074f7c78748567b36bbbbfbbda798d788f2595e722edbd2e78a6d614",
+  "codex_rollout_rs_sha256": "9a3e89f6f251cbc4349039ff434216afc495c06e9ad6491e407acd24230850fd",
   "known_parity_gaps": [
     "GAP-codex-secret-scan-tracker: load_codex_rollout with a supplied SecretScanTracker stops at sesslint.checks.hygiene.SecretScanTracker. Rust returns that seam before path, size, or SQLite handling.",
     "GAP-codex-session-envelope: load_codex_rollout_session on success would build sesslint.canonical.Session. Rust stops at Session and does not read events into an envelope.",

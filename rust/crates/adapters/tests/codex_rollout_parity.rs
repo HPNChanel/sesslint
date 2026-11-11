@@ -8,7 +8,7 @@ use adapters::codex_rollout::{
     RESPONSE_ITEM_TYPE_MAP, SQLITE_MAGIC, SUPPORTED_CODEX_ROLLOUT_VERSIONS, _GUARDIAN_ID_MAX,
 };
 use adapters::safe_value::PyValue;
-use model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE;
+use model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE;
 use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
 use std::fmt;
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.codex_rollout/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 30;
 const EXPECTED_VECTORS_SHA256: &str =
-    "e27677c1237967792e03324c9d04aa6b421ce4f5451cd9a8f210ac63fb160cba";
+    "62430e750500c45520dd6ade74d7012c6f913feb7dbf0cb4296484fc8345bb59";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.codex_rollout";
@@ -25,7 +25,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CODEX_PY_SHA256: &str =
     "b6c87bb5d5d761d24dbc4df2170dd05bfe73c4ba3b4ffffb553f1e9a5e462be7";
 const EXPECTED_CODEX_RS_SHA256: &str =
-    "fe81e4d0074f7c78748567b36bbbbfbbda798d788f2595e722edbd2e78a6d614";
+    "9a3e89f6f251cbc4349039ff434216afc495c06e9ad6491e407acd24230850fd";
 
 const SECRET_SCAN_TRACKER_UNAVAILABLE: &str =
     "sesslint.checks.hygiene.SecretScanTracker is not available";
@@ -241,7 +241,7 @@ fn assert_load_codex_rollout(case: &VectorCase) {
             assert!(matches!(err, LoadCodexRolloutError::Line(_)));
             assert_eq!(
                 err.to_string(),
-                PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+                CANONICAL_JSON_BYTES_UNAVAILABLE,
                 "{}",
                 case.id
             );

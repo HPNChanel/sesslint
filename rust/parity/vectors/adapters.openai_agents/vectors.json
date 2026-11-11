@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.openai_agents",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "openai_agents_py_sha256": "7c262765d0525156ad8fae34e16c11895f553500d8056aa5921d86d7d2fc8ac6",
-  "openai_agents_rs_sha256": "3275db6e3593345969d25707f4460b91d56f5920c6662220b62731001a54e8c4",
+  "openai_agents_rs_sha256": "44c53cc1997b3d114ab2ebc57f7e5b63fc8adce6e5c598df917b9eae4ef11ba9",
   "known_parity_gaps": [
     "GAP-openai-secret-scan-tracker: load_openai_agents stops at sesslint.checks.hygiene.SecretScanTracker after classifying JSON or JSONL. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
     "GAP-openai-feed-blob: load_openai_agents_json stops at SecretScanTracker.feed_blob. Rust returns the feed_blob display for every document.",

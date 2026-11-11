@@ -689,7 +689,7 @@ mod tests {
         FORMAT_OPENAI_AGENTS,
     };
     use crate::openai_agents::{
-        AgentsDocumentKind, FindingGate, LoadOpenAiAgentsError, SQLITE_MAGIC,
+        AgentsDocumentKind, LoadOpenAiAgentsError, SQLITE_MAGIC,
     };
 
     struct Scratch {
@@ -1177,12 +1177,16 @@ mod tests {
             LoadVendorEventsError::Claude(LoadClaudeCodeError::SecretScanTracker)
         ));
         assert_eq!(claude.to_string(), SECRET_SCAN_TRACKER_UNAVAILABLE);
-        let openai = reload_vendor_bytes(FORMAT_OPENAI_AGENTS, SQLITE_MAGIC).expect_err("openai");
-        let LoadVendorEventsError::OpenAi(error) = openai else {
-            panic!("openai stream");
-        };
-        assert_eq!(error.finding_gate(), Some(FindingGate::Sqlite));
-        assert_eq!(error.source_path(), Some("<stream>"));
+        let (openai_events, openai_findings) =
+            reload_vendor_bytes(FORMAT_OPENAI_AGENTS, SQLITE_MAGIC).expect("openai");
+        assert!(openai_events.is_empty());
+        assert_eq!(openai_findings.len(), 1);
+        assert_eq!(openai_findings[0].code(), "SL001");
+        assert_eq!(openai_findings[0].fingerprint(), "065b6bbcae9df6b0");
+        assert_eq!(openai_findings[0].source().path(), "<stream>");
+        assert!(openai_findings[0]
+            .message()
+            .contains("Refused live SQLite database"));
         let rejected = reload_vendor_bytes(FORMAT_CANONICAL, b"{}").expect_err("canonical");
         assert_eq!(rejected.to_string(), "Not a vendor format: 'canonical'");
     }
@@ -1223,12 +1227,16 @@ mod tests {
             Some(FORMAT_OPENAI_AGENTS),
             Some(limits(1)),
         )
-        .expect_err("openai size");
-        let LoadVendorEventsError::OpenAi(error) = sized else {
-            panic!("openai size gate");
-        };
-        assert_eq!(error.finding_gate(), Some(FindingGate::Size));
-        assert!(error.document_kind().is_none());
+        .expect("openai size");
+        let (sized_events, sized_findings) = sized;
+        assert!(sized_events.is_empty());
+        assert_eq!(sized_findings.len(), 1);
+        assert_eq!(sized_findings[0].code(), "SL001");
+        assert_eq!(sized_findings[0].fingerprint(), "0f084b14048a7e67");
+        assert!(sized_findings[0]
+            .message()
+            .contains("File size exceeds maximum limit"));
+        assert_eq!(sized_findings[0].source().path(), "<stream>");
 
         let mut codex_cursor = Cursor::new(b"x\n");
         let records = load_vendor_events(
@@ -1253,14 +1261,13 @@ mod tests {
     #[test]
     fn snapshot_stream_keeps_the_path_name() {
         let mut input = snapshot_input(Path::new(r"a\b"), Some(SQLITE_MAGIC));
-        let err = load_vendor_events(input.as_source(), Some(FORMAT_OPENAI_AGENTS), None)
-            .expect_err("named");
-        let LoadVendorEventsError::OpenAi(error) = err else {
-            panic!("named stream");
-        };
-        assert_eq!(error.finding_gate(), Some(FindingGate::Sqlite));
-        assert_eq!(error.source_path(), Some("a/b"));
-        assert_ne!(error.source_path(), Some("<bytes>"));
-        assert_ne!(error.source_path(), Some("<stream>"));
+        let (named_events, named_findings) =
+            load_vendor_events(input.as_source(), Some(FORMAT_OPENAI_AGENTS), None).expect("named");
+        assert!(named_events.is_empty());
+        assert_eq!(named_findings.len(), 1);
+        assert_eq!(named_findings[0].fingerprint(), "912495c5d78eb40d");
+        assert_eq!(named_findings[0].source().path(), "a/b");
+        assert_ne!(named_findings[0].source().path(), "<bytes>");
+        assert_ne!(named_findings[0].source().path(), "<stream>");
     }
 }

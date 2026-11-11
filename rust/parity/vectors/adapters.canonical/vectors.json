@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.canonical",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "canonical_py_sha256": "1b47487f9b63697087937c009c2222dccb9a9e3131f4e807733b30bac0bbe28e",
-  "canonical_rs_sha256": "b013a5e5bc88bb863f4443e21c67caab28e70d099f9fb4f97a794576574704cb",
+  "canonical_rs_sha256": "91f7d89e42b67c603d347e96b04a124bbb34f476244eb21c063ac248b234ee31",
   "known_parity_gaps": [
     "GAP-canonical-secret-scan-tracker: load_canonical and load_canonical_session call SecretScanTracker first. Rust returns the hygiene seam and does not read path, limits, or bytes. The harness asserts that gap and does not treat pin success as equal to the seam.",
     "GAP-canonical-decode-json: load_canonical_body stops at sesslint.io.decode_json_dupaware after size, NUL, and empty gates that need the fingerprint codec. When the pin reaches JSON decoding, expected records pin outcomes but rust_assertion is gap_decode_json.",

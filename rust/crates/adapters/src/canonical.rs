@@ -3442,8 +3442,6 @@ mod tests {
         MapLookup, Payload, Session, SessionEvent, SessionHeader, NORMALIZE_CANONICAL_UNAVAILABLE,
     };
 
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
-
     use super::{
         canonical_source_label, classify_session_doc, common_event, detect_canonical,
         dump_canonical, event_to_dict, load_canonical, load_canonical_body, load_canonical_session,
@@ -4481,13 +4479,11 @@ mod tests {
             ("payload", Payload::map(Vec::new())),
         ]);
         let mut seen = 0usize;
-        let err =
-            parse_at(&raw, 1, "a.json", (None, None, None), None, &mut seen).expect_err("seam");
-        assert_eq!(seen, 0);
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!err.to_string().contains("SL001"));
-        assert!(!err.to_string().contains("Missing required"));
+        let event = parse_at(&raw, 1, "a.json", (None, None, None), None, &mut seen).expect("event");
+        assert_eq!(seen, 1);
+        assert_eq!(event.id, "<missing:4>");
+        assert_eq!(event.kind, "error");
+        assert_eq!(event.actor, "user");
     }
 
     #[test]
@@ -4523,8 +4519,9 @@ mod tests {
             None,
             &mut seen,
         )
-        .expect_err("partial");
-        assert_eq!(partial.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        .expect("partial");
+        assert_eq!(partial.id, "<missing:4>");
+        assert_eq!(seen, 1);
 
         let passed = parse_at(
             &raw,
@@ -4534,9 +4531,9 @@ mod tests {
             None,
             &mut seen,
         )
-        .expect_err("passed");
-        assert_eq!(passed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(seen, 0);
+        .expect("passed");
+        assert_eq!(passed.id, "<missing:4>");
+        assert_eq!(seen, 2);
     }
 
     #[test]
@@ -4598,8 +4595,10 @@ mod tests {
             err.to_string(),
             "Invalid byte_offset: -1 (must be integer >= 0)"
         );
-        let flushed = drift.into_findings("a.json").expect_err("recorded");
-        assert_eq!(flushed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let flushed = drift.into_findings("a.json").expect("recorded");
+        assert_eq!(flushed.len(), 1);
+        assert_eq!(flushed[0].code(), "SL304");
+        assert_eq!(flushed[0].fingerprint(), "0289559bb4e744d1");
         assert_eq!(seen, 0);
     }
 
@@ -4672,9 +4671,8 @@ mod tests {
             &mut seen,
         )
         .expect_err("seq");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!err.to_string().contains("unhashable"));
-        assert_eq!(seen, 0);
+        assert_eq!(err.to_string(), "unhashable type: 'list'");
+        assert_eq!(seen, 1);
     }
 
     fn label_of(text: &str) -> String {
@@ -5041,7 +5039,7 @@ mod tests {
 
     #[test]
     fn bytes_stop_at_the_decoder_or_the_earlier_gate() {
-        let codec = FINGERPRINT_CODEC_UNAVAILABLE;
+        let codec = "make_finding returned a finding and no EventList is built";
         let decoder = DECODE_JSON_DUPAWARE_UNAVAILABLE;
 
         let object = bytes_err(br#"{"a":1}"#, None);
@@ -5126,7 +5124,10 @@ mod tests {
 
         let size =
             load_canonical_body(CanonicalLoadSource::Str(over_text), limit(1)).expect_err("size");
-        assert_eq!(size.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(
+            size.to_string(),
+            "make_finding returned a finding and no EventList is built"
+        );
         assert_eq!(size.finding_gate(), Some(CanonicalReadGate::Size));
         assert!(!size.at_json_decoder());
         let label = canonical_source_label(CanonicalSource::Str(over_text));
@@ -5154,7 +5155,10 @@ mod tests {
         let nul_err =
             load_canonical_body(CanonicalLoadSource::Str(nul_text), limit(1)).expect_err("nul");
         assert_eq!(nul_err.finding_gate(), Some(CanonicalReadGate::Nul));
-        assert_eq!(nul_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(
+            nul_err.to_string(),
+            "make_finding returned a finding and no EventList is built"
+        );
         std::fs::remove_file(&nul).expect("closed after nul");
 
         let empty = scratch.child("empty.json");
@@ -5190,7 +5194,10 @@ mod tests {
         let text = file.to_str().expect("utf8");
         let err = load_canonical_body(CanonicalLoadSource::Str(text), limit(-1)).expect_err("neg");
         assert_eq!(err.finding_gate(), Some(CanonicalReadGate::Size));
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(
+            err.to_string(),
+            "make_finding returned a finding and no EventList is built"
+        );
         std::fs::remove_file(&file).expect("closed or unopened");
     }
 
@@ -5209,7 +5216,10 @@ mod tests {
         )
         .expect_err("size");
         assert_eq!(err.finding_gate(), Some(CanonicalReadGate::Size));
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert_eq!(
+            err.to_string(),
+            "make_finding returned a finding and no EventList is built"
+        );
         assert_eq!(err.source_path(), Some("synth/leaf"));
         assert_eq!(slow.pos, 5);
         assert!(!err.to_string().contains("synth"));

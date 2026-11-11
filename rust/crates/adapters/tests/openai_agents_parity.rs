@@ -14,7 +14,6 @@ use adapters::safe_value::PyValue;
 use adapters::source::SuppliedReaderLimits;
 use model::canonical::CanonicalUnavailable;
 use model::canonical::SessionEvent;
-use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
 use std::fmt;
 use std::path::PathBuf;
@@ -22,7 +21,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.openai_agents/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 42;
 const EXPECTED_VECTORS_SHA256: &str =
-    "a8950910d96657e0909dd7850ab094e07246b89e5aaff9a60d86891025618158";
+    "b14329b1187c463689ccaac7253cb3f506842a5dc9fe6470d6d430fe5eb33465";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.openai_agents";
@@ -30,7 +29,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_OPENAI_PY_SHA256: &str =
     "7c262765d0525156ad8fae34e16c11895f553500d8056aa5921d86d7d2fc8ac6";
 const EXPECTED_OPENAI_RS_SHA256: &str =
-    "3275db6e3593345969d25707f4460b91d56f5920c6662220b62731001a54e8c4";
+    "44c53cc1997b3d114ab2ebc57f7e5b63fc8adce6e5c598df917b9eae4ef11ba9";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -297,6 +296,30 @@ fn assert_load_openai_agents(case: &VectorCase) {
     let _pin = object_field(&case.expected, "pin").expect("pin snapshot");
     let assertion = object_field(&case.expected, "rust_assertion").expect("rust_assertion");
     let mode = string_field(assertion, "mode").expect("mode");
+    if mode == "gap_fingerprint_codec" {
+        let (events, findings) =
+            load_openai_agents(OpenAiAgentsSource::Bytes(&bytes), limit).expect("finding");
+        assert!(events.is_empty(), "events {}", case.id);
+        assert_eq!(findings.len(), 1, "findings {}", case.id);
+        assert_eq!(findings[0].code(), "SL001", "{}", case.id);
+        let gate = string_field(assertion, "gate").expect("gate");
+        let want = match gate.as_str() {
+            "size" => FindingGate::Size,
+            "sqlite" => FindingGate::Sqlite,
+            other => panic!("unknown gate {other}"),
+        };
+        let needle = match want {
+            FindingGate::Size => "File size exceeds maximum limit",
+            FindingGate::Sqlite => "Refused live SQLite database",
+        };
+        assert!(
+            findings[0].message().contains(needle),
+            "{} {}",
+            case.id,
+            findings[0].message()
+        );
+        return;
+    }
     let err = load_openai_agents(OpenAiAgentsSource::Bytes(&bytes), limit).expect_err("gap");
     match mode.as_str() {
         "gap_secret_scan_tracker" => {
@@ -313,21 +336,6 @@ fn assert_load_openai_agents(case: &VectorCase) {
                 other => panic!("unknown document kind {other}"),
             };
             assert_eq!(err.document_kind(), Some(want), "{}", case.id);
-        }
-        "gap_fingerprint_codec" => {
-            assert_eq!(
-                err.to_string(),
-                FINGERPRINT_CODEC_UNAVAILABLE,
-                "{}",
-                case.id
-            );
-            let gate = string_field(assertion, "gate").expect("gate");
-            let want = match gate.as_str() {
-                "size" => FindingGate::Size,
-                "sqlite" => FindingGate::Sqlite,
-                other => panic!("unknown gate {other}"),
-            };
-            assert_eq!(err.finding_gate(), Some(want), "{}", case.id);
         }
         other => panic!("unknown load mode {other} in {}", case.id),
     }

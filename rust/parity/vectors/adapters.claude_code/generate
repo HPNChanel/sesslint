@@ -21,7 +21,7 @@ CLAUDE_PY_SHA256 = (
     "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1"
 )
 CLAUDE_RS_SHA256 = (
-    "801bee2f275c752a443201cd3b3fec8220133c95ccb2a40d578bce2ae5cfe456"
+    "20b598165bec1ff08eb1b94e6c81eef4a8d854c7d08f196c765ce0f336b15551"
 )
 MODULE = "sesslint.adapters.claude_code"
 SYN_MISSING = "fixtures/syn-missing-session.jsonl"

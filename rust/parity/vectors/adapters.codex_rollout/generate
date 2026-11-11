@@ -20,7 +20,7 @@ CODEX_PY_SHA256 = (
     "b6c87bb5d5d761d24dbc4df2170dd05bfe73c4ba3b4ffffb553f1e9a5e462be7"
 )
 CODEX_RS_SHA256 = (
-    "fe81e4d0074f7c78748567b36bbbbfbbda798d788f2595e722edbd2e78a6d614"
+    "9a3e89f6f251cbc4349039ff434216afc495c06e9ad6491e407acd24230850fd"
 )
 MODULE = "sesslint.adapters.codex_rollout"
 SYN_MISSING = "fixtures/syn-missing-rollout.jsonl"

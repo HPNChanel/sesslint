@@ -5222,18 +5222,24 @@ mod tests {
         assert!(events.source.entries().is_empty());
     }
 
-    fn assert_codec_gate(bytes: &[u8], cap: i64, gate: FindingGate) -> LoadOpenAiAgentsError {
-        let err = load_openai_agents(
+    fn assert_codec_gate(bytes: &[u8], cap: i64, gate: FindingGate) {
+        let (events, findings) = load_openai_agents(
             OpenAiAgentsSource::Bytes(bytes),
             Some(MaxFileBytes::Int(cap)),
         )
-        .expect_err("codec");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.finding_gate(), Some(gate));
-        assert_eq!(err.source_path(), Some("<bytes>"));
-        assert!(err.document_kind().is_none());
-        assert!(!err.to_string().contains("MARKER"));
-        err
+        .expect("finding");
+        assert!(events.is_empty());
+        assert_eq!(findings.len(), 1);
+        let finding = &findings[0];
+        assert_eq!(finding.code(), "SL001");
+        assert_eq!(finding.source().path(), "<bytes>");
+        assert_eq!(finding.fingerprint().len(), 16);
+        let expected = match gate {
+            FindingGate::Size => "File size exceeds maximum limit",
+            FindingGate::Sqlite => "Refused live SQLite database",
+        };
+        assert!(finding.message().contains(expected), "{}", finding.message());
+        assert!(!finding.message().contains("MARKER"));
     }
 
     #[test]
@@ -5333,63 +5339,73 @@ mod tests {
             data: SQLITE_MAGIC,
             pos: 0,
         };
-        let named_err = load_openai_agents(
+        let (named_events, named_findings) = load_openai_agents(
             OpenAiAgentsSource::Stream {
                 reader: &mut named,
                 name: Some(r"a\b"),
             },
             Some(MaxFileBytes::Int(8)),
         )
-        .expect_err("named");
-        assert_eq!(named_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(named_err.finding_gate(), Some(FindingGate::Sqlite));
-        assert_eq!(named_err.source_path(), Some("a/b"));
+        .expect("named");
+        assert!(named_events.is_empty());
+        assert_eq!(named_findings.len(), 1);
+        assert!(named_findings[0]
+            .message()
+            .contains("Refused live SQLite database"));
+        assert_eq!(named_findings[0].source().path(), "a/b");
 
         let mut quoted = ByteReader {
             data: SQLITE_MAGIC,
             pos: 0,
         };
-        let quoted_err = load_openai_agents(
+        let (quoted_events, quoted_findings) = load_openai_agents(
             OpenAiAgentsSource::Stream {
                 reader: &mut quoted,
                 name: Some("a\"b"),
             },
             None,
         )
-        .expect_err("quoted");
-        assert_eq!(quoted_err.source_path(), Some("a\"b"));
-        assert_eq!(quoted_err.finding_gate(), Some(FindingGate::Sqlite));
+        .expect("quoted");
+        assert!(quoted_events.is_empty());
+        assert_eq!(quoted_findings[0].source().path(), "a\"b");
+        assert!(quoted_findings[0]
+            .message()
+            .contains("Refused live SQLite database"));
 
         let mut unnamed = ByteReader {
             data: SQLITE_MAGIC,
             pos: 0,
         };
-        let unnamed_err = load_openai_agents(
+        let (unnamed_events, unnamed_findings) = load_openai_agents(
             OpenAiAgentsSource::Stream {
                 reader: &mut unnamed,
                 name: None,
             },
             None,
         )
-        .expect_err("unnamed");
-        assert_eq!(unnamed_err.source_path(), Some("<stream>"));
+        .expect("unnamed");
+        assert!(unnamed_events.is_empty());
+        assert_eq!(unnamed_findings[0].source().path(), "<stream>");
 
         let payload = b"MARKERMARKERMARKERMARKER";
         let mut slow = ByteReader {
             data: payload,
             pos: 0,
         };
-        let slow_err = load_openai_agents(
+        let (slow_events, slow_findings) = load_openai_agents(
             OpenAiAgentsSource::Stream {
                 reader: &mut slow,
                 name: Some(r"a\b"),
             },
             Some(MaxFileBytes::Int(18)),
         )
-        .expect_err("slow size");
-        assert_eq!(slow_err.finding_gate(), Some(FindingGate::Size));
-        assert_eq!(slow_err.source_path(), Some("a/b"));
-        assert!(!slow_err.to_string().contains("MARKER"));
+        .expect("slow size");
+        assert!(slow_events.is_empty());
+        assert!(slow_findings[0]
+            .message()
+            .contains("File size exceeds maximum limit"));
+        assert_eq!(slow_findings[0].source().path(), "a/b");
+        assert!(!slow_findings[0].message().contains("MARKER"));
         assert_eq!(slow.pos, 19);
     }
 
@@ -5471,30 +5487,33 @@ mod tests {
         body.extend(std::iter::repeat_n(b'M', 32));
         fs::write(&oversize, &body).expect("write");
         let before = fs::read(&oversize).expect("read");
-        let oversize_err = load_openai_agents(
+        let (oversize_events, oversize_findings) = load_openai_agents(
             OpenAiAgentsSource::Path(&oversize),
             Some(MaxFileBytes::Int(8)),
         )
-        .expect_err("stat size");
-        assert_eq!(oversize_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(oversize_err.finding_gate(), Some(FindingGate::Size));
-        let oversize_path = oversize_err.source_path().expect("path");
+        .expect("stat size");
+        assert!(oversize_events.is_empty());
+        assert!(oversize_findings[0]
+            .message()
+            .contains("File size exceeds maximum limit"));
+        let oversize_path = oversize_findings[0].source().path();
         assert!(!oversize_path.contains('\\'));
         assert!(oversize_path.contains("oversize.bin"));
-        assert!(!oversize_err.to_string().contains("MARKER"));
+        assert!(!oversize_findings[0].message().contains("MARKER"));
         assert_eq!(fs::read(&oversize).expect("unchanged"), before);
         fs::remove_file(&oversize).expect("closed after stat return");
 
         let exact = tree.child("exact.bin");
         fs::write(&exact, SQLITE_MAGIC).expect("magic");
-        let db_err = load_openai_agents(
+        let (_db_events, db_findings) = load_openai_agents(
             OpenAiAgentsSource::Path(&exact),
             Some(MaxFileBytes::Int(16)),
         )
-        .expect_err("sqlite file");
-        assert_eq!(db_err.finding_gate(), Some(FindingGate::Sqlite));
-        assert_eq!(db_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        let db_path = db_err.source_path().expect("path");
+        .expect("sqlite file");
+        assert!(db_findings[0]
+            .message()
+            .contains("Refused live SQLite database"));
+        let db_path = db_findings[0].source().path();
         assert!(!db_path.contains('\\'));
         assert!(db_path.contains("exact.bin"));
         fs::remove_file(&exact).expect("closed after sqlite return");
@@ -6940,8 +6959,10 @@ mod tests {
             None,
         );
         assert!(matches!(err, ProcessOpenAiItemError::ContentHash(_)));
-        let flushed = drift.into_findings("items.json").expect_err("transition");
-        assert_eq!(flushed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let flushed = drift.into_findings("items.json").expect("transition");
+        assert_eq!(flushed.len(), 1);
+        assert_eq!(flushed[0].code(), "SL304");
+        assert_eq!(flushed[0].fingerprint(), "0cea2dd8e0935ed0");
         assert!(events.is_empty());
         assert!(findings.is_empty());
     }

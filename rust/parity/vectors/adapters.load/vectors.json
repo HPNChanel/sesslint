@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.load",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "load_py_sha256": "7347f2916d1d76169b872825f25d4a4dceff7eccc30a9957ba39f13f7ae87e43",
-  "load_rs_sha256": "93405357d8b4d823c78ba01731b474e3a4ff2b37ed12f77bec2dddb7349cd2d2",
+  "load_rs_sha256": "18316fc446d26e7f68876a4d588b8700ea56f81fa61d4b7c8b7e4b85633a2298",
   "known_parity_gaps": [
     "GAP-load-claude-canonical-no-events: load_claude_code and load_canonical success paths do not return EventList rows in Rust; load_events_for_format for those format ids stops at the loader seam before events.",
     "GAP-load-valueerror-repr: Unsupported and not-vendor ValueError messages use Python repr, including None and quoted strings; Rust matches Display text but vectors do not exhaust every format arm.",

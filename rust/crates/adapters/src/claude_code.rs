@@ -5365,8 +5365,10 @@ mod process_line_tests {
             .as_ref()
             .expect("tracker")
             .findings(PATH)
-            .expect_err("sl306");
-        assert_eq!(noted.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+            .expect("sl306");
+        assert_eq!(noted.len(), 1);
+        assert_eq!(noted[0].code(), "SL306");
+        assert_eq!(noted[0].fingerprint(), "67c156cfd0608c56");
         let mut plain = ClaudeLineContext {
             unknown_metadata: Some(UnknownMetadataTracker::new()),
             ..ClaudeLineContext::default()
@@ -5568,8 +5570,10 @@ mod process_line_tests {
             .as_ref()
             .expect("drift")
             .into_findings(PATH)
-            .expect_err("transition");
-        assert_eq!(drifted.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+            .expect("transition");
+        assert_eq!(drifted.len(), 1);
+        assert_eq!(drifted[0].code(), "SL304");
+        assert_eq!(drifted[0].fingerprint(), "12993233af3ddcd2");
     }
 
     #[test]

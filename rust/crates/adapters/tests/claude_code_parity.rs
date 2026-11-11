@@ -19,7 +19,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.claude_code/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 27;
 const EXPECTED_VECTORS_SHA256: &str =
-    "829c9fe4c1a754b5eb6873623d96cd35feeeddd5fad0602b8dae6750be7c3b52";
+    "46cb3a35e2c4580c080924a6f85744f8a9a08a211fd47a9d3f688287fd34ceea";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.claude_code";
@@ -27,7 +27,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CLAUDE_PY_SHA256: &str =
     "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1";
 const EXPECTED_CLAUDE_RS_SHA256: &str =
-    "278a6818b3c872b38e5695328b07798d56f236268e3fe59d521076968d828f22";
+    "20b598165bec1ff08eb1b94e6c81eef4a8d854c7d08f196c765ce0f336b15551";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

@@ -3,7 +3,7 @@
   "module": "sesslint.adapters.metadata",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "metadata_py_sha256": "0476945fab0e06501492c2e773aac50c57484b0e7bfc22c1fb98575177bdeac0",
-  "metadata_rs_sha256": "8256a693817a3af850588b5887cc390fd5dd6660b6d69f0be8a26ba9ec984f69",
+  "metadata_rs_sha256": "497a1044a02881566ee7200b2e9a3cede22b0ecddc537a071109fb72fa6185fd",
   "known_parity_gaps": [
     "GAP-metadata-finding-fingerprint: UnknownMetadataTracker.findings on a non-empty group buffer calls make_finding, which needs sesslint.determinism.canonical_json_bytes. Rust stops at the missing fingerprint codec and does not return Finding objects. The harness drives the tracker and checks empty_ok, finding_error before the codec, or gap_fingerprint. Pin snapshots of _groups stay in the vector and are not asserted, because those fields are private."
   ],

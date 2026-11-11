@@ -676,39 +676,39 @@ mod tests {
         tracker.note("future_status", 9);
         let source = SourceRef::try_new("synth.jsonl", Some(SourceLine::Int(3)), None);
         assert!(source.is_ok());
-        let err = tracker.findings("synth.jsonl").expect_err("codec");
-        assert_eq!(
-            err.to_string(),
-            "sesslint.determinism.canonical_json_bytes is not available"
-        );
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let noted = tracker.findings("synth.jsonl").expect("notes");
+        assert_eq!(noted.len(), 1);
+        assert_eq!(noted[0].code(), "SL306");
+        assert_eq!(noted[0].fingerprint(), "79881f4227241ddd");
         assert_eq!(stored(&tracker, "future_status"), Some((2, 3, false)));
-        let again = tracker.findings("synth.jsonl").expect_err("again");
-        assert_eq!(again.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let again = tracker.findings("synth.jsonl").expect("again");
+        assert_eq!(again[0].fingerprint(), noted[0].fingerprint());
 
         let mut padded = UnknownMetadataTracker::new();
         padded.note("future_status", i64::MAX);
-        let padded_err = padded.findings("  synth.jsonl  ").expect_err("padded");
-        assert_eq!(padded_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let padded_notes = padded.findings("  synth.jsonl  ").expect("padded");
+        assert_eq!(padded_notes.len(), 1);
+        assert_eq!(padded_notes[0].code(), "SL306");
+        assert_eq!(padded_notes[0].fingerprint().len(), 16);
 
         let mut slashed = UnknownMetadataTracker::new();
         slashed.note("future_status", 1);
-        let slashed_err = slashed.findings("dir\\synth.jsonl").expect_err("slash");
-        assert_eq!(slashed_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let slashed_notes = slashed.findings("dir\\synth.jsonl").expect("slash");
+        assert_eq!(slashed_notes[0].source().path(), "dir/synth.jsonl");
 
         let mut later_bad = UnknownMetadataTracker::new();
         later_bad.note("a_kind", 1);
         later_bad.note("m_kind", 0);
         let later_err = later_bad.findings("synth.jsonl").expect_err("later");
-        assert_eq!(later_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        assert!(later_err.to_string().contains("SourceRef.line"));
+        assert!(later_err.to_string().contains("got 0"));
 
         let mut many = UnknownMetadataTracker::new();
         for index in 0..=MAX_TYPE_GROUPS {
             many.note(&format!("kind{index}"), 2);
         }
-        let many_err = many.findings("synth.jsonl").expect_err("many");
-        assert_eq!(many_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
+        let many_notes = many.findings("synth.jsonl").expect("many");
+        assert!(!many_notes.is_empty());
         assert_eq!(many.groups.len(), 33);
     }
 }

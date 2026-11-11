@@ -9,7 +9,6 @@ use adapters::canonical::{
 };
 use adapters::safe_value::PyValue;
 use model::canonical::Payload;
-use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 use sha2::Digest;
 use std::fmt;
 use std::path::PathBuf;
@@ -17,7 +16,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.canonical/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 44;
 const EXPECTED_VECTORS_SHA256: &str =
-    "a55b80a8e9b516a3d4cea5aa047b67451f44bb3b811fd5882046aaec5320c7ba";
+    "fd4ed1d0f19130667c6ca84dfdfa02c238bf2d8beecf8af6da925b142e867673";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.canonical";
@@ -25,7 +24,7 @@ const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CANONICAL_PY_SHA256: &str =
     "1b47487f9b63697087937c009c2222dccb9a9e3131f4e807733b30bac0bbe28e";
 const EXPECTED_CANONICAL_RS_SHA256: &str =
-    "b013a5e5bc88bb863f4443e21c67caab28e70d099f9fb4f97a794576574704cb";
+    "91f7d89e42b67c603d347e96b04a124bbb34f476244eb21c063ac248b234ee31";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -198,7 +197,7 @@ fn assert_load_body(case: &VectorCase) {
         "gap_fingerprint_codec" => {
             assert_eq!(
                 err.to_string(),
-                FINGERPRINT_CODEC_UNAVAILABLE,
+                "make_finding returned a finding and no EventList is built",
                 "fingerprint {}",
                 case.id
             );

@@ -18,7 +18,7 @@ from typing import Any, Final
 SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 OPENAI_PY_SHA256 = "7c262765d0525156ad8fae34e16c11895f553500d8056aa5921d86d7d2fc8ac6"
-OPENAI_RS_SHA256 = "3275db6e3593345969d25707f4460b91d56f5920c6662220b62731001a54e8c4"
+OPENAI_RS_SHA256 = "44c53cc1997b3d114ab2ebc57f7e5b63fc8adce6e5c598df917b9eae4ef11ba9"
 MODULE = "sesslint.adapters.openai_agents"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = ('GAP-openai-secret-scan-tracker: load_openai_agents stops at sesslint.checks.hygiene.SecretScanTracker after classifying JSON or JSONL. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.', 'GAP-openai-feed-blob: load_openai_agents_json stops at SecretScanTracker.feed_blob. Rust returns the feed_blob display for every document.', 'GAP-openai-tail-tracker: load_openai_agents_jsonl stops at sesslint.io.MalformedTailTracker before the line loop.', 'GAP-openai-session-envelope: load_openai_agents_session calls load_openai_agents and stops at MalformedTailTracker. Rust does not build a Session envelope.', 'GAP-openai-content-hash: process_openai_item stops at compute_content_hash and does not append a SessionEvent. Unsupported versions and unknown types stop at sesslint.determinism.canonical_json_bytes when make_finding would run in the pin.', 'GAP-openai-finding-fingerprint: size-limit and SQLite refusal gates call make_finding in the pin. Rust stops at the fingerprint codec for those findings.')
