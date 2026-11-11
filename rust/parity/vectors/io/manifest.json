@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.io",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "scan_io_rs_sha256": "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b",
+  "scan_io_rs_sha256": "03038cad3c39953cca8641be40e7cdb9525cbb939d752f2bd0f82612cca34854",
   "vector_count": 35,
-  "vectors_sha256": "2a76ff0962cea0bee0d49dc7475106f20177b6c2dc7f2a91e16045830fb19e5c",
+  "vectors_sha256": "96b5151fef97f9d3d880132445a8eb8691f53a74e22fb2f2740d47ace977150a",
   "generator": "rust/parity/vectors/io/generate",
   "known_parity_gaps": [
     "SL001, SL002, SL303, and SL009 findings: Python yields Finding objects; Rust stops with FINGERPRINT_CODEC_UNAVAILABLE. Do not expect codec text as if Python raised it.",

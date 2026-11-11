@@ -19,7 +19,7 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 IO_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 IO_RS_SHA256 = (
-    "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b"
+    "03038cad3c39953cca8641be40e7cdb9525cbb939d752f2bd0f82612cca34854"
 )
 MODULE = "sesslint.io"
 

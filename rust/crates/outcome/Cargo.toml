@@ -7,5 +7,11 @@ publish = false
 [dependencies]
 codec = { path = "../codec" }
 model = { path = "../model" }
+adapters = { path = "../adapters" }
+checks = { path = "../checks" }
+repair = { path = "../repair" }
+report = { path = "../report" }
+scan = { path = "../scan" }
+evidence = { path = "../evidence" }
 sha2 = "=0.10.9"
 serde_json = "=1.0.151"

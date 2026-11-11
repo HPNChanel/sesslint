@@ -7,3 +7,5 @@ publish = false
 [dependencies]
 codec = { path = "../codec" }
 model = { path = "../model" }
+adapters = { path = "../adapters" }
+checks = { path = "../checks" }

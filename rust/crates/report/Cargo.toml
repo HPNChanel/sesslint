@@ -6,4 +6,8 @@ publish = false
 
 [dependencies]
 model = { path = "../model" }
+codec = { path = "../codec" }
+adapters = { path = "../adapters" }
+checks = { path = "../checks" }
+repair = { path = "../repair" }
 sha2 = "=0.10.9"

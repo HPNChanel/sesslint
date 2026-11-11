@@ -8,6 +8,9 @@ publish = false
 model = { path = "../model" }
 checks = { path = "../checks" }
 codec = { path = "../codec" }
+adapters = { path = "../adapters" }
+repair = { path = "../repair" }
+report = { path = "../report" }
 rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }
 serde_json = { version = "=1.0.151", features = ["raw_value", "float_roundtrip"] }
 sha2 = "=0.10.9"

@@ -22,9 +22,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.io";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_SCAN_IO_RS_SHA256: &str =
-    "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b";
+    "03038cad3c39953cca8641be40e7cdb9525cbb939d752f2bd0f82612cca34854";
 const EXPECTED_VECTORS_SHA256: &str =
-    "2a76ff0962cea0bee0d49dc7475106f20177b6c2dc7f2a91e16045830fb19e5c";
+    "96b5151fef97f9d3d880132445a8eb8691f53a74e22fb2f2740d47ace977150a";
 
 struct Scratch {
     path: PathBuf,

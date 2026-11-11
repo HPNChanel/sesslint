@@ -3,3 +3,14 @@ name = "support"
 version = "0.0.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+model = { path = "../model" }
+codec = { path = "../codec" }
+adapters = { path = "../adapters" }
+checks = { path = "../checks" }
+repair = { path = "../repair" }
+report = { path = "../report" }
+scan = { path = "../scan" }
+evidence = { path = "../evidence" }
+outcome = { path = "../outcome" }

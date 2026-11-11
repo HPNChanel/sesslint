@@ -7,5 +7,12 @@ publish = false
 [dependencies]
 serde_json = "=1.0.151"
 model = { path = "../model" }
-checks = { path = "../checks" }
 codec = { path = "../codec" }
+adapters = { path = "../adapters" }
+checks = { path = "../checks" }
+repair = { path = "../repair" }
+report = { path = "../report" }
+scan = { path = "../scan" }
+evidence = { path = "../evidence" }
+outcome = { path = "../outcome" }
+support = { path = "../support" }
