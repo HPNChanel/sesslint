@@ -17,9 +17,7 @@ use model::canonical::{
     parse_session_event, parse_session_header, Payload, SessionEvent, SessionHeader,
 };
 use model::codes::{get_code_info, Repairability, Severity, SL001, SL002, SL303};
-use model::errors::{
-    FileTooLargeError, FindingError, HeaderMissingError, SchemaError,
-};
+use model::errors::{FileTooLargeError, FindingError, HeaderMissingError, SchemaError};
 use model::finding::{
     enforce_content_free_text, make_finding, Evidence, EvidenceKey, EvidenceLookup, Finding,
     MakeFindingInput, PyValue, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
@@ -1621,9 +1619,9 @@ fn duplicate_key_evidence(
 /// `Duplicate JSON key on line {line} for record {record_id}`. Evidence keys
 /// are `key_path`, `occurrence_count`, `critical`, then `record_index` when
 /// `record_ordinal` is present, then `truncated` when `truncated` is true.
-/// The fingerprint codec error is propagated. This function does not invent a
-/// fingerprint, a digest, or a [`Finding`]. The duplicated value is not
-/// evidence.
+/// An omitted fingerprint is the 16-hex digest from
+/// [`model::finding::compute_finding_fingerprint`]. The duplicated value is
+/// not evidence.
 pub fn dup_key_findings(
     dups: &[DuplicateKey],
     truncated: bool,
@@ -4372,7 +4370,7 @@ mod duplicate_key_tests {
     }
 
     #[test]
-    fn dup_key_findings_propagates_the_fingerprint_codec_gap() {
+    fn dup_key_findings_hash_the_duplicate_and_omit_the_value() {
         assert_eq!(dup_finding_severity(true), Severity::Error);
         assert_eq!(dup_finding_severity(false), Severity::Warning);
         assert!(dup_key_findings(&[], true, "", None, None, None)
@@ -4388,20 +4386,25 @@ mod duplicate_key_tests {
                 .expect_err("blank path");
         assert!(source_err.to_string().contains("SourceRef.path"));
         assert_ne!(source_err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        let err = dup_key_findings(&[dup], true, "f.jsonl", Some(2), Some("evt_b"), Some(4))
-            .expect_err("codec");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_ne!(err.to_string().len(), 16);
+        let findings = dup_key_findings(&[dup], true, "f.jsonl", Some(2), Some("evt_b"), Some(4))
+            .expect("fingerprint");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].fingerprint(), "eaa71a31b3f76f14");
+        assert_eq!(
+            findings[0].message(),
+            "Duplicate JSON key on line 2 for record evt_b"
+        );
         let (_, dups, _) = decode_json_dupaware(
             r#"{"k":"payload-alpha","k":"payload-beta"}"#,
             None,
             MAX_DUP_KEYS_PER_RECORD,
         )
         .expect("values");
-        let err = dup_key_findings(&dups, false, "f.jsonl", Some(1), None, None).expect_err("gap");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!err.to_string().contains("payload-alpha"));
-        assert!(!err.to_string().contains("payload-beta"));
+        let findings =
+            dup_key_findings(&dups, false, "f.jsonl", Some(1), None, None).expect("fingerprint");
+        assert_eq!(findings.len(), 1);
+        assert!(!findings[0].message().contains("payload-alpha"));
+        assert!(!findings[0].message().contains("payload-beta"));
     }
 
     #[test]
@@ -5149,11 +5152,10 @@ pub fn process_line_decision(input: &ProcessLineInput<'_>) -> LineDecision {
 /// [`process_line_decision`].
 ///
 /// The feed runs first, on the raw bytes, before any rejection. Duplicate
-/// keys call [`dup_key_findings`] only when the list is non-empty. That call
-/// and every defect call [`make_finding`] with fingerprint [`PyValue::None`]
-/// and return [`FINGERPRINT_CODEC_UNAVAILABLE`]. The error is propagated.
-/// This function does not invent a fingerprint, a digest, or a [`Finding`].
-/// A header success is `Ok(None)`. A valid event is `Ok(Some(event))`.
+/// keys call [`dup_key_findings`] only when the list is non-empty and append
+/// those findings to `dup_sink`. A defect still calls [`make_finding`] and
+/// [`emit_defect`] keeps the typed failure. A header success is `Ok(None)`.
+/// A valid event is `Ok(Some(event))`.
 pub fn process_line(
     input: &ProcessLineInput<'_>,
     dup_sink: Option<&mut Vec<Finding>>,
@@ -5967,7 +5969,7 @@ mod process_line_tests {
     }
 
     #[test]
-    fn duplicate_keys_keep_the_last_number_and_stop_at_the_fingerprint_gap() {
+    fn duplicate_keys_keep_the_last_number_and_record_a_finding() {
         let text = event_json("1", r#"{"n":3}"#).replace("\"seq\":1", "\"seq\":1,\"seq\":2");
         let limits = limits(DEFAULT_MAX_DEPTH);
         let raw = positioned(2, text.as_bytes(), false);
@@ -5994,10 +5996,16 @@ mod process_line_tests {
         assert_eq!(value.as_int(), Some(3));
 
         let mut sink = Vec::new();
-        let err = process_line(&input, Some(&mut sink), None).expect_err("fingerprint");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(sink.is_empty());
-        assert!(!err.to_string().contains("evt-synthetic"));
+        let event = process_line(&input, Some(&mut sink), None)
+            .expect("event")
+            .expect("parsed");
+        assert_eq!(event.seq, 2);
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink[0].fingerprint().len(), 16);
+        assert_eq!(
+            sink[0].message(),
+            "Duplicate JSON key on line 2 for record evt-synthetic"
+        );
 
         let plain = process_line(&input, None, None)
             .expect("no sink")
@@ -6030,9 +6038,10 @@ mod process_line_tests {
             LineOutcome::Stop(ProcessLineError::IntegerRange)
         ));
         let mut sink = Vec::new();
-        let gap = process_line(&dup_input, Some(&mut sink), None).expect_err("gap");
-        assert_eq!(gap.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(sink.is_empty());
+        let gap = process_line(&dup_input, Some(&mut sink), None).expect_err("range");
+        assert_eq!(gap.to_string(), "JSON integer is outside i64");
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink[0].fingerprint().len(), 16);
     }
 
     #[test]
@@ -6522,7 +6531,6 @@ mod read_header_tests {
 
     use model::canonical::SessionHeader;
     use model::errors::{FileTooLargeError, HeaderMissingError, SchemaError};
-    use model::finding::FINGERPRINT_CODEC_UNAVAILABLE;
 
     use super::{
         decode_json_dupaware, read_header, HeaderInput, ProcessLineError, ReadHeaderError,
@@ -6991,7 +6999,7 @@ mod read_header_tests {
     }
 
     #[test]
-    fn a_duplicate_sink_is_the_fingerprint_gap() {
+    fn a_duplicate_sink_records_the_finding_and_keeps_the_header() {
         let json = concat!(
             r#"{"schema_version":"sesslint.session/v1","session_id":"sess-first","#,
             r#""session_id":"sess-synthetic","created_at":"2024-02-29T00:00:00Z"}"#
@@ -7001,7 +7009,7 @@ mod read_header_tests {
         let mut keys = BTreeSet::new();
         keys.insert(String::from("session_id"));
         let mut cursor = SliceLineCursor::new(json.as_bytes());
-        let err = read_header(
+        let header = read_header(
             HeaderInput::Stream {
                 source: &mut cursor,
                 name: None,
@@ -7010,12 +7018,12 @@ mod read_header_tests {
             Some(&mut sink),
             Some(&keys),
         )
-        .expect_err("fingerprint");
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(matches!(err, ReadHeaderError::Finding(_)));
-        assert!(sink.is_empty());
-        assert!(!err.to_string().contains("Duplicate JSON key"));
-        assert_ne!(err.to_string().len(), 16);
+        .expect("header");
+        assert_eq!(header.session_id, "sess-synthetic");
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink[0].code(), "SL303");
+        assert_eq!(sink[0].fingerprint().len(), 16);
+        assert!(!sink[0].message().contains("sess-first"));
     }
 
     #[test]
@@ -7068,4 +7076,3 @@ mod read_header_tests {
         )
     }
 }
-

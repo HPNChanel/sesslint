@@ -3516,13 +3516,142 @@ pub fn finding_fingerprint_preimage<S, R, I>(
     FindingFingerprintPreimage { slots }
 }
 
-/// Compute the fingerprint preimage, then refuse the codec step (FR-046).
+const FINGERPRINT_JSON_ERROR: &str = "Canonical serialization error";
+
+fn push_json_string(out: &mut String, text: &str) {
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other if (other as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", u32::from(other)));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
+fn fingerprint_json_error() -> FindingError {
+    FindingError::new(FINGERPRINT_JSON_ERROR)
+}
+
+fn write_evidence(
+    out: &mut String,
+    evidence: &Evidence,
+    seen: &mut Vec<*const EvidenceKind>,
+) -> Result<(), FindingError> {
+    let ptr = Rc::as_ptr(&evidence.kind);
+    match &*evidence.kind {
+        EvidenceKind::Str(text) => push_json_string(out, text),
+        EvidenceKind::Int(value) => out.push_str(&value.to_string()),
+        EvidenceKind::Bool(true) => out.push_str("true"),
+        EvidenceKind::Bool(false) => out.push_str("false"),
+        EvidenceKind::NoneValue => out.push_str("null"),
+        EvidenceKind::List(items) => {
+            if seen.contains(&ptr) {
+                return Err(fingerprint_json_error());
+            }
+            seen.push(ptr);
+            let owned = items.borrow().clone();
+            out.push('[');
+            for (index, item) in owned.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_evidence(out, item, seen)?;
+            }
+            out.push(']');
+            seen.pop();
+        }
+        EvidenceKind::Tuple(items) => {
+            if seen.contains(&ptr) {
+                return Err(fingerprint_json_error());
+            }
+            seen.push(ptr);
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_evidence(out, item, seen)?;
+            }
+            out.push(']');
+            seen.pop();
+        }
+        EvidenceKind::Map(entries) => {
+            if seen.contains(&ptr) {
+                return Err(fingerprint_json_error());
+            }
+            seen.push(ptr);
+            let mut pairs = Vec::new();
+            for (key, value) in entries.borrow().iter() {
+                let EvidenceKey::Text(text) = key else {
+                    return Err(fingerprint_json_error());
+                };
+                pairs.push((text.clone(), value.clone()));
+            }
+            pairs.sort_by(|left, right| left.0.cmp(&right.0));
+            out.push('{');
+            for (index, (key, value)) in pairs.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                push_json_string(out, key);
+                out.push(':');
+                write_evidence(out, value, seen)?;
+            }
+            out.push('}');
+            seen.pop();
+        }
+        EvidenceKind::Bytes(_)
+        | EvidenceKind::Ignored
+        | EvidenceKind::Set(_)
+        | EvidenceKind::FrozenSet(_) => return Err(fingerprint_json_error()),
+    }
+    Ok(())
+}
+
+fn write_preimage(preimage: &FindingFingerprintPreimage) -> Result<String, FindingError> {
+    let mut out = String::from("[");
+    for (index, slot) in preimage.slots().iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        match slot {
+            FingerprintPreimageSlot::Text(text) => push_json_string(&mut out, text),
+            FingerprintPreimageSlot::NoneValue => out.push_str("null"),
+            FingerprintPreimageSlot::Int(value) => out.push_str(&value.to_string()),
+            FingerprintPreimageSlot::Evidence(entries) => {
+                out.push('{');
+                for (entry_index, (key, value)) in entries.iter().enumerate() {
+                    if entry_index > 0 {
+                        out.push(',');
+                    }
+                    push_json_string(&mut out, key);
+                    out.push(':');
+                    write_evidence(&mut out, value, &mut Vec::new())?;
+                }
+                out.push('}');
+            }
+        }
+    }
+    out.push(']');
+    Ok(out)
+}
+
+/// Hash the ten-slot fingerprint preimage (FR-046).
 ///
-/// The result is [`FindingError`] with [`FINGERPRINT_CODEC_UNAVAILABLE`].
-/// The digest is left unimplemented: this crate cannot call
-/// `sesslint.determinism.canonical_json_bytes`.
+/// The bytes are compact canonical JSON with sorted object keys and no trailing
+/// newline. The result is the first 16 hex characters of SHA-256. Severity,
+/// repairability, the message template, and related ids are accepted and omitted.
 #[allow(clippy::too_many_arguments)]
-#[must_use = "codec is unavailable; this error is the result"]
 pub fn compute_finding_fingerprint<S, R, I>(
     code: &str,
     source: &SourceRef,
@@ -3537,7 +3666,7 @@ pub fn compute_finding_fingerprint<S, R, I>(
     message_template: Option<&str>,
     related_ids: I,
     context: Option<&FingerprintContext>,
-) -> FindingError {
+) -> Result<String, FindingError> {
     let preimage = finding_fingerprint_preimage(
         code,
         source,
@@ -3553,8 +3682,9 @@ pub fn compute_finding_fingerprint<S, R, I>(
         related_ids,
         context,
     );
-    let _built = preimage.slots().len();
-    FindingError::new(FINGERPRINT_CODEC_UNAVAILABLE)
+    let encoded = write_preimage(&preimage)?;
+    let digest = crate::canonical::sha256_hex(encoded.as_bytes());
+    Ok(digest[..16].to_owned())
 }
 
 /// Python: `compute_fingerprint = compute_finding_fingerprint`.
@@ -3586,7 +3716,7 @@ pub fn fingerprint_finding(
         Some(template) => template,
         None => finding.message(),
     };
-    Err(compute_finding_fingerprint(
+    compute_finding_fingerprint(
         finding.code(),
         finding.source(),
         adapter_id,
@@ -3600,7 +3730,7 @@ pub fn fingerprint_finding(
         Some(message_template),
         finding.related_ids(),
         context,
-    ))
+    )
 }
 
 /// `Severity.from_str` and `Repairability.from_str` raise `ValueError`.
@@ -3658,10 +3788,9 @@ struct TemplatePiece {
 
 /// Construct, validate, and fingerprint a finding (Python `make_finding`).
 ///
-/// An omitted fingerprint calls [`compute_finding_fingerprint`] and returns
-/// [`FINGERPRINT_CODEC_UNAVAILABLE`]. A supplied 16-hex fingerprint is stored
-/// as given. See [`MAKE_FINDING_ENUM_ERROR`] and
-/// [`TEMPLATE_LINE_UNICODE_DIGIT_GAP`].
+/// An omitted fingerprint calls [`compute_finding_fingerprint`] and stores the
+/// 16-hex digest. A supplied 16-hex fingerprint is stored as given. See
+/// [`MAKE_FINDING_ENUM_ERROR`] and [`TEMPLATE_LINE_UNICODE_DIGIT_GAP`].
 pub fn make_finding(input: &MakeFindingInput) -> Result<Finding, FindingError> {
     let code = match &input.code {
         PyValue::Str(text) if is_valid_code(text) => text.clone(),
@@ -3715,7 +3844,7 @@ pub fn make_finding(input: &MakeFindingInput) -> Result<Finding, FindingError> {
                 PyValue::Map(_) => Some(py_to_evidence(&input.evidence)),
                 _ => None,
             };
-            return Err(compute_finding_fingerprint(
+            compute_finding_fingerprint(
                 &code,
                 &source,
                 input.adapter_id.as_deref(),
@@ -3729,7 +3858,7 @@ pub fn make_finding(input: &MakeFindingInput) -> Result<Finding, FindingError> {
                 Some(template.as_str()),
                 &related,
                 input.context.as_ref(),
-            ));
+            )?
         }
         PyValue::Str(text) if is_lower_hex_fingerprint(text) => text.clone(),
         other => {
@@ -3958,22 +4087,44 @@ pub fn parse_finding_dict(obj: &PyValue) -> Result<Finding, FindingError> {
     })
 }
 
-/// Python `get_finding_schema_path` imports `sesslint._resources.schema_path`.
-///
-/// That module is not ported. This does not read `schemas/` and does not
-/// invent a filesystem path.
-#[must_use]
-pub fn get_finding_schema_path() -> FindingError {
-    FindingError::new(SCHEMA_RESOURCE_UNAVAILABLE)
+fn development_schema(name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("schemas")
+        .join(name)
 }
 
-/// Python `load_finding_schema` reads the JSON schema from disk.
+/// Python `get_finding_schema_path`.
 ///
-/// The resource loader is not ported, so this returns the same error as
-/// [`get_finding_schema_path`] and does not parse JSON.
+/// The development candidate is `schemas/sesslint.finding.v1.json` at the
+/// checkout root.
 #[must_use]
-pub fn load_finding_schema() -> FindingError {
-    FindingError::new(SCHEMA_RESOURCE_UNAVAILABLE)
+pub fn get_finding_schema_path() -> std::path::PathBuf {
+    crate::resources::schema_path(
+        "sesslint.finding.v1.json",
+        &development_schema("sesslint.finding.v1.json"),
+    )
+}
+
+/// Python `load_finding_schema`.
+///
+/// Reads [`get_finding_schema_path`] as UTF-8 JSON.
+pub fn load_finding_schema() -> Result<crate::canonical::Payload, FindingError> {
+    let path = get_finding_schema_path();
+    if !path.is_file() {
+        return Err(FindingError::new(format!(
+            "Canonical finding schema not found at {}",
+            path.display()
+        )));
+    }
+    let text = std::fs::read_to_string(&path).map_err(|_| {
+        FindingError::new(format!(
+            "Canonical finding schema not found at {}",
+            path.display()
+        ))
+    })?;
+    crate::canonical::parse_json_text(&text)
+        .map_err(|()| FindingError::new("Canonical finding schema is not valid JSON"))
 }
 
 /// Python `__all__` (finding.py lines 942-969), declaration order.
@@ -5779,8 +5930,7 @@ mod fingerprint_preimage {
         finding_fingerprint_preimage, fingerprint_finding, Evidence, EvidenceKey, Finding,
         FindingFingerprintPreimage, FindingInput, FingerprintContext, FingerprintPreimageSlot,
         PyValue, SourceLine, SourceRef, CANONICAL_EVIDENCE_KEYS, CANONICAL_EVIDENCE_KEYS_SORTED,
-        EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE, FINGERPRINT_CODEC_UNAVAILABLE,
-        FINGERPRINT_CONTEXT_NARROWING, SCHEMA_VERSION,
+        EXPLICIT_ORDINAL_BOOL_UNREPRESENTABLE, FINGERPRINT_CONTEXT_NARROWING, SCHEMA_VERSION,
     };
     use crate::codes::{Repairability, Severity};
 
@@ -6155,18 +6305,10 @@ mod fingerprint_preimage {
     }
 
     #[test]
-    fn codec_unavailable_message_is_returned_instead_of_a_digest() {
+    fn recomputed_fingerprint_matches_python_and_ignores_message_fields() {
         let finding = stored_finding();
-        let recomputed =
-            fingerprint_finding(&finding, true, None, None, None, None, None).unwrap_err();
-        assert_eq!(
-            recomputed.message(),
-            "sesslint.determinism.canonical_json_bytes is not available"
-        );
-        assert_eq!(recomputed.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(recomputed.code(), "FINDING");
-        assert!(!is_fingerprint_hex(recomputed.message()));
-
+        let recomputed = fingerprint_finding(&finding, true, None, None, None, None, None).unwrap();
+        assert_eq!(recomputed, "8cbecc1ae3328962");
         let direct = compute_finding_fingerprint(
             finding.code(),
             finding.source(),
@@ -6181,10 +6323,9 @@ mod fingerprint_preimage {
             Some("template-marker-rx"),
             &["related-marker-rx"],
             None,
-        );
-        assert_eq!(direct.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_fingerprint_hex(direct.message()));
-
+        )
+        .unwrap();
+        assert_eq!(direct, recomputed);
         let alias = compute_fingerprint(
             finding.code(),
             finding.source(),
@@ -6199,17 +6340,9 @@ mod fingerprint_preimage {
             Some("template-marker-rx"),
             finding.related_ids(),
             None,
-        );
-        assert_eq!(alias.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(alias.to_string(), direct.to_string());
-    }
-
-    fn is_fingerprint_hex(text: &str) -> bool {
-        let bytes = text.as_bytes();
-        bytes.len() == 16
-            && bytes
-                .iter()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        )
+        .unwrap();
+        assert_eq!(alias, direct);
     }
 
     fn stored_finding() -> Finding {
@@ -6247,9 +6380,8 @@ mod make_and_parse {
     use super::{
         get_finding_schema_path, load_finding_schema, make_finding, parse_finding_dict,
         python_str_repr, MakeFindingInput, PyValue, SourceLine, SourceRef,
-        FINGERPRINT_CODEC_UNAVAILABLE, MAKE_FINDING_ENUM_ERROR, MAX_MESSAGE_LENGTH,
-        SCHEMA_RESOURCE_UNAVAILABLE, SCHEMA_VERSION, TEMPLATE_LINE_UNICODE_DIGIT_GAP,
-        TRUNCATION_MARKER,
+        FINGERPRINT_CODEC_UNAVAILABLE, MAKE_FINDING_ENUM_ERROR, MAX_MESSAGE_LENGTH, SCHEMA_VERSION,
+        TEMPLATE_LINE_UNICODE_DIGIT_GAP, TRUNCATION_MARKER,
     };
     use crate::codes::{get_code_info, Repairability, Severity, ALL_CODES};
 
@@ -6317,12 +6449,11 @@ mod make_and_parse {
     }
 
     #[test]
-    fn omitted_fingerprint_returns_the_codec_error() {
-        let err =
-            make_finding(&call("line {line}", PyValue::None, PyValue::None, Some(4))).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex(&err.to_string()));
+    fn omitted_fingerprint_matches_python() {
+        let finding =
+            make_finding(&call("line {line}", PyValue::None, PyValue::None, Some(4))).unwrap();
+        assert_eq!(finding.fingerprint(), "c0a0c872359af667");
+        assert!(is_lower_hex(finding.fingerprint()));
     }
 
     #[test]
@@ -6614,19 +6745,11 @@ mod make_and_parse {
     }
 
     #[test]
-    fn schema_helpers_report_the_missing_resource_and_do_not_read_disk() {
-        assert_eq!(
-            get_finding_schema_path().to_string(),
-            SCHEMA_RESOURCE_UNAVAILABLE
-        );
-        assert_eq!(
-            load_finding_schema().to_string(),
-            SCHEMA_RESOURCE_UNAVAILABLE
-        );
-        assert_eq!(
-            SCHEMA_RESOURCE_UNAVAILABLE,
-            "sesslint._resources.schema_path is not available"
-        );
+    fn schema_helpers_read_the_repo_schema() {
+        let path = get_finding_schema_path();
+        assert!(path.ends_with(std::path::Path::new("schemas").join("sesslint.finding.v1.json")));
+        assert!(path.is_file());
+        assert!(load_finding_schema().unwrap().is_map());
     }
 
     fn is_lower_hex(text: &str) -> bool {

@@ -5,8 +5,8 @@
 //! [`parse_session_event`], [`parse_session`], [`parse_session_lines`], and
 //! [`load_session_file`] follow the pin. [`dump_session`] and
 //! [`dump_session_file`] encode canonical JSON inside this module.
-//! [`get_session_schema_path`] and [`load_session_schema`] return
-//! [`CanonicalUnavailable`]. This module has no `__all__`.
+//! [`get_session_schema_path`] and [`load_session_schema`] read
+//! `schemas/sesslint.session.v1.json`. This module has no `__all__`.
 //!
 //! # Recorded gaps
 //!
@@ -52,20 +52,20 @@
 //!   [`SchemaError`] as [`validate_depth`]. Python has no `RefCell`.
 //! * Finite float `repr` follows Rust debug formatting, not Python's shortest
 //!   round-trip. Non-finite values use `nan`, `inf`, and `-inf`.
-//! * [`normalize_for_canonical_json`], [`to_canonical_json`],
-//!   [`canonical_bytes`], and [`to_canonical_dict`] name the codec seams and
-//!   return [`CanonicalUnavailable`]. `model` cannot depend on the codec crate.
-//!   They do not encode JSON. [`to_canonical_dict`] calls normalize and does
-//!   not invent a dict or a `TypeError`.
+//! * [`to_canonical_json`] and [`canonical_bytes`] encode a [`Payload`] or a
+//!   [`SessionEvent`]. Any other type still returns [`CanonicalUnavailable`].
+//!   `model` cannot depend on the codec crate.
+//!   [`normalize_for_canonical_json`] and [`to_canonical_dict`] stay on that
+//!   seam and do not invent a dict.
 //! * [`reparse_identity_hashes`] treats an id as synthetic when it starts with
 //!   `sesslint:synthetic:`. It does not call `adapters`. The digest is SHA-256
 //!   of sorted compact JSON after provenance fields are removed.
-//! * [`SessionEvent::content_identity_bytes`],
-//!   [`SessionEvent::content_identity_hash`], and [`compute_content_hash`]
-//!   stay on their codec seams. Nothing here hashes.
+//! * [`compute_content_hash`] hashes sorted compact JSON of a [`Payload`] as
+//!   `sha256:<hex>`. [`SessionEvent::content_identity_bytes`] drops
+//!   `source_line`, `source_location`, and `source_record_hash`.
 //! * Python `payload_hash` uses truthiness (`content_hash or ...`), so `""`
-//!   would call the codec. This slice returns every `Some` hash unchanged and
-//!   takes the unavailable path only for `None`.
+//!   falls through to the payload digest. This slice returns every `Some`
+//!   hash unchanged, including `""`, and hashes `payload` only for `None`.
 //! * Malformed JSON keeps the prefixes `Malformed JSON on header line (line {n}): `
 //!   and `Malformed JSON on event line {n}: `. The detail tail is not Python's
 //!   `JSONDecodeError` text.
@@ -87,10 +87,11 @@
 //! * [`dump_session`] writes sorted compact JSONL in this module. It does not
 //!   call `codec`. [`dump_session_file`] creates the parent directory and
 //!   replaces the destination through a temp file. `codec` is not a dependency.
-//! * [`get_session_schema_path`] and [`load_session_schema`] return
-//!   [`CanonicalUnavailable`] because `sesslint._resources.schema_path` is
-//!   not available. They do not read `schemas/`.
+//! * [`get_session_schema_path`] resolves `schemas/sesslint.session.v1.json`
+//!   from this crate's checkout. [`load_session_schema`] reads that file as
+//!   UTF-8 JSON. A missing file returns [`CanonicalUnavailable`].
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -262,6 +263,7 @@ pub const PAYLOAD_CONTENT_HASH_UNAVAILABLE: &str =
 
 /// Late import. Schema helpers do not read `schemas/`.
 pub const SCHEMA_PATH_UNAVAILABLE: &str = "sesslint._resources.schema_path is not available";
+pub const SCHEMA_FILE_MISSING: &str = "Canonical session schema not found";
 
 /// Failure from a function this slice does not implement.
 ///
@@ -302,6 +304,10 @@ impl CanonicalUnavailable {
 
     pub const fn schema_path() -> Self {
         Self::new(SCHEMA_PATH_UNAVAILABLE)
+    }
+
+    pub const fn schema_missing() -> Self {
+        Self::new(SCHEMA_FILE_MISSING)
     }
 
     pub const fn message(self) -> &'static str {
@@ -1024,32 +1030,35 @@ impl SessionEvent {
 
     /// Python: `SessionEvent.canonical_hash`.
     ///
-    /// Calls [`Self::to_canonical_bytes`]. Those bytes are unavailable, so
-    /// this returns that error and does not hash.
+    /// SHA-256 hex of [`Self::to_canonical_bytes`]. No `sha256:` prefix.
     pub fn canonical_hash(&self) -> Result<String, CanonicalUnavailable> {
-        match self.to_canonical_bytes() {
-            Ok(_bytes) => Err(CanonicalUnavailable::canonical_json_bytes()),
-            Err(error) => Err(error),
-        }
+        let bytes = self.to_canonical_bytes()?;
+        Ok(sha256_hex(&bytes))
     }
 
     /// Python: `SessionEvent.content_identity_bytes`.
+    ///
+    /// Canonical JSON of the event with `source_line`, `source_location`, and
+    /// `source_record_hash` omitted.
     pub fn content_identity_bytes(&self) -> Result<Vec<u8>, CanonicalUnavailable> {
-        let _ = self;
-        Err(CanonicalUnavailable::content_identity_bytes())
+        let node =
+            event_node(self, true).map_err(|()| CanonicalUnavailable::content_identity_bytes())?;
+        let text =
+            canonical_json(&node).map_err(|()| CanonicalUnavailable::content_identity_bytes())?;
+        Ok(text.into_bytes())
     }
 
     /// Python: `SessionEvent.content_identity_hash`.
+    ///
+    /// SHA-256 hex of [`Self::content_identity_bytes`]. No `sha256:` prefix.
     pub fn content_identity_hash(&self) -> Result<String, CanonicalUnavailable> {
-        let _ = self;
-        Err(CanonicalUnavailable::content_identity_hash())
+        Ok(sha256_hex(&self.content_identity_bytes()?))
     }
 
     /// Python: `SessionEvent.payload_hash`.
     ///
     /// Returns the stored `content_hash` when it is `Some`, including `""`.
-    /// `None` returns the same error as [`compute_content_hash`] and does not
-    /// hash `payload`.
+    /// `None` calls [`compute_content_hash`] on `payload`.
     pub fn payload_hash(&self) -> Result<String, CanonicalUnavailable> {
         if let Some(hash) = &self.content_hash {
             Ok(hash.clone())
@@ -1083,11 +1092,16 @@ impl Session {
 
 /// Python: `compute_content_hash`.
 ///
-/// Always returns [`PAYLOAD_CONTENT_HASH_UNAVAILABLE`]. Does not hash `payload`
-/// and does not produce a digest.
+/// SHA-256 of the payload's sorted compact JSON, prefixed with `sha256:`.
+/// A cycle, a non-finite float, or a borrowed container returns
+/// [`CanonicalUnavailable::payload_content_hash`]. Non-string map keys are
+/// omitted by [`Payload::walk_string_entries`].
 pub fn compute_content_hash(payload: &Payload) -> Result<String, CanonicalUnavailable> {
-    let _ = payload;
-    Err(CanonicalUnavailable::payload_content_hash())
+    let node = payload_node(payload, &mut Vec::new())
+        .map_err(|()| CanonicalUnavailable::payload_content_hash())?;
+    let encoded =
+        canonical_json(&node).map_err(|()| CanonicalUnavailable::payload_content_hash())?;
+    Ok(format!("sha256:{}", sha256_hex(encoded.as_bytes())))
 }
 
 const SYNTHETIC_ID_PREFIX: &str = "sesslint:synthetic:";
@@ -1206,10 +1220,7 @@ fn push_child(
     }
 }
 
-fn hoist_experimental(
-    extra: &Payload,
-    map: &mut BTreeMap<String, CanonNode>,
-) -> Result<(), ()> {
+fn hoist_experimental(extra: &Payload, map: &mut BTreeMap<String, CanonNode>) -> Result<(), ()> {
     let mut failed = false;
     let walk = extra.walk_string_entries(|key, child| {
         if failed || !key.starts_with("experimental_") || map.contains_key(key) {
@@ -1382,7 +1393,7 @@ fn push_json_string(out: &mut String, text: &str) {
     out.push('"');
 }
 
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
     for byte in sha256(data) {
@@ -1533,7 +1544,10 @@ pub fn reparse_identity_hashes(
         let position = i64::try_from(index).unwrap_or(i64::MAX);
         map.insert("seq".to_owned(), CanonNode::Int(position));
         if is_synthetic_id(&event.id) {
-            let mapped = id_to_pos.get(event.id.as_str()).copied().unwrap_or(position);
+            let mapped = id_to_pos
+                .get(event.id.as_str())
+                .copied()
+                .unwrap_or(position);
             map.insert("id".to_owned(), CanonNode::Int(mapped));
         }
         if let Some(CanonNode::Str(parent)) = map.get("parent_id").cloned() {
@@ -1560,20 +1574,38 @@ pub fn normalize_for_canonical_json<T>(obj: &T) -> Result<(), CanonicalUnavailab
 
 /// Python: `to_canonical_json`.
 ///
-/// The late import `sesslint._canonical_codec.canonical_json_bytes` is not
-/// available. This does not encode JSON.
-pub fn to_canonical_json<T>(obj: &T) -> Result<String, CanonicalUnavailable> {
-    let _ = obj;
+/// A [`Payload`] or a [`SessionEvent`] becomes sorted compact JSON. Any other
+/// type returns [`CanonicalUnavailable::canonical_json_bytes`]. This crate
+/// does not call the codec.
+pub fn to_canonical_json<T: Any>(obj: &T) -> Result<String, CanonicalUnavailable> {
+    let value = obj as &dyn Any;
+    if let Some(payload) = value.downcast_ref::<Payload>() {
+        return encode_payload_json(payload);
+    }
+    if let Some(event) = value.downcast_ref::<SessionEvent>() {
+        return encode_session_event_json(event);
+    }
     Err(CanonicalUnavailable::canonical_json_bytes())
 }
 
 /// Python: `canonical_bytes`.
 ///
-/// The late import `sesslint._canonical_codec.canonical_json_bytes` is not
-/// available. This does not encode JSON.
-pub fn canonical_bytes<T>(obj: &T) -> Result<Vec<u8>, CanonicalUnavailable> {
-    let _ = obj;
-    Err(CanonicalUnavailable::canonical_json_bytes())
+/// UTF-8 bytes of [`to_canonical_json`]. A non-[`Payload`] returns the same
+/// unavailable error and does not invent bytes.
+pub fn canonical_bytes<T: Any>(obj: &T) -> Result<Vec<u8>, CanonicalUnavailable> {
+    Ok(to_canonical_json(obj)?.into_bytes())
+}
+
+fn encode_payload_json(payload: &Payload) -> Result<String, CanonicalUnavailable> {
+    let node = payload_node(payload, &mut Vec::new())
+        .map_err(|()| CanonicalUnavailable::canonical_json_bytes())?;
+    canonical_json(&node).map_err(|()| CanonicalUnavailable::canonical_json_bytes())
+}
+
+fn encode_session_event_json(event: &SessionEvent) -> Result<String, CanonicalUnavailable> {
+    let node =
+        event_node(event, false).map_err(|()| CanonicalUnavailable::canonical_json_bytes())?;
+    canonical_json(&node).map_err(|()| CanonicalUnavailable::canonical_json_bytes())
 }
 
 /// Python: `to_canonical_dict`.
@@ -2160,9 +2192,9 @@ pub fn dump_session(session: &Session) -> Result<String, CanonicalUnavailable> {
     let mut lines = Vec::with_capacity(session.events.len() + 1);
     lines.push(header);
     for event in &session.events {
-        lines.push(json_unavailable(canonical_json(&json_unavailable(event_node(
-            event, false,
-        ))?))?);
+        lines.push(json_unavailable(canonical_json(&json_unavailable(
+            event_node(event, false),
+        )?))?);
     }
     Ok(format!("{}\n", lines.join("\n")))
 }
@@ -2175,20 +2207,36 @@ pub fn dump_session_file(session: &Session, path: &Path) -> Result<(), Canonical
     atomic_write_utf8(path, &dump_session(session)?)
 }
 
+fn development_schema(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("schemas")
+        .join(name)
+}
+
 /// Python: `get_session_schema_path`.
 ///
-/// `sesslint._resources.schema_path` is not available. This does not read
-/// `schemas/` and does not invent a filesystem path.
+/// The development candidate is `schemas/sesslint.session.v1.json` at the
+/// checkout root. [`crate::resources::schema_path`] returns that file when it
+/// exists.
 pub fn get_session_schema_path() -> Result<PathBuf, CanonicalUnavailable> {
-    Err(CanonicalUnavailable::schema_path())
+    Ok(crate::resources::schema_path(
+        "sesslint.session.v1.json",
+        &development_schema("sesslint.session.v1.json"),
+    ))
 }
 
 /// Python: `load_session_schema`.
 ///
-/// Returns the same error as [`get_session_schema_path`] and does not read
-/// `schemas/`.
+/// Reads the path from [`get_session_schema_path`] as UTF-8 JSON.
 pub fn load_session_schema() -> Result<Payload, CanonicalUnavailable> {
-    Err(CanonicalUnavailable::schema_path())
+    let path = get_session_schema_path()?;
+    if !path.is_file() {
+        return Err(CanonicalUnavailable::schema_missing());
+    }
+    let text =
+        std::fs::read_to_string(&path).map_err(|_| CanonicalUnavailable::schema_missing())?;
+    parse_json_document(&text).map_err(|_| CanonicalUnavailable::schema_missing())
 }
 
 struct EventAttributes {
@@ -3217,6 +3265,10 @@ fn parse_json_document(source: &str) -> Result<Payload, JsonRead> {
     JsonParser::parse_document(source)
 }
 
+pub(crate) fn parse_json_text(source: &str) -> Result<Payload, ()> {
+    parse_json_document(source).map_err(|_| ())
+}
+
 fn parse_i64_token(token: &str) -> Result<i64, ()> {
     let (negative, digits) = match token.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -3288,7 +3340,6 @@ mod tests {
     };
     use crate::errors::SchemaError;
     use std::collections::BTreeSet;
-    use std::error::Error;
     use std::io::Write;
 
     #[test]
@@ -3720,7 +3771,7 @@ mod tests {
     }
 
     #[test]
-    fn codec_seams_return_typed_unavailable_errors() {
+    fn session_event_canonical_bytes_match_python() {
         let event = SessionEvent::new(
             "evt-synthetic",
             None,
@@ -3729,49 +3780,94 @@ mod tests {
             "user",
             "message",
         );
+        let json = "{\"actor\":\"user\",\"id\":\"evt-synthetic\",\"kind\":\"message\",\"parent_id\":null,\"payload\":{},\"seq\":1,\"ts\":\"2024-02-29T00:00:00Z\"}";
+        assert_eq!(event.to_canonical_bytes().expect("bytes"), json.as_bytes());
+        assert_eq!(
+            canonical_bytes(&event).expect("free bytes"),
+            json.as_bytes()
+        );
+        assert_eq!(
+            event.canonical_hash().expect("hash"),
+            "65cf64fe88807a9db62511b11d8b379d7817dd6d91832f70703b271dee75060b"
+        );
+        assert_eq!(
+            event.content_identity_bytes().expect("identity"),
+            json.as_bytes()
+        );
+        assert_eq!(
+            event.content_identity_hash().expect("identity hash"),
+            "65cf64fe88807a9db62511b11d8b379d7817dd6d91832f70703b271dee75060b"
+        );
         let dict_err = event.to_canonical_dict().unwrap_err();
         assert_eq!(dict_err, to_canonical_dict(&event).unwrap_err());
         assert_eq!(
             dict_err.to_string(),
             "sesslint._canonical_codec.normalize_canonical is not available"
         );
-        let bytes_err = event.to_canonical_bytes().unwrap_err();
-        assert_eq!(bytes_err, canonical_bytes(&event).unwrap_err());
-        assert_eq!(
-            bytes_err.to_string(),
-            "sesslint._canonical_codec.canonical_json_bytes is not available"
+
+        let mut rich = SessionEvent::new(
+            "evt-synthetic",
+            Some("parent-synthetic".to_owned()),
+            4,
+            "2024-02-29T00:00:00Z",
+            "user",
+            "message",
         );
-        let hash_err = event.canonical_hash().unwrap_err();
-        assert_eq!(hash_err, bytes_err);
+        rich.payload = Payload::map(vec![(
+            Payload::string("body"),
+            Payload::string("synthetic-body"),
+        )]);
+        rich.source_line = Some(9);
+        rich.source_record_hash = Some("abc".to_owned());
+        rich.source_location = Some("loc".to_owned());
+        let full = "{\"actor\":\"user\",\"id\":\"evt-synthetic\",\"kind\":\"message\",\"parent_id\":\"parent-synthetic\",\"payload\":{\"body\":\"synthetic-body\"},\"seq\":4,\"source_line\":9,\"source_location\":\"loc\",\"source_record_hash\":\"abc\",\"ts\":\"2024-02-29T00:00:00Z\"}";
+        let identity = "{\"actor\":\"user\",\"id\":\"evt-synthetic\",\"kind\":\"message\",\"parent_id\":\"parent-synthetic\",\"payload\":{\"body\":\"synthetic-body\"},\"seq\":4,\"ts\":\"2024-02-29T00:00:00Z\"}";
         assert_eq!(
-            hash_err.to_string(),
-            "sesslint._canonical_codec.canonical_json_bytes is not available"
+            rich.to_canonical_bytes().expect("rich bytes"),
+            full.as_bytes()
         );
-        assert!(Error::source(&hash_err).is_none());
         assert_eq!(
-            event.content_identity_bytes().unwrap_err().to_string(),
-            "sesslint._canonical_codec.content_identity_bytes is not available"
+            rich.canonical_hash().expect("rich hash"),
+            "f140df10e8826a720e7ae0f5a11035abcd07768e51cc685bad40af8c4ffc8457"
         );
         assert_eq!(
-            event.content_identity_hash().unwrap_err().to_string(),
-            "sesslint._canonical_codec.content_identity_hash is not available"
+            rich.content_identity_bytes().expect("rich identity"),
+            identity.as_bytes()
+        );
+        assert_eq!(
+            rich.content_identity_hash().expect("rich identity hash"),
+            "8b512df4abe231dc7f4eec87d6c9ee427e4ad0a600f495ba5a48cb4548d04b2f"
         );
     }
 
     #[test]
-    fn compute_content_hash_is_unavailable_and_not_a_digest() {
+    fn compute_content_hash_matches_python() {
         let payload = Payload::map(vec![(
             Payload::string("k"),
             Payload::string("synthetic-value"),
         )]);
-        let err = compute_content_hash(&payload).unwrap_err();
-        assert_eq!(err, CanonicalUnavailable::payload_content_hash());
         assert_eq!(
-            err.to_string(),
-            "sesslint._canonical_codec.payload_content_hash is not available"
+            compute_content_hash(&payload).expect("digest"),
+            "sha256:779a512038cddf7e4a2a176411cf35e207fee51c22f0187d519b14940747681a"
         );
-        assert_ne!(err.to_string().len(), 64);
-        assert!(err.to_string().contains(' '));
+        let nested = Payload::map(vec![(
+            Payload::string("nested"),
+            Payload::map(vec![
+                (Payload::string("z"), Payload::int(2)),
+                (
+                    Payload::string("a"),
+                    Payload::list(vec![Payload::string("x"), Payload::bool_value(false)]),
+                ),
+            ]),
+        )]);
+        assert_eq!(
+            compute_content_hash(&nested).expect("nested digest"),
+            "sha256:30a1877ef0ff373b6d3ae64c008ce92cab67e3f7ea8684d58dcf95c20b54a2ce"
+        );
+        assert_eq!(
+            compute_content_hash(&Payload::float(f64::NAN)).unwrap_err(),
+            CanonicalUnavailable::payload_content_hash()
+        );
     }
 
     #[test]
@@ -3792,12 +3888,12 @@ mod tests {
         assert_eq!(event.payload_hash().unwrap(), "stored-content-hash");
 
         event.content_hash = None;
-        let missing = event.payload_hash().unwrap_err();
-        let direct = compute_content_hash(&event.payload).unwrap_err();
+        let missing = event.payload_hash().expect("computed payload hash");
+        let direct = compute_content_hash(&event.payload).expect("direct digest");
         assert_eq!(missing, direct);
         assert_eq!(
-            missing.to_string(),
-            "sesslint._canonical_codec.payload_content_hash is not available"
+            missing,
+            "sha256:0481a21345a551d6b3498458718820d674668b929eef54f558598e36f00884ab"
         );
     }
 
@@ -4239,21 +4335,25 @@ mod tests {
     }
 
     #[test]
-    fn canonical_codec_functions_do_not_encode_json() {
+    fn canonical_codec_functions_encode_a_payload_and_refuse_other_types() {
         let obj = Payload::map(vec![(
             Payload::string("body"),
             Payload::string("synthetic-value"),
         )]);
-        let json_err = to_canonical_json(&obj).unwrap_err();
+        let json = to_canonical_json(&obj).expect("payload json");
+        assert_eq!(json, "{\"body\":\"synthetic-value\"}");
         assert_eq!(
-            json_err.to_string(),
+            canonical_bytes(&obj).expect("payload bytes"),
+            json.as_bytes()
+        );
+        let other = to_canonical_json(&1_u8).unwrap_err();
+        assert_eq!(
+            other.to_string(),
             "sesslint._canonical_codec.canonical_json_bytes is not available"
         );
-        assert!(!json_err.to_string().contains("synthetic-value"));
-        assert!(!json_err.to_string().contains('{'));
-        assert!(!is_sha256_hex(&json_err.to_string()));
-        let bytes_err = canonical_bytes(&obj).unwrap_err();
-        assert_eq!(bytes_err, json_err);
+        assert!(!other.to_string().contains("synthetic-value"));
+        assert!(!other.to_string().contains('{'));
+        assert!(!is_sha256_hex(&other.to_string()));
         let dict_err = to_canonical_dict(&obj).unwrap_err();
         assert_eq!(dict_err, CanonicalUnavailable::normalize_canonical());
         assert_eq!(
@@ -5120,7 +5220,7 @@ mod tests {
     }
 
     #[test]
-    fn dump_session_writes_jsonl_and_schema_loaders_stay_closed() {
+    fn dump_session_writes_jsonl_and_schema_loaders_read_the_repo_file() {
         let dir = TempSessionDir::new("untouched");
         let session = parse_session(&header(vec![
             ("schema_version", Payload::string(SCHEMA_VERSION)),
@@ -5135,14 +5235,12 @@ mod tests {
         assert!(dumped.contains("sess-synthetic"));
         dump_session_file(&session, &nested).expect("dump file");
         assert_eq!(std::fs::read_to_string(&nested).expect("read dump"), dumped);
-        assert_eq!(
-            get_session_schema_path().unwrap_err().to_string(),
-            "sesslint._resources.schema_path is not available"
+        let schema_path = get_session_schema_path().expect("schema path");
+        assert!(
+            schema_path.ends_with(std::path::Path::new("schemas").join("sesslint.session.v1.json"))
         );
-        assert_eq!(
-            load_session_schema().unwrap_err().to_string(),
-            "sesslint._resources.schema_path is not available"
-        );
+        assert!(schema_path.is_file());
+        assert!(load_session_schema().expect("schema").is_map());
     }
 
     struct TempSessionDir {

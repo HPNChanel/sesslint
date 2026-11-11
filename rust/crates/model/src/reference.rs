@@ -241,9 +241,12 @@ mod tests {
         let event = synthetic_event();
         assert_eq!(super::_identity_multiset(&[]), Some(BTreeMap::new()));
         assert_eq!(super::_identity_multiset(&[ReferenceItem::Other]), None);
+        let hash = event.content_identity_hash().expect("identity");
+        let mut expected = BTreeMap::new();
+        expected.insert(hash, 1);
         assert_eq!(
             super::_identity_multiset(&[ReferenceItem::Event(&event)]),
-            None
+            Some(expected)
         );
         assert_eq!(
             super::_identity_multiset(&[ReferenceItem::Event(&event), ReferenceItem::Other]),

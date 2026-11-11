@@ -390,19 +390,16 @@ def main() -> int:
         {
             "id": "compute_finding_fingerprint_unavailable",
             "detail": (
-                "When make_finding omits a fingerprint hash, Python uses "
-                "sesslint.determinism.canonical_json_bytes; Rust returns exactly "
-                "'sesslint.determinism.canonical_json_bytes is not available' "
-                "and does not build a digest. Parity does not assert a hex digest."
+                "make_finding stores the 16-hex SHA-256 prefix of the canonical "
+                "preimage. This id remains because an existing pairing catalog "
+                "still names it."
             ),
         },
         {
             "id": "schema_path_unavailable",
             "detail": (
-                "get_finding_schema_path and load_finding_schema require "
-                "sesslint._resources.schema_path; Rust returns "
-                "'sesslint._resources.schema_path is not available' and does "
-                "not read schemas/."
+                "get_finding_schema_path and load_finding_schema read "
+                "schemas/sesslint.finding.v1.json. This id remains as a catalog name."
             ),
         },
         {
