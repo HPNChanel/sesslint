@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.errors",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "errors_rs_sha256": "79a30b309327cda120e14365d85339bbb6df21e851bb297f13037681a152ce16",
   "known_parity_gaps": [
     "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; parity vectors use repair::errors types only.",

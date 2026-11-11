@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.hygiene",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_hygiene_rs_sha256": "e353fd94ef34279648afa57ba9b699a74d47053b9d699064528ee58a6257387c",
   "python_all": [
     "MAX_DIGESTS_PER_FINDING",

@@ -15,7 +15,7 @@ const PROVENANCE_REL: &str = "../../parity/vectors/seal/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 21;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.seal";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_SEAL_PY_SHA256: &str =
     "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28";
 const EXPECTED_CANONICAL_CODEC_PY_SHA256: &str =
@@ -23,7 +23,7 @@ const EXPECTED_CANONICAL_CODEC_PY_SHA256: &str =
 const EXPECTED_SEAL_RS_SHA256: &str =
     "d8c3987425e6d579f7cc2f42b2bd9e12e84bb23eb2077ded908db769261d7c5a";
 const EXPECTED_VECTORS_SHA256: &str =
-    "73787bb12d30c0073abad69e2a04c71785d2b52beebbf6016c6b304042412cbe";
+    "9ac6e8594333d6b49532778f9590f001975a5247dedf41586f2416c0b283e24e";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

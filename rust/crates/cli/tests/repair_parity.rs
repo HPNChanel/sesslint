@@ -16,13 +16,13 @@ const REPAIR_RS_REL: &str = "src/repair.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.repair";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_REPAIR_PY_SHA256: &str =
     "1db39d74e6af7d3e7150ad15bb04bf4b16556c2b1dfe7f32c7340689b1cc3ce1";
 const EXPECTED_REPAIR_RS_SHA256: &str =
     "55a98a38a75630c6d4575f88916326f258752894475d5a06ba8cff92671fa500";
 const EXPECTED_VECTORS_SHA256: &str =
-    "24f54a9a9e1d25a285a72d75ac8ef884580825cbe47b81dafaaac645402faf64";
+    "845f7672d22ddce122709c898973aee8aab136ee5bdef63b5c152ec1333ab85c";
 
 const GAP_RUN_STOPS: &str = "GAP-cli-repair-run-stops";
 

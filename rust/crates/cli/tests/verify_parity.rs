@@ -16,13 +16,13 @@ const VERIFY_RS_REL: &str = "src/verify.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.verify";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_VERIFY_PY_SHA256: &str =
     "3814f3b8c6ea6d1cbc0a206dc1f0f08b6223cc9ee2174ebc60453a91164ffd29";
 const EXPECTED_VERIFY_RS_SHA256: &str =
     "1ae0c358d59a921d2ac9d56b263877fcde96dabfa1da0b9f99a41a877ec39ef0";
 const EXPECTED_VECTORS_SHA256: &str =
-    "9535a4808ab67f899b880c9b64c9abc347397f7ddd08fd8a8d46f3f2e88bf3c8";
+    "ff0a3389312bca3d8c09bc8e78ada26de373069e76051978e0087abc8c0d2318";
 
 const GAP_API_VERIFY: &str = "GAP-cli-verify-api-verify";
 

@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.checkpoint",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_checkpoint_rs_sha256": "324c7354ce6378e05881735cea87d68887ab65fc8ebff73141ab06be180be7da",
   "python_all": [
     "MAX_CHECKPOINT_FINDINGS",

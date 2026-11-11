@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli._output",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "output_py_sha256": "6dfd52796f3f70018e749905cbf3ac81daffafea113b1646ee08e170b1bc4697",
   "vectors": [
     {

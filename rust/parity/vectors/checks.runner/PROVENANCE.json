@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.checks.runner parity (run_all_checks outcomes from the pinned Python module; graph_healthy fixture from pin via git show).",
   "generator": "rust/parity/vectors/checks.runner/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-runner-coverage: return_coverage true builds sesslint.report.Coverage in Python after detectors. Rust returns the coverage seam and does not construct Coverage on the successful path.",
     "GAP-runner-profile-name: profile supplied as a str resolves through get_profile and sesslint.profiles.builtin in Python. Rust stops at the builtin seam for ProfileArg::Name.",

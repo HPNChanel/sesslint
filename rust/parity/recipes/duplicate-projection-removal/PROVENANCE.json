@@ -3,7 +3,7 @@
   "description": "Synthetic duplicate-projection-removal parity. Refusal messages come from the pinned blob. Fixture output, payload fingerprints, and planner results stay uncovered. No fixture diff is stored.",
   "generator": "rust/parity/recipes/duplicate-projection-removal/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-duplicate-projection-removal-affected-region: affected_region_duplicate_projection_removal in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",
     "GAP-duplicate-projection-removal-canonical: planner.plan and execute are not run. A missing canonical codec call is not a successful plan. The fixture apply, the child-pointer rewrite, and the idempotent first apply succeed in the pin. That success is not replayed. tests/repair/test_scoped_abstention.py::test_duplicate_projection_removal_disjoint_from_intermediate_mutating_tool plans and executes. The pin succeeds. That success is not replayed. No fingerprint is hashed and no fixture diff is stored.",

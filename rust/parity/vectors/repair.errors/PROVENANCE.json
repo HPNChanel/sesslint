@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.repair.errors parity (__all__, Display, code, isinstance flags, VendorProjectionRefused.reason).",
   "generator": "rust/parity/vectors/repair.errors/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; parity vectors use repair::errors types only.",
     "Python isinstance(exc, SesslintError) on the repair hierarchy; Rust uses an explicit is_sesslint_error probe tied to model::errors::SesslintError \u2014 parity is on the boolean, not on converting into SesslintError::Generic.",

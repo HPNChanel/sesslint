@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use sesslint_rust_workspace::PACKAGE_NAME;
 
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 7;
 const SALVAGE_VECTOR_COUNT: usize = 11;
 const VECTORS_REL: &str = "parity/vectors/repair.recipes_salvage/vectors.json";

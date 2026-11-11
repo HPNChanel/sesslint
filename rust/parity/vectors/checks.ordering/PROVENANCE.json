@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.checks.ordering parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/checks.ordering/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "A real violation calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. Do not require the two-second edge with skew 0 as a silent vector.",
     "A second violating edge updates count and max_delta_ms on the aggregate finding; that path is also a finding on the Python side.",

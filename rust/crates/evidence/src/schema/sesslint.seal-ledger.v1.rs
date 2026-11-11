@@ -1,6 +1,6 @@
 //! JSON Schema `sesslint.seal-ledger/v1`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
+//! Pin `02694d537104659df66cdd084354739f3cccc440`,
 //! `schemas/sesslint.seal-ledger.v1.json`.
 //!
 //! [`validate_json`] enforces that document: required names, the `schema`
@@ -755,7 +755,7 @@ mod tests {
 
     use super::*;
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const SCHEMA_TEST: &str = "tests/test_seal.py::test_seal_schema_self_consistent";
     const VECTOR_IDS: [&str; 18] = [
         "schema_facts",

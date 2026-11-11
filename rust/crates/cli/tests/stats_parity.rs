@@ -16,13 +16,13 @@ const STATS_RS_REL: &str = "src/stats.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.stats";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_STATS_PY_SHA256: &str =
     "930d881285c520142babb28913ef23cff5d273f6f8c11c25c1a4785f48b77e7b";
 const EXPECTED_STATS_RS_SHA256: &str =
     "7ec388c8927d11805bff768c0de6b5a35591a7418779b4dfe338ed7c87f87375";
 const EXPECTED_VECTORS_SHA256: &str =
-    "72e1bfc346e644a56c99b2d563c24fff39d72a82fe50008fa092c3f7ae6531c4";
+    "d9662f7356a94c0b5d80f10fbb4409b6934adaf9e0713799f11f8c536dc4e763";
 
 const GAP_DISCOVER: &str = "GAP-cli-stats-discover-session-roots";
 

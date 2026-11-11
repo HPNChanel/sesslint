@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.seal",
   "schema_file": "schemas/sesslint.seal-ledger.v1.json",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "schema_sha256": "30acd9dafb53e66867ae08bdcce92ecd867eff4ba6265c99af94e902503e805b",
   "seal_py_sha256": "37bc7254f2195338db891f8a0fe8a60f1dd0003a76ed4375769d76ef9b2bdf28",
   "canonical_codec_py_sha256": "20f5ba80c0a6ad0be4e096707ffdaac51be88323560321eccbbfdce231b79eee",

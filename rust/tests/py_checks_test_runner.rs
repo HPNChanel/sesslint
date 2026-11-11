@@ -22,7 +22,7 @@ use sesslint_rust_workspace::PACKAGE_NAME;
 const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 5;
 const RUNNER_VECTOR_COUNT: usize = 8;
-const RUNNER_VECTORS_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const RUNNER_VECTORS_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const RUNNER_VECTORS_REL: &str = "parity/vectors/checks.runner/vectors.json";
 const RUNNER_COVERAGE_REL: &str = "parity/vectors/checks.runner/coverage.json";
 const VERIFY_COVERAGE_REL: &str = "parity/vectors/verify/coverage.json";

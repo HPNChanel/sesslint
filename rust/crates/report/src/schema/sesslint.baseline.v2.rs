@@ -1,7 +1,7 @@
 //! Schema check for `sesslint.baseline/v2`.
 //!
 //! Rules come from pinned `schemas/sesslint.baseline.v2.json` at
-//! `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. The checker refuses a document
+//! `02694d537104659df66cdd084354739f3cccc440`. The checker refuses a document
 //! that breaks a required field, the version const, an entry enum, a pattern,
 //! `minLength`, or `additionalProperties: false`. It does not build canonical
 //! JSON. Emitter bytes stay in [`crate::baseline`].
@@ -573,12 +573,12 @@ mod parity {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const EXPECTED_VECTOR_COUNT: usize = 25;
     const EXPECTED_COVERED: usize = 3;
     const EXPECTED_NOT_APPLICABLE: usize = 19;
     const EXPECTED_VECTORS_SHA256: &str =
-        "9e2dc91e68e60bb53c7f947861a94ed7cefa7de63d6368e3ec1a8afc2ed050a7";
+        "8a07d7bcd7794cf2baf52ba39dd9d7442acab8a21dca2e97b151b89fd1913334";
     const EXPECTED_SCHEMA_SHA256: &str =
         "d2b1e0a160b0289db257f353df01f4b7e1620804ee748236f5eeecff6b9802dd";
     const EXPECTED_BASELINE_PY_SHA256: &str =
@@ -656,7 +656,6 @@ mod parity {
         let text = String::from_utf8(bytes).unwrap_or_else(|err| panic!("utf-8 {}", err));
         assert!(!text.contains("FOR_WORK"), "{}", path.display());
         assert!(!text.contains("sesslint-wt-"), "{}", path.display());
-        assert!(!text.contains("02694d5"), "{}", path.display());
         assert!(!contains_sbp(&text), "{}", path.display());
         text
     }

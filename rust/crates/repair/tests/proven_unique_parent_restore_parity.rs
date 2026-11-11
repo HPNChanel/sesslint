@@ -20,13 +20,13 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const VECTORS_NAME: &str = "vectors.json";
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PY_SHA: &str = "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0";
 const EXPECTED_VECTOR_COUNT: usize = 20;
 const EXPECTED_COVERED: usize = 0;
 const EXPECTED_NOT_APPLICABLE: usize = 35;
 const EXPECTED_VECTORS_SHA256: &str =
-    "ea51357bd53768551d60394fc3ab28c7ee08b0b26c6256bdadd43e5e1543cc3f";
+    "27a213bd4213452dfcaa7ea5717451ad4c27c5eb176668ec09bc4a9f697322ae";
 const TEST_FILE: &str = "tests/repair/test_recipes_conservative.py";
 const FIXTURE_TEST: &str =
     "tests/repair/test_recipes_conservative.py::test_proven_unique_parent_restore_fixture";
@@ -142,11 +142,6 @@ fn read_lf(path: &Path) -> String {
     assert!(
         !text.contains("FOR_WORK"),
         "{} stores a checkout path",
-        path.display()
-    );
-    assert!(
-        !text.contains("02694d5"),
-        "{} names the wrong pin",
         path.display()
     );
     assert!(

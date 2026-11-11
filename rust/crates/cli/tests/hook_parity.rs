@@ -16,13 +16,13 @@ const HOOK_RS_REL: &str = "src/hook.rs";
 const EXPECTED_VECTOR_COUNT: usize = 7;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.hook";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_HOOK_PY_SHA256: &str =
     "9eb2e36d2f8be47a1df7345fcfeb9d5af16353ea0f65fe76c094a60e6e4da449";
 const EXPECTED_HOOK_RS_SHA256: &str =
     "3e0c54d95452724c3c2078b82a8dcf1bbb5cb3dcf68ea53781a59c77e5cfb600";
 const EXPECTED_VECTORS_SHA256: &str =
-    "56bb2075381c4cf081682d4dbfed3738a2526e52a1425c2d5e35abac771c8c45";
+    "589346b161e9043a10fff903dc72248f69e0df60f4d381746da3541276e1b073";
 
 const GAP_INIT_HOOKS_DOC: &str = "GAP-cli-hook-init-hooks-doc";
 const GAP_RUN_HOOK: &str = "GAP-cli-hook-run-hook";

@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.checks.compaction_snapshot parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/checks.compaction_snapshot/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts (PYTHON_INT_UNBOUNDED).",

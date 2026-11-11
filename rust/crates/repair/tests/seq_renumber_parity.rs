@@ -17,7 +17,7 @@ const EXPECTED_VECTOR_COUNT: usize = 3;
 const EXPECTED_COVERED: usize = 1;
 const EXPECTED_NOT_APPLICABLE: usize = 13;
 const EXPECTED_VECTORS_SHA256: &str =
-    "cc4e22da044acd758ec4ddccc29909518d00ff798c02d255259783f0db6b1556";
+    "6f123c9e5dede96ada3ad231a64cbbf72fdd175d985e04c36bf5d53fe947fc49";
 const GAP_REGION: &str = "GAP-seq-renumber-affected-region";
 const GAP_PLANNER: &str = "GAP-seq-renumber-planner";
 const SEAM: &str = "sesslint.policy.abstention.AffectedRegion is not available";

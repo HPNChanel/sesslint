@@ -2,10 +2,10 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.recipes_salvage",
   "recipe": "torn-compaction-project",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
   "vector_count": 17,
-  "vectors_sha256": "ca09b9e5c4ebfe285a902e237755b7bb39a7db5835dd6a9cc33bde668b7b20c2",
+  "vectors_sha256": "4b7f7b2200cb34ebb37d0881693751a34f91bff418438390811ffb96588ed268",
   "generator": "rust/parity/recipes/torn-compaction-project/generate",
   "known_parity_gaps": [
     "GAP-torn-compaction-project-canonical: planner.plan is not run. A missing canonical codec call is not a successful plan. tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage checks a fingerprint for three fixtures. One fixture inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in compares a plan dict for three recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications plans and then applies. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",

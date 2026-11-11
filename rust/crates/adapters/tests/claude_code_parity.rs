@@ -19,11 +19,11 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.claude_code/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 27;
 const EXPECTED_VECTORS_SHA256: &str =
-    "61ba9d20c475c878f48e80b7f1341cf4e009db53346f3ec28b3777069d0c8fcd";
+    "829c9fe4c1a754b5eb6873623d96cd35feeeddd5fad0602b8dae6750be7c3b52";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.claude_code";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CLAUDE_PY_SHA256: &str =
     "37d5ada843edb01662cd257042c9c418015c10cd431e017ae16a5c2c3a3f99a1";
 const EXPECTED_CLAUDE_RS_SHA256: &str =

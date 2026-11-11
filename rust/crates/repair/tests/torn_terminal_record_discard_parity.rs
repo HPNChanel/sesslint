@@ -23,15 +23,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const VECTORS_NAME: &str = "vectors.json";
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PY_SHA: &str = "535f3226281b68d39c62508d88afe3d85b9231c19f247246a0a939542f7e82a8";
 const EXPECTED_VECTOR_COUNT: usize = 25;
 const EXPECTED_COVERED: usize = 0;
 const EXPECTED_NOT_APPLICABLE: usize = 22;
 const EXPECTED_VECTORS_SHA256: &str =
-    "012b8ce665fb902f160f9f05cd97a039a7309ec20a6df9bbc38bf92e73612d3c";
+    "f19bc75048e42235aaeee502cf8ba6fcb314ae1903488739e9bc2cc5b5122180";
 const EXPECTED_COVERAGE_SHA256: &str =
-    "340acead6410f0180a6b958defe65f00fe67640e20f605be7746d13390c8fe74";
+    "29079ecd9f346c9159fa90cfaea3639afdb2e64bec24fe2df092b2111f5642b4";
 const FN: &str = "apply_torn_terminal_record_discard";
 const RECIPE_FN: &str = "RECIPE_TORN_TERMINAL_RECORD_DISCARD";
 const POP_MESSAGE: &str = "pop from empty list";
@@ -149,11 +149,6 @@ fn read_lf(path: &Path) -> String {
     assert!(
         !text.contains("FOR_WORK"),
         "{} stores a checkout path",
-        path.display()
-    );
-    assert!(
-        !text.contains("02694d5"),
-        "{} names the wrong pin",
         path.display()
     );
     assert!(

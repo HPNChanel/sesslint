@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.diff parity: constants, delta rendering, path gates, import seams, and empty diff_events.",
   "generator": "rust/parity/vectors/diff/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-diff-minimize-path: SessionDiff.to_dict, to_json, and render_human import sesslint.report.minimize_path in Python; Rust returns sesslint.report.minimize_path is not available.",
     "GAP-diff-resolve-format: diff_sessions and _load_side call sesslint.adapters.detect.resolve_format once both paths are files; Rust returns sesslint.adapters.detect.resolve_format is not available and builds no SessionDiff.",

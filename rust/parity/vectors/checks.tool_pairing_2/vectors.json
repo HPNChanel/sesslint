@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_2",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_tool_pairing_2_rs_sha256": "3cf94a430e3810d77f0633e513aed1428a43c79d1c37ddea8101849e622e271f",
   "python_all": [
     "CALL_KINDS",

@@ -17,13 +17,13 @@ const PROVENANCE_REL: &str = "../../parity/vectors/exporter/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 9;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.exporter";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_EXPORTER_PY_SHA256: &str =
     "d5386b1c85b9ff596e5a6e014d1acaff8e6ad74c9c956d04e9aa0a9e7a4d8ea5";
 const EXPECTED_EXPORTER_RS_SHA256: &str =
     "fdc599ed26bfaeed99c784b5a8547e81c5fbd1d044ad63766b92cb208fe1f40c";
 const EXPECTED_VECTORS_SHA256: &str =
-    "a3a31ce8e6bc3833a485e0f84a0e95336778d5fbbfeb1ac5d4e6727a382ff716";
+    "da5a6718c393eff82c88bc243c2888956e32f86b0d455c2848887b5de59d3e81";
 
 const LIVE_STORE_UNAVAILABLE: &str = "sesslint.repair.executor.is_live_store_path is not available";
 

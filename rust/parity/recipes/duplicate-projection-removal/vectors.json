@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.recipes_conservative",
   "recipe": "duplicate-projection-removal",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
   "known_parity_gaps": [
     "GAP-duplicate-projection-removal-affected-region: affected_region_duplicate_projection_removal in the pin returns sesslint.policy.abstention.AffectedRegion. This set does not construct that region and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz is a multi-function sweep. One function inside the sweep is not the whole test.",

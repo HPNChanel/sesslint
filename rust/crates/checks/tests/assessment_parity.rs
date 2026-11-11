@@ -18,11 +18,11 @@ const FIXTURES_REL: &str = "../../parity/vectors/assessment/fixtures";
 
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "a083ea7643f36f9c081e632a32cfaf5f61d5e422dfeb2d06bc880e72c63578dd";
+    "9f2937ed8eae7d017e460e0d0b656d8b0edeebd960a655d8ed1d7552e83bf247";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.assessment";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_ASSESSMENT_PY_SHA256: &str =
     "fa64f1ea4b7b7bd1340cdd4ea5ed0c76580086f58a6ce44647a9762d20b8c064";
 const EXPECTED_ASSESSMENT_RS_SHA256: &str =

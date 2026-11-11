@@ -8,8 +8,8 @@
 //! `covered` names one id in `report/vectors.json` whose construct is the same
 //! function and the same success or failure mode as that entire pinned test.
 //! `not_applicable` records a `sesslint.report` or `sesslint.cli` call this
-//! package cannot reach without a `Cargo.toml` change, a pytest-pin versus
-//! vectors-pin mismatch, or a missing whole-report stop.
+//! package cannot reach without a `Cargo.toml` change or a missing
+//! whole-report stop.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,18 +18,15 @@ use std::path::PathBuf;
 use sesslint_rust_workspace::PACKAGE_NAME;
 
 const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
-const VECTORS_PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const VECTORS_PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 4;
 const PINNED_SPLITLINES: usize = 116;
 const REPORT_VECTOR_COUNT: usize = 17;
 const VECTORS_REL: &str = "parity/vectors/report/vectors.json";
 
-const PIN_VECTOR_MISMATCH: &str =
-    "pytest pin 02694d537104659df66cdd084354739f3cccc440 versus report vectors python_commit e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
-
 /// `covered` names a vector id in `report/vectors.json`. `not_applicable`
 /// records behavior this package cannot reach without a `Cargo.toml` change
-/// outside the owned path, a pin mismatch, or a missing whole-report stop.
+/// outside the owned path or a missing whole-report stop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Disposition {
     #[allow(dead_code)]
@@ -71,25 +68,25 @@ const ROWS: &[Row] = &[
     Row {
         name: "test_summary_header_healthy",
         disposition: Disposition::NotApplicable(
-            "pytest pin 02694d537104659df66cdd084354739f3cccc440 versus report vectors python_commit e91d50b2ecea57ef4dd900e3b0b87b14946e847e; build_report with zero findings and render_human on neutral/canonical then assert the full first-line header tokens and Next Action; render_human_healthy_header is a header fragment only and has the missing whole-report stop for this pytest pin",
+            "build_report with zero findings and render_human on neutral/canonical then assert the full first-line header tokens and Next Action; render_human_healthy_header is a header fragment only and has the missing whole-report stop for this pytest pin",
         ),
     },
     Row {
         name: "test_summary_header_invalid_with_deterministic_fix",
         disposition: Disposition::NotApplicable(
-            "pytest pin 02694d537104659df66cdd084354739f3cccc440 versus report vectors python_commit e91d50b2ecea57ef4dd900e3b0b87b14946e847e; make_finding SL001, build_report for sess_bad, render_human on claude-strict/claude-code-jsonl, then assert Integrity check failed, invalid verdict counts, and repair Next Action; render_human_with_finding_gap is a gap-mode fragment only and has the missing whole-report stop for this pytest pin",
+            "make_finding SL001, build_report for sess_bad, render_human on claude-strict/claude-code-jsonl, then assert Integrity check failed, invalid verdict counts, and repair Next Action; render_human_with_finding_gap is a gap-mode fragment only and has the missing whole-report stop for this pytest pin",
         ),
     },
     Row {
         name: "test_summary_header_warning_state",
         disposition: Disposition::NotApplicable(
-            "pytest pin 02694d537104659df66cdd084354739f3cccc440 versus report vectors python_commit e91d50b2ecea57ef4dd900e3b0b87b14946e847e; make_finding SL003 warning-only, build_report for sess_warn, render_human on openai-strict/openai-agents, then assert healthy with warnings and review Next Action; no report vector records this adapter profile pair or the missing whole-report stop for this pytest pin",
+            "make_finding SL003 warning-only, build_report for sess_warn, render_human on openai-strict/openai-agents, then assert healthy with warnings and review Next Action; no report vector records this adapter profile pair or the missing whole-report stop for this pytest pin",
         ),
     },
     Row {
         name: "test_disclaimer_sentences_present_verbatim",
         disposition: Disposition::NotApplicable(
-            "pytest pin 02694d537104659df66cdd084354739f3cccc440 versus report vectors python_commit e91d50b2ecea57ef4dd900e3b0b87b14946e847e; create_parser format_help plus README.md and docs/codes/README.md reads for two disclaimer sentences; report vectors target sesslint.report constructs only and have the missing whole-report stop for this pytest pin",
+            "create_parser format_help plus README.md and docs/codes/README.md reads for two disclaimer sentences; report vectors target sesslint.report constructs only and have the missing whole-report stop for this pytest pin",
         ),
     },
 ];
@@ -182,11 +179,6 @@ fn every_pinned_report_summary_test_has_one_disposition() {
             Disposition::NotApplicable(reason) => {
                 assert!(!reason.is_empty(), "{}", row.name);
                 assert!(
-                    reason.contains(PIN_VECTOR_MISMATCH),
-                    "{} not_applicable reason must name the pin mismatch",
-                    row.name
-                );
-                assert!(
                     reason.contains("missing whole-report stop"),
                     "{} not_applicable reason must name the missing whole-report stop",
                     row.name
@@ -199,7 +191,7 @@ fn every_pinned_report_summary_test_has_one_disposition() {
     assert_eq!(covered + not_applicable, PINNED_TEST_COUNT);
     assert_eq!(covered, 0);
     assert_eq!(not_applicable, PINNED_TEST_COUNT);
-    assert_ne!(PIN, VECTORS_PIN);
+    assert_eq!(PIN, VECTORS_PIN);
 }
 
 #[test]
@@ -210,10 +202,6 @@ fn covered_vector_ids_are_present_in_report_vectors() {
     assert!(
         json.contains(&format!("\"python_commit\": \"{VECTORS_PIN}\"")),
         "report vectors are pinned to {VECTORS_PIN}"
-    );
-    assert!(
-        !json.contains(&format!("\"python_commit\": \"{PIN}\"")),
-        "report vectors must not claim pytest pin {PIN}"
     );
     assert!(json.contains("\"module\": \"sesslint.report\""));
 

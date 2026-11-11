@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.seal parity (constants, hashing, build_entry, verify_lines, verify_ledger, sha256_file; no session payloads).",
   "generator": "rust/parity/vectors/seal/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-seal-ledger-lock: append_seal and _ledger_lock use msvcrt.locking or fcntl.flock; Rust ledger_lock closes the sidecar and returns LockingUnavailable before append (not byte-compared here).",
     "GAP-seal-resources: get_seal_schema_path and load_seal_schema import sesslint._resources.schema_path; Rust returns ResourcesUnavailable (not byte-compared here).",

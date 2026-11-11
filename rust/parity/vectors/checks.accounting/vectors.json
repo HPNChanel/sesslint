@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.accounting",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_accounting_rs_sha256": "f5fefc1989cb29e65f9f1059c7c0f9cdfff5c58b4656f180b1bdabb35371e4de",
   "known_parity_gaps": [
     "check_accounting uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",

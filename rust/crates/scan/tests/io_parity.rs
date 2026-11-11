@@ -20,11 +20,11 @@ const PROVENANCE_REL: &str = "../../parity/vectors/io/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 35;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.io";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_SCAN_IO_RS_SHA256: &str =
     "9196d0359e853bf351d72aa7a6bbe3a73cf3e2fe0dce2866c6680fb36874cc4b";
 const EXPECTED_VECTORS_SHA256: &str =
-    "caf9d8da8eb16668190f7133fcc5d3d0b63740b73007ef44e3a6b8a4744c6ad2";
+    "2a76ff0962cea0bee0d49dc7475106f20177b6c2dc7f2a91e16045830fb19e5c";
 
 struct Scratch {
     path: PathBuf,

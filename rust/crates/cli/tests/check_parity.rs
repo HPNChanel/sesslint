@@ -17,13 +17,13 @@ const CHECK_RS_REL: &str = "src/check.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.check";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECK_PY_SHA256: &str =
     "7642d26eb328d49299edaa922a92d32906e22f769b18029e081a74f4171790f8";
 const EXPECTED_CHECK_RS_SHA256: &str =
     "ddee54a32199f15941d0545525476a048fdd30955a532454659b649f55d73602";
 const EXPECTED_VECTORS_SHA256: &str =
-    "949506fd677b15f5ed95e84db55c600b810f65e4a7cad425975a2ed678f3c4cf";
+    "21a64e833c63314db80665fb681b048426f0e57ef8d914ba88c6d0df23c93212";
 
 const GAP_RUN_STOPS: &str = "GAP-cli-check-run-stops";
 

@@ -22,11 +22,11 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.openai_agents/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 42;
 const EXPECTED_VECTORS_SHA256: &str =
-    "bab9d2e261ee9a5085257a2a72272a3e510402588c6acc1c7bc28efdf3dcc304";
+    "a8950910d96657e0909dd7850ab094e07246b89e5aaff9a60d86891025618158";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.openai_agents";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_OPENAI_PY_SHA256: &str =
     "7c262765d0525156ad8fae34e16c11895f553500d8056aa5921d86d7d2fc8ac6";
 const EXPECTED_OPENAI_RS_SHA256: &str =

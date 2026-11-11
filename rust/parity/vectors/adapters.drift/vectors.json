@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.adapters.drift",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "drift_py_sha256": "6f21b713e6c30d0729c08be3452480075350b6be698a43cf5835d8b6c61c2290",
   "drift_rs_sha256": "e456ecbac7b4f0ab647621a4f4ecf0cff05f7599700eb8710310c7e285b2e9f4",
   "known_parity_gaps": [

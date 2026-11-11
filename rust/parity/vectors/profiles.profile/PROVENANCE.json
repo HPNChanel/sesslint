@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.profiles.profile parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/profiles.profile/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "get_profile and list_profiles need sesslint.profiles.builtin. Rust returns sesslint.profiles.builtin is not available. Python returns a registered profile or a KeyError. Do not copy REGISTRY into the vector expected value.",
     "apply_rule_selection and deselected_rules with only one of select or ignore need ALL_RULES. Rust returns the builtin error. Python filters the rules.",

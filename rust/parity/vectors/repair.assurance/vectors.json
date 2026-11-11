@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.assurance",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "assurance_py_sha256": "8c0a182503418d404b26816b7d1db03274577c8cbc4af9532cdcd681a69fc529",
   "known_parity_gaps": [
     "cap_assurance: when plan has attribute 'steps' whose value is not iterable, Python raises TypeError; Rust Plan::AttributeSteps only accepts a slice."

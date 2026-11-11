@@ -4,10 +4,10 @@
   "generator": "rust/parity/schemas/sesslint.baseline.v2/generate",
   "module": "sesslint.baseline",
   "not_applicable_count": 19,
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "schema": "sesslint.parity-schema-vectors/v1",
   "schema_id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
   "schema_sha256": "d2b1e0a160b0289db257f353df01f4b7e1620804ee748236f5eeecff6b9802dd",
   "vector_count": 25,
-  "vectors_sha256": "9e2dc91e68e60bb53c7f947861a94ed7cefa7de63d6368e3ec1a8afc2ed050a7"
+  "vectors_sha256": "8a07d7bcd7794cf2baf52ba39dd9d7442acab8a21dca2e97b151b89fd1913334"
 }

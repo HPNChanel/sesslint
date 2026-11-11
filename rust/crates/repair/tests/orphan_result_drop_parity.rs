@@ -25,7 +25,7 @@ const EXPECTED_VECTOR_COUNT: usize = 4;
 const EXPECTED_COVERED: usize = 1;
 const EXPECTED_NOT_APPLICABLE: usize = 23;
 const EXPECTED_VECTORS_SHA256: &str =
-    "4671f902a84061964b7d97ffb18d3c697622e3ddae61e5b7d8ec9c75e12a77e9";
+    "74234739afccdcc35532d5030800676aedda001cd26383a7e7f8e2314bae5e5d";
 const GAP_REGION: &str = "GAP-orphan-result-drop-affected-region";
 const GAP_PLANNER: &str = "GAP-orphan-result-drop-planner";
 const SEAM: &str = "sesslint.policy.abstention.AffectedRegion is not available";
@@ -115,7 +115,6 @@ fn orphan_result_drop_parity_vectors() {
     assert_eq!(digest, EXPECTED_VECTORS_SHA256, "vectors.json sha256");
     assert!(vectors_raw.contains(GAP_REGION));
     assert!(vectors_raw.contains(GAP_PLANNER));
-    assert!(!vectors_raw.contains("02694d5"));
     let cases = parse_cases(&vectors_raw).unwrap_or_else(|err| panic!("parse vectors: {err}"));
     assert_eq!(cases.len(), EXPECTED_VECTOR_COUNT);
     for case in &cases {

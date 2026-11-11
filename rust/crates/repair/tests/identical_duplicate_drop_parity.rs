@@ -14,12 +14,12 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const DIR_REL: &str = "../../parity/recipes/identical-duplicate-drop";
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_VECTOR_COUNT: usize = 15;
 const EXPECTED_COVERED: usize = 1;
 const EXPECTED_NOT_APPLICABLE: usize = 13;
 const EXPECTED_VECTORS_SHA256: &str =
-    "b2e98dbc8e1a74ceb6d7d9f79f56ad8d57405b6ad597600a8b73777df5e62bd1";
+    "c85fd740e7f6678d11c42b66acbb884005d23f549791eae1bfbe18a58ab20b38";
 const COVERED_VECTOR: &str = "drop_refusal_conflicting_variant";
 const COVERED_TEST: &str =
     "tests/repair/test_t04_recipes.py::test_drop_fails_closed_on_conflicting_variant";
@@ -54,7 +54,6 @@ fn identical_duplicate_drop_vectors_match_the_pin() {
     let dir = set_dir();
     let raw = read_lf(&dir.join("vectors.json"));
     assert_eq!(sha256_hex(raw.as_bytes()), EXPECTED_VECTORS_SHA256);
-    assert!(!raw.contains("02694d5"), "vectors must use the named pin");
     assert!(!raw.contains(SEAM_DISPLAY));
     let root = parse_object(&raw);
     assert_eq!(string_field(&root, "python_commit"), PIN);
@@ -176,7 +175,6 @@ fn identical_duplicate_drop_json_has_no_forbidden_bytes() {
         assert!(!text.contains(SEAM_DISPLAY), "{name}");
         assert!(!text.contains("FOR_WORK"), "{name}");
         assert!(!text.contains("sesslint-wt"), "{name}");
-        assert!(!text.contains("02694d5"), "{name}");
         assert!(!contains_sbp_token(&text), "{name} contains an sbp_ token");
     }
 }

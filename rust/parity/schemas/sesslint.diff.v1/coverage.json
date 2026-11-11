@@ -2,7 +2,7 @@
   "covered_count": 0,
   "module": "sesslint.diff",
   "not_applicable_count": 2,
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "rows": [
     {
       "note": "main compares two session files and asserts exit 1, schema_version, identical, counts.added, both event counts, and that every delta category is one of the six names. validate judges one document. A synthetic object does not run that CLI sweep.",

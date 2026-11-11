@@ -2,7 +2,7 @@
   "covered_count": 0,
   "module": "sesslint.batch",
   "not_applicable_count": 14,
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "rows": [
     {
       "note": "repair_many then asserts repaired == 2, skipped == 2, two output files exist, and the outcome set is repaired plus skipped. validate does not repair a tree.",

@@ -6,9 +6,9 @@
     "GAP-identical-duplicate-drop-payload-fingerprint: mappings without a non-empty content_hash string are not pinned. test_drop_fails_closed_on_content_drift and fixtures/repair/t04_identical_duplicate_drop/source.jsonl stay not_applicable."
   ],
   "module": "sesslint.repair.recipes_conservative",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipe": "identical-duplicate-drop",
   "schema": "sesslint.parity-module-vectors/v1",
   "vector_count": 15,
-  "vectors_sha256": "b2e98dbc8e1a74ceb6d7d9f79f56ad8d57405b6ad597600a8b73777df5e62bd1"
+  "vectors_sha256": "c85fd740e7f6678d11c42b66acbb884005d23f549791eae1bfbe18a58ab20b38"
 }

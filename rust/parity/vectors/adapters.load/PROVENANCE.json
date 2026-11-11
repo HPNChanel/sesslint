@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.adapters.load parity: FORMAT_PROFILE_KEYS, profile_key_for_format, and codex-rollout load_events_for_format source metadata summary from the pin; no session payload text.",
   "generator": "rust/parity/vectors/adapters.load/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-load-claude-canonical-no-events: load_claude_code and load_canonical success paths do not return EventList rows in Rust; load_events_for_format for those format ids stops at the loader seam before events.",
     "GAP-load-valueerror-repr: Unsupported and not-vendor ValueError messages use Python repr, including None and quoted strings; Rust matches Display text but vectors do not exhaust every format arm.",

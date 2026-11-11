@@ -31,7 +31,7 @@
     "schema_version_const": "sesslint.baseline/v2"
   },
   "module": "sesslint.baseline",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "schema": "sesslint.parity-schema-vectors/v1",
   "schema_id": "https://sesslint.dev/schemas/sesslint.baseline/v2",
   "schema_sha256": "d2b1e0a160b0289db257f353df01f4b7e1620804ee748236f5eeecff6b9802dd",

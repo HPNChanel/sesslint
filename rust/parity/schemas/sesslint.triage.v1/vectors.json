@@ -96,7 +96,7 @@
     ],
     "steps_max_items": 256
   },
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "schema": "sesslint.parity-schema-vectors/v1",
   "schema_id": "https://sesslint.dev/schemas/sesslint.triage.v1.json",
   "schema_sha256": "c0ab67bc6a9ca33d04f0d4830444136f4f0a4bb4d08d5213d1adc46f8bab99e4",

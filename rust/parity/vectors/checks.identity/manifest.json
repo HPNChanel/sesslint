@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.identity",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_identity_rs_sha256": "9483d3285a2e5409125653814c1b81ea7c4cdf491dc62ee6b896ab11e04e8ccc",
   "vector_count": 10,
-  "vectors_sha256": "d0acbc08f17ad758e2a3dc451404e0e2f3541d32324f6fcb415f5fcb1aff8746",
+  "vectors_sha256": "5d3558273191e6cac4f756a8b72856874a31a4124e741b44f9206347473a0168",
   "generator": "rust/parity/vectors/checks.identity/generate",
   "known_parity_gaps": [
     "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",

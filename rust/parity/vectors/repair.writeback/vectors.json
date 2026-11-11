@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.writeback",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "writeback_py_sha256": "b03898de0ad01063e56535a345dad5e2a8d9c36988d74560a213b1094f05b31d",
   "writeback_rs_sha256": "5da293060ede3fc4fe2acfdbfa33b75be77da599238acfc402d1beb771f41e79",
   "known_parity_gaps": [

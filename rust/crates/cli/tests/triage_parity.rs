@@ -19,13 +19,13 @@ const TRIAGE_RS_REL: &str = "src/triage.rs";
 const EXPECTED_VECTOR_COUNT: usize = 7;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.triage";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_TRIAGE_PY_SHA256: &str =
     "752447136a9443f92a2a274985f0ff0eda44d998bb2f78ca1ac56879c3d5f975";
 const EXPECTED_TRIAGE_RS_SHA256: &str =
     "a0a903c868b679c1de0e88031378f65f59c7eb6dec058d91f35e36d82e0e17df";
 const EXPECTED_VECTORS_SHA256: &str =
-    "dac912f8eac5128504207add11d68f98ae644a7cda1506c362f42d24ef96a057";
+    "dc3ee9e7902520999ebe22e6c24c2188cb526611cb9fcb7c3f9c489525c65a88";
 
 const GAP_LATEST_SESSION: &str = "GAP-cli-triage-latest-session";
 

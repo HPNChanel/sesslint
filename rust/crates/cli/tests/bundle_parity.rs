@@ -21,13 +21,13 @@ const VECTORS_DIR_REL: &str = "../../parity/vectors/cli.bundle";
 const EXPECTED_VECTOR_COUNT: usize = 5;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.bundle";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_BUNDLE_PY_SHA256: &str =
     "c9a12db3449268d60e6331aaa6c98f6b95cec0f460de7f0ab5aa8d043164233e";
 const EXPECTED_BUNDLE_RS_SHA256: &str =
     "d8f7c17681b936b3695279e44b25a1788c0b16a04c657090f13b5b50e01bfbf1";
 const EXPECTED_VECTORS_SHA256: &str =
-    "1d94fc433989414be749a1a65e949588ca0639ed8766e47b7229e8c183dae618";
+    "9aeb472bcec83b381f66b94ac3f00d5a48b865a93b364c7ba674d2c7b6191306";
 
 const GAP_BUILD_BUNDLE: &str = "GAP-cli-bundle-build-bundle";
 

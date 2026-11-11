@@ -21,13 +21,13 @@ const PROVENANCE_REL: &str = "../../parity/vectors/bundle/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 22;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.bundle";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_BUNDLE_PY_SHA256: &str =
     "3c5f7df93eaa410d6ccfc83c17b49ac1f85e45e2007fc9076635bec40965b133";
 const EXPECTED_BUNDLE_RS_SHA256: &str =
     "30a0ecf9c7c6ffc6ca001d1a31cfa158fc514adcfab891ff0617303148529564";
 const EXPECTED_VECTORS_SHA256: &str =
-    "7d1e6e5dc58f5df5ca7db8fd7a5a7eba178df7ee1614e59560b0c069c3314def";
+    "e7be196e8c7712d41e0ef036f5f94ef01c578c8dd7fd4686e63a81d8b7005ddf";
 const EXPECTED_FIXTURE_TEMPLATE_SHA256: &str =
     "10d54eb7416be822c1b29e46bcb039c7e685d636a62c07e97a6361cc53cec2d7";
 

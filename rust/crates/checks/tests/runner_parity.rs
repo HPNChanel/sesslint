@@ -15,11 +15,11 @@ const PROVENANCE_REL: &str = "../../parity/vectors/checks.runner/PROVENANCE.json
 
 const EXPECTED_VECTOR_COUNT: usize = 8;
 const EXPECTED_VECTORS_SHA256: &str =
-    "64b0bfaa6c1b7db1f025dd5a2f0aba6020a602f4fcd1adbe123c3934c8f3805f";
+    "ef920ab9f7882161944c23eeab8059a26d60f243176d458758fce1a8c7eec8c9";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.runner";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_RUNNER_PY_SHA256: &str =
     "7a46ab2503cb5ce50ae3ff3ca0cd029cd366b0efd42a2623204c499498fc0341";
 const EXPECTED_RUNNER_RS_SHA256: &str =

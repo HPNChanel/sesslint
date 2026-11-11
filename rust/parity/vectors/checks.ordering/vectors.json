@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.ordering",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_ordering_rs_sha256": "6e6a911807df01701dc7ccadbbb177016c997cb106594f7b9f475fa04297e446",
   "python_all": [
     "check_ordering"

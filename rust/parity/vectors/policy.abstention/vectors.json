@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.policy.abstention",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "abstention_rs_sha256": "46b681a6b615bd59d73730b402e73b76fc5b007d41766a3517500ee683c5f824",
   "known_parity_gaps": [
     "a missing or empty content_hash, because Python hashes and Rust returns a typed unavailable error",

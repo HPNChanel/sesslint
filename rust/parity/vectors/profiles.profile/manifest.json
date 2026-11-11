@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.profiles.profile",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_profile_rs_sha256": "6500bd207a5d311201181016ff5390bd7ebd037fc2b2b8b5221a9fd89b03ba3c",
   "vector_count": 17,
-  "vectors_sha256": "48225fddf6b8bbd5dcd2b392930ac3e4edfc732626a6baa4c0e37760aa7ddbec",
+  "vectors_sha256": "d21c1b4e0759045b0c8ec0cd7396bc54095e9dde96fd8b8fdbe218c5026a1abe",
   "generator": "rust/parity/vectors/profiles.profile/generate",
   "known_parity_gaps": [
     "get_profile and list_profiles need sesslint.profiles.builtin. Rust returns sesslint.profiles.builtin is not available. Python returns a registered profile or a KeyError. Do not copy REGISTRY into the vector expected value.",

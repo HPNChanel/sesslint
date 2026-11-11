@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.secret_families",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "secret_families_rs_sha256": "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f",
   "family_literal_keys": [
     "anthropic-api-key",

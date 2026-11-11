@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli.triage",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "triage_py_sha256": "752447136a9443f92a2a274985f0ff0eda44d998bb2f78ca1ac56879c3d5f975",
   "triage_rs_sha256": "a0a903c868b679c1de0e88031378f65f59c7eb6dec058d91f35e36d82e0e17df",
   "known_parity_gaps": [

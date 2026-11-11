@@ -3,7 +3,7 @@
   "description": "Synthetic side-effect-unknown-truncate parity. Refusal messages come from the pinned blob. Plan results, fixture payload, and SessionEvent copies stay uncovered. No fixture diff is stored.",
   "generator": "rust/parity/recipes/side-effect-unknown-truncate/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-side-effect-unknown-truncate-canonical: planner.plan is not run. A missing canonical codec call is not a successful plan. tests/repair/test_recipes_salvage.py::test_conservative_default_blocks_salvage checks a fingerprint for three fixtures. One fixture inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_salvage_opt_in compares a plan dict for three recipes. One recipe inside a sweep is not the whole test. tests/repair/test_recipes_salvage.py::test_acknowledgement compares plan dicts. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications plans and then applies. tests/repair/test_recipes_salvage.py::test_interacting_multi_fault_session plans two recipes. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
     "GAP-side-effect-unknown-truncate-session-copy: a SessionEvent prefix copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. tests/repair/test_recipes_salvage.py::test_salvage_recipe_applications uses SessionEvent records from the fixture. One recipe inside a sweep is not the whole test.",

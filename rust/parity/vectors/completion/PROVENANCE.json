@@ -3,7 +3,7 @@
   "description": "sesslint.completion script builders and harvest helpers from pinned src/sesslint/completion.py (synthetic argparse surfaces only).",
   "generator": "rust/parity/vectors/completion/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-completion-profile-choices: Python _profile_choices imports sesslint.profiles.list_profiles; Rust profile_choices returns ListProfilesUnavailable (not byte-compared here).",
     "GAP-completion-create-parser: Python generate_completion(parser=None) imports sesslint.cli.create_parser; Rust returns CreateParserUnavailable (not byte-compared here).",

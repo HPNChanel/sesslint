@@ -8,5 +8,5 @@
     "GAP-baseline-schema-partial: a test that mixes write, load, and upgrade is not covered by one of those calls."
   ],
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440"
 }

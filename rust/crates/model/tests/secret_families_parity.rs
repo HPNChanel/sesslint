@@ -19,11 +19,11 @@ const EXPECTED_VECTOR_COUNT: usize = 127;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.secret_families";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_SECRET_FAMILIES_RS_SHA256: &str =
     "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f";
 const EXPECTED_VECTORS_SHA256: &str =
-    "6f0cb2a50da4d160681891d90344ea20107a07f912e7bea466f4564754fead68";
+    "6d7da88c573cf39fb7a066b615ad4f1f15c6198fc6ac5ad8b2a168e8a20d55bb";
 
 const EXPECTED_LITERAL_KEYS: [&str; 18] = [
     "anthropic-api-key",

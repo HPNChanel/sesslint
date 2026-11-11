@@ -2,10 +2,10 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.recipes_conservative",
   "recipe": "terminal-suffix-discard",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipes_conservative_py_sha256": "06c439a569ceb6aebad8bf4afa0c65a3a28c78819e14ecf1df66df11c73620c0",
   "vector_count": 9,
-  "vectors_sha256": "a4dd2862720eb8a50ed6dd4d52f24222632da3a0fc138c81b712d8c03f686922",
+  "vectors_sha256": "46e4ba7d3cb867d651b03d2d96ef530962d2b377eec3cc43d1f45a4c01dce891",
   "generator": "rust/parity/recipes/terminal-suffix-discard/generate",
   "known_parity_gaps": [
     "GAP-terminal-suffix-discard-affected-region: RECIPE_TERMINAL_SUFFIX_DISCARD in the pin leaves affected_region unset. The pin has no affected_region_terminal_suffix_discard. This set records that absence and does not cover a region row. tests/repair/test_scoped_abstention.py::test_region_functions_totality_fuzz parametrizes other region functions. This recipe is not one of those calls. One function inside the sweep is not the whole test.",

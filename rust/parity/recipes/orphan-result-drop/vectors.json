@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.recipes_salvage",
   "recipe": "orphan-result-drop",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
   "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
   "known_parity_gaps": [

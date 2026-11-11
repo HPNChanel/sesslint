@@ -1,6 +1,6 @@
 //! Fail-closed check for pinned `schemas/sesslint.triage.v1.json`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. [`validate`] reads one JSON
+//! Pin `02694d537104659df66cdd084354739f3cccc440`. [`validate`] reads one JSON
 //! text and applies the keywords that document states, including `required`,
 //! `const`, `enum`, `additionalProperties`, `type`, `items`, `uniqueItems`,
 //! length bounds, and `pattern`. `$ref`, `anyOf`, and `oneOf` are applied
@@ -1213,7 +1213,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const TEST_NAMES: &[&str] = &[
         "tests/test_triage.py::test_healthy_pure_and_api_parity",
         "tests/test_triage.py::test_states_are_not_silently_healthy",
@@ -1337,7 +1337,6 @@ mod tests {
         if text.contains('\r')
             || text.contains("FOR_WORK")
             || text.contains("sesslint-wt-")
-            || text.contains("02694d5")
         {
             return true;
         }

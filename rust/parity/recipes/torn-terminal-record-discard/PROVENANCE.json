@@ -3,7 +3,7 @@
   "description": "Synthetic torn-terminal-record-discard parity. Apply results come from the pinned blob. Plan results, fixture message text, and SessionEvent copies stay uncovered. No fixture diff is stored.",
   "generator": "rust/parity/recipes/torn-terminal-record-discard/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-torn-terminal-record-discard-canonical: planner.plan, execute, and api.repair are not run. A missing canonical codec call is not a successful plan. Repair tests compare manifests, assurance, or output files. No fingerprint is hashed and no fixture diff is stored. No output bytes are stored.",
     "GAP-torn-terminal-record-discard-session-copy: a kept SessionEvent copies in the pin. This crate stops on that value. A rust seam while the pin succeeds is not coverage. That success is not replayed. The repair tests pass decoded events into the executor, which copies them before this function runs.",

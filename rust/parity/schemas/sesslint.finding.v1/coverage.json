@@ -2,7 +2,7 @@
   "covered_count": 0,
   "module": "sesslint.finding",
   "not_applicable_count": 5,
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "rows": [
     {
       "note": "get_finding_schema_path and load_finding_schema open the schema file, then make_finding, to_dict, and parse_finding_dict round-trip one finding. validate_finding_json does not resolve a path and does not construct a Finding. emitter_to_dict is one object, not that round-trip.",

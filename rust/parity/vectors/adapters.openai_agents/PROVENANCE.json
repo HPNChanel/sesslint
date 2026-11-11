@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.adapters.openai_agents parity (prefix helpers, detection, projection, and documented load seams).",
   "generator": "rust/parity/vectors/adapters.openai_agents/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-openai-secret-scan-tracker: load_openai_agents stops at sesslint.checks.hygiene.SecretScanTracker after classifying JSON or JSONL. Rust does not construct the tracker. The harness asserts that seam and does not treat pin success as equal to the seam.",
     "GAP-openai-feed-blob: load_openai_agents_json stops at SecretScanTracker.feed_blob. Rust returns the feed_blob display for every document.",

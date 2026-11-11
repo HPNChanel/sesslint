@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.adapters.canonical parity (prefix helpers, detection, labels, and documented load seams).",
   "generator": "rust/parity/vectors/adapters.canonical/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-canonical-secret-scan-tracker: load_canonical and load_canonical_session call SecretScanTracker first. Rust returns the hygiene seam and does not read path, limits, or bytes. The harness asserts that gap and does not treat pin success as equal to the seam.",
     "GAP-canonical-decode-json: load_canonical_body stops at sesslint.io.decode_json_dupaware after size, NUL, and empty gates that need the fingerprint codec. When the pin reaches JSON decoding, expected records pin outcomes but rust_assertion is gap_decode_json.",

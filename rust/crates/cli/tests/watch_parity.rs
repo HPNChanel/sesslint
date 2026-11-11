@@ -17,13 +17,13 @@ const WATCH_RS_REL: &str = "src/watch.rs";
 const EXPECTED_VECTOR_COUNT: usize = 6;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.watch";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_WATCH_PY_SHA256: &str =
     "97226bd8408dc1c47a355e9a87d98b10b10f10bfd5ea8e46419d2f5055e8703f";
 const EXPECTED_WATCH_RS_SHA256: &str =
     "4a062e8dd089979b7d52c622bbd330d7baa1ace83af65b45f2ae402bc8b9ffa2";
 const EXPECTED_VECTORS_SHA256: &str =
-    "fa48bf96b2285cfe95a459d21267895f2f02c10e10fb7c1c2f1584c5ff7c77d5";
+    "a7f945bcf918c651ae790dfc5c803d7c66881c837517fbf788f0ed5c1e41b0da";
 
 const GAP_DISCOVER: &str = "GAP-cli-watch-discover-session-roots";
 

@@ -16,7 +16,7 @@ use std::path::Path;
 
 use sesslint_rust_workspace::PACKAGE_NAME;
 
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 
 const STATE_DB_SEAM: &str = concat!(
     "pinned test calls the state-db reader and reaching it from this package ",

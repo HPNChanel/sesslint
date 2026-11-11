@@ -11,7 +11,7 @@ use std::sync::{Mutex, MutexGuard};
 const VECTORS_REL: &str = "../../parity/vectors/repair.registry/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 16;
 const EXPECTED_VECTORS_SHA256: &str =
-    "77b3a44aa1ec302fe6b91d3a531a7112b687f22a1e4143ada9ca734fce99d2a1";
+    "e5fd7d22460106868d1feac849c847736dba1ba71c3194f9cb0b7e3d68223cf9";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

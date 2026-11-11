@@ -1,6 +1,6 @@
 //! Fail-closed checker for the pinned `schemas/sesslint.diff.v1.json`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Pin `02694d537104659df66cdd084354739f3cccc440`.
 //! [`validate`] reads one JSON value. It enforces `type`, `const`, `enum`,
 //! `required`, `additionalProperties`, `properties`, `items`, `minimum`, and
 //! local `$ref` as that document states them. A keyword this module cannot
@@ -974,7 +974,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const SCHEMA_TESTS: &[&str] = &[
         "tests/cli/test_diff.py::test_diff_json_output_schema",
         "tests/cli/test_diff.py::test_diff_json_validates_against_schema",
@@ -1000,7 +1000,6 @@ mod tests {
         if text.contains('\r')
             || text.contains("FOR_WORK")
             || text.contains("sesslint-wt-")
-            || text.contains("02694d5")
         {
             return true;
         }

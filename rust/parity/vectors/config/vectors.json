@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.config",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_config_rs_sha256": "1db412bba3bd026326ba15d3407c06bec9770b1be23f1beb9749536f9a9eafa0",
   "known_parity_gaps": [
     "A readable config file calls tomllib. Rust returns tomllib is not available and does not invent keys. Python returns the parsed table or Invalid TOML. Do not rewrite the Python table into the Rust error.",

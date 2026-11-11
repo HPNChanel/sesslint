@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.ordering",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_ordering_rs_sha256": "6e6a911807df01701dc7ccadbbb177016c997cb106594f7b9f475fa04297e446",
   "vector_count": 9,
-  "vectors_sha256": "04520dfca9a0dda62c5d4940e4f5b88b100f818ba31a4dde8a71b143d5967a9e",
+  "vectors_sha256": "4510d7dbe3e8a81c486175208625355c9d13f3939e14e074208b0c7f377ccd94",
   "generator": "rust/parity/vectors/checks.ordering/generate",
   "known_parity_gaps": [
     "A real violation calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. Do not require the two-second edge with skew 0 as a silent vector.",

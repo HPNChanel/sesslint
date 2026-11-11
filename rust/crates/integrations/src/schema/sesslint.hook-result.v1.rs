@@ -570,10 +570,10 @@ mod tests {
         REQUIRED, SCHEMA_DIALECT, SCHEMA_ID, VERDICTS,
     };
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const HOOK_PY_SHA256: &str = "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9";
     const SCHEMA_SHA256: &str = "d3af6bd9822a3dedc061fa3ada38fbb8757caf48bb177c575d0ee056ab336e43";
-    const VECTORS_SHA256: &str = "f555e83479c96917f001697e1b65e27611f14a0b28b63bb13c1933bd2152998d";
+    const VECTORS_SHA256: &str = "203fc35267abbd11d48d4e5bea4db56f140b2095d879eb340337cbb282b9b454";
     const VECTOR_COUNT: usize = 40;
     const PINNED_TEST_COUNT: usize = 28;
     const COVERED_COUNT: usize = 6;

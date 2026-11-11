@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.refusals",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "refusals_rs_sha256": "0b534e8290a41b4f8363d535f693eb9845f2b9b50da1ce2a1962ff1091b5ee03",
   "known_parity_gaps": [
     "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); Rust accepts ASCII digits only — parity not required for those citations.",

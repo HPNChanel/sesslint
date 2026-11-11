@@ -14,11 +14,11 @@ const EXPECTED_VECTOR_COUNT: usize = 13;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.config";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CONFIG_RS_SHA256: &str =
     "1db412bba3bd026326ba15d3407c06bec9770b1be23f1beb9749536f9a9eafa0";
 const EXPECTED_VECTORS_SHA256: &str =
-    "5d570b596b8e7b7d70893bca36e6e53f71e4a311638382d2e918bee839ed0cd7";
+    "48fc245a3d1dbb9d7614f6cc9e533ea995dcbfdb73317e5ea4e9e52a23d06f84";
 
 const SOURCE_FILE: &str = "config.toml";
 

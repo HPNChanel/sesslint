@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.secret_families",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "secret_families_rs_sha256": "23c97443724903cd5f848135e2d83e53d5ec798b865d4874e7d4968f7ac6e59f",
   "vector_count": 127,
-  "vectors_sha256": "6f0cb2a50da4d160681891d90344ea20107a07f912e7bea466f4564754fead68",
+  "vectors_sha256": "6d7da88c573cf39fb7a066b615ad4f1f15c6198fc6ac5ad8b2a168e8a20d55bb",
   "generator": "rust/parity/vectors/secret_families/generate",
   "family_literal_keys": [
     "anthropic-api-key",

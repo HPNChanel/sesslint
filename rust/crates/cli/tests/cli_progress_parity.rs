@@ -19,7 +19,7 @@ const PROVENANCE_REL: &str = "../../parity/vectors/cli._progress/PROVENANCE.json
 const EXPECTED_VECTOR_COUNT: usize = 10;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli._progress";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_PROGRESS_PY_SHA256: &str =
     "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572";
 const EXPECTED_CLI_PROGRESS_PY_SHA256: &str =
@@ -27,7 +27,7 @@ const EXPECTED_CLI_PROGRESS_PY_SHA256: &str =
 const EXPECTED_PROGRESS_RS_SHA256: &str =
     "c897bc8314c7eb4ccda6834399ba4f101bac2816b2aecf1191f64a2855db04ec";
 const EXPECTED_VECTORS_SHA256: &str =
-    "2739822ed2a6a66db593e5008dfb7485f7e56f35aeb43da77c49ac86eb83d58b";
+    "8780a1f8dab801436b86d0404271dba887c69e5186bf32b91ee20cddd7c8eef9";
 const GAP_DEFAULT_CLOCK: &str = "GAP-cli-progress-tty-default-clock";
 
 #[derive(Debug, Clone)]

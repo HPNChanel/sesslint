@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli._options",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "options_py_sha256": "4ca584f58db908f9aef026adb87cf51bee6960884699c79fbcd5a9dc29e2f0ea",
   "known_parity_gaps": [
     "GAP-options-positive-int-i64: _validate_positive_int accepts positive integers beyond i64::MAX in Python; Rust refuses with int value does not fit i64 (PositiveIntError::Magnitude), not pin int semantics."

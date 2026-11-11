@@ -12,13 +12,13 @@ const PROVENANCE_REL: &str = "../../parity/vectors/precheck/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 3;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.precheck";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_PRECHECK_RS_SHA256: &str =
     "ec350a5b57f90b9aed0793a8e30cba688ce343ff09acd69baaefee3740b6f764";
 const EXPECTED_PRECHECK_PY_SHA256: &str =
     "ed5bd62b563701c3e3921201fe15c114c505a92e98fa915933f5848d60f0188e";
 const EXPECTED_VECTORS_SHA256: &str =
-    "f77a1c6f92531f0b9e4b05c2212ee37aac6929405e922fc4c41f2dc3751d5ab2";
+    "709b8e94f8e0654e85c7df3b05568581dbb4fdfb9df32d0de8cc96d137063161";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

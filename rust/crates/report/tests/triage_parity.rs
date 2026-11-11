@@ -16,11 +16,11 @@ const VECTORS_REL: &str = "../../parity/vectors/triage/vectors.json";
 const FIXTURES_REL: &str = "../../parity/vectors/triage/fixtures";
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "46d29d9ec0cc9da1982dc807db2496bc2ca1613025fc761d5f93a637ae43273b";
+    "07132b54b5fe918a00b9e87015b5ac7d8d121ffeb8a5ad4351a97903013db036";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.triage";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_TRIAGE_PY_SHA256: &str =
     "a1b695b89ac9fc3142f098d51c9ffba01d2f1a20e9cebe202f6a41e26669029d";
 const EXPECTED_TRIAGE_RS_SHA256: &str =

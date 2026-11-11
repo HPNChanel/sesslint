@@ -15,11 +15,11 @@ const EXPECTED_VECTOR_COUNT: usize = 5;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.foreign_shape";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_FOREIGN_SHAPE_RS_SHA256: &str =
     "8df1c3b0df23935677777332c903405c96168aa0511af4f977fb0e9afc9612eb";
 const EXPECTED_VECTORS_SHA256: &str =
-    "b6550ebc47eab08413b2392cf55bc96cc63805244832baa8d956465aaae5f0e1";
+    "afd259148d735ae5273c6e1664637cf6b4bbc205f88adb08f33474217a4a9e6d";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

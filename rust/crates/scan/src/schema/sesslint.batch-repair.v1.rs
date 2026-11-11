@@ -1,6 +1,6 @@
 //! Fail-closed checker for pinned `schemas/sesslint.batch-repair.v1.json`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Pin `02694d537104659df66cdd084354739f3cccc440`.
 //! [`validate`] accepts one JSON value. The pinned document states `type`,
 //! `const`, `enum`, `required`, `properties`, `additionalProperties`, `items`,
 //! `uniqueItems`, and `minimum`. `pattern`, length bounds, and any other
@@ -926,7 +926,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const SCHEMA_TESTS: &[&str] = &[
         "tests/cli/test_batch_repair.py::test_batch_dir_repairs_only_eligible",
         "tests/cli/test_batch_repair.py::test_batch_cli_mirrors_structure_and_manifest_dir",
@@ -966,7 +966,6 @@ mod tests {
         if text.contains('\r')
             || text.contains("FOR_WORK")
             || text.contains("sesslint-wt-")
-            || text.contains("02694d5")
         {
             return true;
         }

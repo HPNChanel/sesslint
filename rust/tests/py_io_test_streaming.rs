@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use sesslint_rust_workspace::PACKAGE_NAME;
 
-const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
 const PINNED_TEST_COUNT: usize = 1;
 const IO_VECTOR_COUNT: usize = 35;
 const VECTORS_REL: &str = "parity/vectors/io/vectors.json";

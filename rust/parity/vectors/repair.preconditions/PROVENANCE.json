@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.repair.preconditions parity (module exports, registry order, predicates, check_preconditions, component helpers).",
   "generator": "rust/parity/vectors/repair.preconditions/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-preconditions-must-abstain: no_prior_safe_tool_after_cut would call sesslint.policy.abstention.must_abstain; Rust returns Unavailable instead of true.",
     "GAP-preconditions-parent-candidates: unique_parent_candidate would call sesslint.checks.graph.find_qualifying_parent_candidates; Rust returns Unavailable.",

@@ -2,7 +2,7 @@
   "covered_count": 0,
   "module": "sesslint.report",
   "not_applicable_count": 4,
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "rows": [
     {
       "note": "get_manifest_schema_path and load_manifest_schema open the schema file, then compare the required set, the property set, the policy enum, and the idempotency pattern with the RepairManifest model. validate_repair_manifest_json checks one instance. Recording those names in facts is not that loader call.",

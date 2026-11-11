@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.atomic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "atomic_py_sha256": "94064b211d3f8298e34a5e71fb6b6ef9ae766147e1ef7d43827c63631b2f6609",
   "known_parity_gaps": [
     "lone_surrogate_encoding: Rust str cannot hold a lone surrogate; no vector.",

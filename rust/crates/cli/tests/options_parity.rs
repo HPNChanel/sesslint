@@ -16,11 +16,11 @@ const OPTIONS_RS_REL: &str = "src/options.rs";
 const EXPECTED_VECTOR_COUNT: usize = 24;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli._options";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_OPTIONS_PY_SHA256: &str =
     "4ca584f58db908f9aef026adb87cf51bee6960884699c79fbcd5a9dc29e2f0ea";
 const EXPECTED_VECTORS_SHA256: &str =
-    "4ad41c00a98a6a78c74d360797a6c6a342872387b3b1a8de47636e8efbca1b62";
+    "d5be7946c1d86fd675e413a44ffb19113f421ba418e1490f6da8d34ae8e37b2c";
 const EXPECTED_OPTIONS_RS_SHA256: &str =
     "78efeac3dfa9e2fc4176bf0ad9847eafedc481dafad0b4e06c5a0f8e43ca3e92";
 

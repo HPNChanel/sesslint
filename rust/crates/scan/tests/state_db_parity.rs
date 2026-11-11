@@ -16,11 +16,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const VECTORS_REL: &str = "../../parity/vectors/state_db/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 50;
 const EXPECTED_VECTORS_SHA256: &str =
-    "e64c58b883f764e6b88cca144a4ab32f2183db075d96bd0aba0d9c0c3711584e";
+    "636e0ecd1829d0dbd15cd1bbac6203a327efd49e36604c1a562cd2b9cb78a6f3";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.state_db";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_STATE_DB_PY_SHA256: &str =
     "0edb4bad2e50b82471e21c6230dbf83e95bfddc1e4aa4694b84281be1756f7b9";
 const EXPECTED_STATE_DB_RS_SHA256: &str =

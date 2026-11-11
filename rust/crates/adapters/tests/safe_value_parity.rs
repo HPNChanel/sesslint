@@ -9,7 +9,7 @@ const EXPECTED_VECTOR_COUNT: usize = 299;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.safe_value";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_SAFE_VALUE_PY_SHA256: &str =
     "dd864071a538898e7eed4bf318edbf4a2169373e56557d44ccd7bdcf98d518ee";
 const EXPECTED_SAFE_VALUE_RS_SHA256: &str =

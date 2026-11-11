@@ -1,6 +1,6 @@
 //! Schema card for `schemas/sesslint.repair-manifest.v1.json`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
+//! Pin `02694d537104659df66cdd084354739f3cccc440`.
 //! Instance checks cover `required`, `const`, `enum`, and `additionalProperties: false`,
 //! plus the other assertion keywords published in that document (`type`, `minLength`,
 //! `minimum`, `pattern`, `properties`, `items`, and `additionalProperties` subschemas).
@@ -1235,7 +1235,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const SCHEMA_TESTS: &[&str] = &[
         "tests/test_manifest.py::test_manifest_schema_anti_drift",
         "tests/test_manifest.py::test_manifest_schema_loader_file_not_found",
@@ -1266,7 +1266,6 @@ mod tests {
         if text.contains('\r')
             || text.contains("FOR_WORK")
             || text.contains("sesslint-wt-")
-            || text.contains("02694d5")
         {
             return true;
         }

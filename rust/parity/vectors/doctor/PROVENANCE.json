@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.doctor parity (iso_utc, count walk, quick verdict classification with mocked check_file, report JSON and human render).",
   "generator": "rust/parity/vectors/doctor/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-doctor-index-health: index_health stops at sesslint.indexes.discover_index_files.",
     "GAP-doctor-doctor-report: doctor_report stops at sesslint.adapters.supported_adapters.",

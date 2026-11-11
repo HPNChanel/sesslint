@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli._progress",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "progress_py_sha256": "c6c0b04c929110ff65ea4b70a6d85d106b01ab5d1291d1a43aab05239e43e572",
   "cli_progress_py_sha256": "59a2ce2f34ec951d9404867a333a990eb646ba61dd9d5baa7defc0e6a2a7f1c3",
   "progress_rs_sha256": "c897bc8314c7eb4ccda6834399ba4f101bac2816b2aecf1191f64a2855db04ec",

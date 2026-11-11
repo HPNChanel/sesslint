@@ -17,7 +17,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/repair.executor/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "c6309b15cfab6596b3a38dab649e5d0d26fcd243fad5f8f5aa54f54ac22ca21f";
+    "936c649d708ca852ddb67a866571ed34fdb40c163f0923c13a48a366c2d02296";
 
 const SNAPSHOT_INPUT: &str = "sesslint.adapters.load.snapshot_input is not available";
 const VENDOR_FORMAT: &str = "sesslint.adapters.load.is_vendor_format is not available";

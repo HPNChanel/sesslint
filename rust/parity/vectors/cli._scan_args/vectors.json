@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli._scan_args",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "scan_args_py_sha256": "e1bd634c6cda534ffbe90e494e9b02843ec4dcfb26cb401848fb6b766272448a",
   "known_parity_gaps": [
     "GAP-scan-args-cpu-count: jobs 'auto' or '0' (after strip and lower) use os.cpu_count() or 1 in Python; Rust uses thread::available_parallelism — job counts are not pinned.",

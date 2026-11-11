@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.io parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/io/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "SL001, SL002, SL303, and SL009 findings: Python yields Finding objects; Rust stops with FINGERPRINT_CODEC_UNAVAILABLE. Do not expect codec text as if Python raised it.",
     "read_header and iter_events with a non-empty dup_sink when duplicate keys match critical keys: Rust returns FINGERPRINT_CODEC_UNAVAILABLE; vectors omit dup_sink hit paths.",

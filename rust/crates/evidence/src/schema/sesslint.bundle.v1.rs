@@ -1,6 +1,6 @@
 //! JSON Schema `sesslint.bundle/v1`.
 //!
-//! Pin `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`,
+//! Pin `02694d537104659df66cdd084354739f3cccc440`,
 //! `schemas/sesslint.bundle.v1.json`.
 //!
 //! [`validate_json`] enforces that document: required names, `const`, `enum`,
@@ -1228,7 +1228,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    const PIN: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+    const PIN: &str = "02694d537104659df66cdd084354739f3cccc440";
     const SCHEMA_TESTS: [&str; 6] = [
         "tests/test_plan_bundle_schemas.py::test_bundle_schema_loads_and_self_consistent",
         "tests/test_plan_bundle_schemas.py::test_bundle_dict_validates",
@@ -1308,7 +1308,6 @@ mod tests {
         assert!(!text.contains('\r'), "{name} CR");
         assert!(!text.contains("FOR_WORK"), "{name}");
         assert!(!text.contains("sesslint-wt-"), "{name}");
-        assert!(!text.contains("02694d5"), "{name}");
         let bytes = text.as_bytes();
         let mut offset = 0;
         while let Some(found) = text[offset..].find("sbp_") {

@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.bundle parity: constants, sanitize_remediation, bounded record counting, kind probe gaps, build and schema seams.",
   "generator": "rust/parity/vectors/bundle/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-bundle-build: build_bundle runs validate_detection_thresholds then path, hash, check_file, and render_json in Python; Rust returns sesslint.adapters.detect.validate_detection_thresholds is not available and builds no Bundle.",
     "GAP-bundle-schema-path: get_bundle_schema_path and load_bundle_schema import sesslint._resources.schema_path in Python; Rust returns sesslint._resources.schema_path is not available.",

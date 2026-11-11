@@ -16,13 +16,13 @@ const DIFF_RS_REL: &str = "src/diff.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.diff";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_DIFF_PY_SHA256: &str =
     "877c6b44e9a4cf32316263445cf7b494c05053adde288df62f0eae72ac514a0d";
 const EXPECTED_DIFF_RS_SHA256: &str =
     "8128910e1196f6fa59eb1d88968fee14e98994884a86ce0e8ad4f7dcca928cb3";
 const EXPECTED_VECTORS_SHA256: &str =
-    "9610923bc2ed58970d74ec58d21cfc0d40c36db49350324e6361e71b21aea820";
+    "8d9ca5b140b10e173c5b1e2ebf840536c025ae8724a0a70dabc59f72b7b16511";
 
 const GAP_DIFF_SESSIONS: &str = "GAP-cli-diff-diff-sessions";
 

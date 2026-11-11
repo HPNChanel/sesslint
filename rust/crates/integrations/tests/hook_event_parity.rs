@@ -16,13 +16,13 @@ const PROVENANCE_REL: &str = "../../parity/vectors/hook_event/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 22;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.hook_event";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_HOOK_PY_SHA256: &str =
     "e8edbee94875815b747b77d4a62ac682c7492e90fa4ce4478fa18f4851437cd9";
 const EXPECTED_HOOK_RS_SHA256: &str =
     "fc8d9a39675e377e1356da8afb4d6b18ed77035d371e4a22fe19bbd750e36fb9";
 const EXPECTED_VECTORS_SHA256: &str =
-    "1cc96a9c66ce05d0037197624ede0b904e53b02be9b05b45b544ac4fb25c79ee";
+    "d48c61c589a3a1683fa5be85d1fd90538c25aaa41ecf22999a4a77964c1c7c4e";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

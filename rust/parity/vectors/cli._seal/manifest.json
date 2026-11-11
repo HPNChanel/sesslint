@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.cli._seal",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "seal_py_sha256": "bf42016fea0eece1a96633ce6877a785d03da0f62a870fd87a88a06637eefc1c",
   "vector_count": 11,
-  "vectors_sha256": "aa639c7775bef04049f55e6984c5c7651a3c0be681dd31e5c1174590b05d1b79",
+  "vectors_sha256": "cad3dc439f0a7ebb71c7874c56cb274ce046fb3ed23fe3e07138f0eff0d36d62",
   "generator": "rust/parity/vectors/cli._seal/generate",
   "known_gaps": [
     "sesslint.seal and sesslint.report.minimize_path are not ported; Rust maybe_append_seal returns SealError::Unsupported when --seal is present (no successful append vector).",

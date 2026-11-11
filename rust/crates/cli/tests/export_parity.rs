@@ -18,13 +18,13 @@ const VECTORS_DIR_REL: &str = "../../parity/vectors/cli.export";
 const EXPECTED_VECTOR_COUNT: usize = 6;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.export";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_EXPORT_PY_SHA256: &str =
     "0a77cd4c7ee4c82bde229b0b3785bd9242aa868e300d47a8f5d5610996f841f6";
 const EXPECTED_EXPORT_RS_SHA256: &str =
     "bc3c5b89f67a703ca529541b97527062afbac71c85e0d57ad0fa8898078a01e2";
 const EXPECTED_VECTORS_SHA256: &str =
-    "407b26ec1e4297528432043e79ff6df345d9eb1030c4fddc1de6eac7b0c89041";
+    "cd72b6f76daf5d931d3efbaa0f33237f0dfa5c1e08fe48793e35d0a43274005c";
 
 const GAP_EXPORT_FILE: &str = "GAP-cli-export-export-file";
 

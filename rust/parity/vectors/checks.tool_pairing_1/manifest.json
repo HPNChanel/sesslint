@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_1",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_tool_pairing_1_rs_sha256": "220c027221d3dcf8a6e932fb536359726e49e0940337651ebc21617950f4c5fe",
   "vector_count": 7,
-  "vectors_sha256": "a3997784a147b726a3620306cb226cb80a49234bf059bd35de35b2c08b603f90",
+  "vectors_sha256": "0ed9646c4a04600a0a9dba7a97e04f60efd672fa41c65f0d9830999af85181d3",
   "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
   "known_parity_gaps": [
     "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",

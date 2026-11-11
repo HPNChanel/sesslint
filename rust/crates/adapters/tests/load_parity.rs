@@ -9,11 +9,11 @@ const VECTORS_REL: &str = "../../parity/vectors/adapters.load/vectors.json";
 const PROVENANCE_REL: &str = "../../parity/vectors/adapters.load/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 5;
 const EXPECTED_VECTORS_SHA256: &str =
-    "9c161e5a8c51f2153052dd4f93f6931ded5b900568bdebbd976b432151572c22";
+    "eb4f003546864aee600daa7fcdf169e1e06bc0f353571892696f6804384aa04c";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.load";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_LOAD_PY_SHA256: &str =
     "7347f2916d1d76169b872825f25d4a4dceff7eccc30a9957ba39f13f7ae87e43";
 const EXPECTED_LOAD_RS_SHA256: &str =

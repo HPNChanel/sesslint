@@ -13,7 +13,7 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/repair.planner/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_VECTORS_SHA256: &str =
-    "8965337365f61136f44c24ca24a6d91237a9da36f42b39279d7bcdaf15f3a54f";
+    "2901da906b2536df62ddda8792c6b5dbdb4ef525be7a21045dcfcb16d5e989a1";
 
 #[derive(Debug, Clone)]
 struct VectorCase {

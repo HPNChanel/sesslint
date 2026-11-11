@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.refusals",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "refusals_rs_sha256": "0b534e8290a41b4f8363d535f693eb9845f2b9b50da1ce2a1962ff1091b5ee03",
   "vector_count": 15,
-  "vectors_sha256": "1ebc8a665b33c6b9766d89e2c5bc9929eaa86458844c9bd9a7a3233dc6a39470",
+  "vectors_sha256": "3d163230a542b8e99a3ba21c659196b455a5baa992ffac677dfe632681ad9701",
   "generator": "rust/parity/vectors/repair.refusals/generate",
   "known_parity_gaps": [
     "Citation digit runs: Python re \\d matches Unicode category Nd (e.g. U+0661); Rust accepts ASCII digits only \u2014 parity not required for those citations.",

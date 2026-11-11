@@ -3,7 +3,7 @@
   "description": "Synthetic triage helpers and envelope parity from pinned sesslint.triage.",
   "generator": "rust/parity/vectors/triage/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-triage-get-profile: triage() calls sesslint.profiles.get_profile before any ledger work. Rust stops with sesslint.profiles.get_profile is not available and does not return TriageReport.",
     "GAP-triage-preview: _preview reads sesslint.assessment.SourceAssessment and calls plan. Rust preview() stops with sesslint.assessment.SourceAssessment is not available.",

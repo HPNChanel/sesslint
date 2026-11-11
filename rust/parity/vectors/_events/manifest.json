@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint._events",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "events_rs_sha256": "7cb5cb9aa2bf64030792490986617f06d8549d7c3293f5bc0265cb53b7301913",
   "vector_count": 27,
-  "vectors_sha256": "0e5ebe3f78a72aa018b765e73d653631de20b5f638adc5beba3920971b37a87d",
+  "vectors_sha256": "6433ee66744a37cfed093e8f7e0d062ec9e620f1da601a8b96ced997f77c3c55",
   "generator": "rust/parity/vectors/_events/generate",
   "known_parity_gaps": [
     "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error",

@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.durable_prefix",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_durable_prefix_rs_sha256": "d8f230ca9534583298dacdf6cac1a866e0f8280083180b5ee55cf1da4e9584bd",
   "known_parity_gaps": [
     "trailing-non-durable, durable-gap, and missing-required-field call make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",

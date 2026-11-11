@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.checks.tool_pairing_1 parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",
     "A mapping tool_result payload calls compute_content_hash. Rust returns sesslint._canonical_codec.payload_content_hash is not available and does not hash. Python hashes the payload.",

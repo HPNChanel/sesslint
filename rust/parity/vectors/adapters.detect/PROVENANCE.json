@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.adapters.detect parity: constants, sniff arbitration, thresholds, to_source_block, explicit resolve, and documented finding fingerprint gaps.",
   "generator": "rust/parity/vectors/adapters.detect/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "GAP-detect-finding-fingerprint: resolve_format and resolve_format_bytes call _resolve_failure_finding when detection abstains. The pin builds a Finding via make_finding without fingerprint. Rust stops at sesslint.determinism.canonical_json_bytes and does not return a Finding.",
     "GAP-detect-cli: test_detect.py CLI smoke tests invoke sesslint.cli.main, which is outside this adapters.detect parity surface.",

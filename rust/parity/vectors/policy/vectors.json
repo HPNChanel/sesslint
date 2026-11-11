@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.policy",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_lib_rs_sha256": "96e315021816ea1f6770bf0d97e3ca1600f5d695b3fa556c61b398b364746804",
   "known_parity_gaps": [
     "TOOL_KINDS is a frozenset in Python; iteration order is not a contract; vectors record sorted membership for comparison"

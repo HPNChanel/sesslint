@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.errors",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "errors_rs_sha256": "79a30b309327cda120e14365d85339bbb6df21e851bb297f13037681a152ce16",
   "vector_count": 25,
-  "vectors_sha256": "fef8b1873f54caa6f3b8a65ccce439ddcbf746d29ee8f8a1f5a5298b177f91c2",
+  "vectors_sha256": "53e772d887401aa5d5f4853220ea1d7daece218c93dbe53ca9d0f8de8fc65697",
   "generator": "rust/parity/vectors/repair.errors/generate",
   "known_parity_gaps": [
     "Scaffold repair::error::RepairError (Unsupported) is not part of this hierarchy; parity vectors use repair::errors types only.",

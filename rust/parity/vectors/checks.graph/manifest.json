@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.graph",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_graph_rs_sha256": "3bdd9fa51178eb7bc7ce232cdaa01ce3b3fff5a43b7face1458e03bf1210f382",
   "vector_count": 20,
-  "vectors_sha256": "b77e32da294651994f6a8634cb7062a4a73fd8c94bda9abab1d7b03fafd69bf2",
+  "vectors_sha256": "69e29e344bde4f996fdb3d3d7712d543f7d89b3a17e77968c6f1e4bd8993550d",
   "generator": "rust/parity/vectors/checks.graph/generate",
   "known_parity_gaps": [
     "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",

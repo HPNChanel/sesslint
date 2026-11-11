@@ -30,7 +30,7 @@ const EXPECTED_VECTOR_COUNT: usize = 1;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_INIT_PY_SHA256: &str =
     "2d5002bd4de0c5a47ac56541b61f408a4b75dd7cfca8865c31b7fbf5abd583cf";
 const EXPECTED_CHECKS_LIB_RS_SHA256: &str =

@@ -15,11 +15,11 @@ use std::path::PathBuf;
 const VECTORS_REL: &str = "../../parity/vectors/adapters.metadata/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 123;
 const EXPECTED_VECTORS_SHA256: &str =
-    "51aca752f54821f04f7e7800d182125e4f57d4125d7cf7d434ab039238352ae9";
+    "37b46f9025b847a1e35a5083f9449110d80208021946557237a4c7ced18eac29";
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.adapters.metadata";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_METADATA_PY_SHA256: &str =
     "0476945fab0e06501492c2e773aac50c57484b0e7bfc22c1fb98575177bdeac0";
 const EXPECTED_METADATA_RS_SHA256: &str =

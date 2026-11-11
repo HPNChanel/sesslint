@@ -16,13 +16,13 @@ const DOCTOR_RS_REL: &str = "src/doctor.rs";
 const EXPECTED_VECTOR_COUNT: usize = 1;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.cli.doctor";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_DOCTOR_PY_SHA256: &str =
     "e550b2a8094c4f0d212cf33ea9e0abbc88f77ba9ea4db1c74c663aecae7c7c8d";
 const EXPECTED_DOCTOR_RS_SHA256: &str =
     "0a63f3e5314a025af116b2ea9fbdb99cfea5d4bbd58d69f36a1b298cba9333cf";
 const EXPECTED_VECTORS_SHA256: &str =
-    "20b15147b31a9c496ced07a5b605745f89fbf8aa742ae8fdf5623c958aae6ce6";
+    "f1084b34c4533b147b47ffbc2c1aeca97a2dd66fab90d719bd961467162ce985";
 
 const GAP_CONFIG_ERROR: &str = "GAP-cli-doctor-config-error";
 

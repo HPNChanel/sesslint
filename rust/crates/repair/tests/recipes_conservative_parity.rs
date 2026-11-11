@@ -16,7 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 const VECTORS_REL: &str = "../../parity/vectors/repair.recipes_conservative/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 12;
 const EXPECTED_VECTORS_SHA256: &str =
-    "a911b2b54f52f3fcf4f6ed1f8a259f5e52a177c5753de9d3d0fd51f5f3239b73";
+    "8cdedb8daf1e96576a460a861af17968d5e47f3874e7e2c0536ad7b8e34561f3";
 const GAP_AFFECTED_REGION: &str = "GAP-recipes-conservative-affected-region";
 
 #[derive(Debug, Clone)]

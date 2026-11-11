@@ -3,7 +3,7 @@
   "description": "Synthetic sesslint.checks.identity parity (stdlib-only vectors; no session payload text).",
   "generator": "rust/parity/vectors/checks.identity/generate",
   "origin": "synthetic",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
     "A duplicate SessionEvent calls to_canonical_dict and Rust returns NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
     "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. Do not build the provenance dict and do not hash.",

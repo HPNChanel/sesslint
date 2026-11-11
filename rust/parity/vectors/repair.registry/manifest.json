@@ -1,10 +1,10 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.registry",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "registry_rs_sha256": "7cd1985df01024b59df044c55bef79adffab0fe7e369ec55c08ce22a93ab8acb",
   "vector_count": 16,
-  "vectors_sha256": "77b3a44aa1ec302fe6b91d3a531a7112b687f22a1e4143ada9ca734fce99d2a1",
+  "vectors_sha256": "e5fd7d22460106868d1feac849c847736dba1ba71c3194f9cb0b7e3d68223cf9",
   "generator": "rust/parity/vectors/repair.registry/generate",
   "known_parity_gaps": [
     "GAP-registry-live-map: Python __all__ exports REGISTRY as a live dict alias of the in-process table. Rust exposes ALL and lookup via get_recipe and list_recipes instead of handing out the map.",

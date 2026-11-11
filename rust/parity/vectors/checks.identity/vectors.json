@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.identity",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "checks_identity_rs_sha256": "9483d3285a2e5409125653814c1b81ea7c4cdf491dc62ee6b896ab11e04e8ccc",
   "python_all": [
     "MAX_IDENTITY_FINDINGS",

@@ -20,13 +20,13 @@ const PROVENANCE_REL: &str = "../../parity/vectors/diff/PROVENANCE.json";
 const EXPECTED_VECTOR_COUNT: usize = 17;
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.diff";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_DIFF_PY_SHA256: &str =
     "2d597dad56536db2bba2372c6e809ef31bb5784c31442e06ba8f7c34851ddbcf";
 const EXPECTED_DIFF_RS_SHA256: &str =
     "05a251ed85fc87ff5620726ebce9ab8db6156b757b46563884b4526ccfe4f77f";
 const EXPECTED_VECTORS_SHA256: &str =
-    "3eaa60004d670ca53951d68dc7d3eae265d2dba60321aeb56cddec31040d1fcd";
+    "cc8ecec5d28755d68ea1c1a9826eb3cb2940fccb5a780e76ca28f35efc6a92c3";
 
 const HASH_SEAM: &str = "sesslint.canonical.SessionEvent is not available";
 

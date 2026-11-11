@@ -37,13 +37,13 @@ const EXPECTED_VECTOR_COUNT: usize = 1;
 
 const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.repair";
-const EXPECTED_PYTHON_COMMIT: &str = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e";
+const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_REPAIR_INIT_PY_SHA256: &str =
     "7f8ffb2a4432851dd2e2bf1f36ec754bf8d23221e8d8f148456a53ac2d2a9f5d";
 const EXPECTED_REPAIR_LIB_RS_SHA256: &str =
     "0d57187b4d4c97cf83eceafe3381aa7c6d7b233d25cb71d585db317fe10de765";
 const EXPECTED_VECTORS_SHA256: &str =
-    "10c95812f705f0a719552e97423a25a76b115492c84f222adc48c02cc5a4f2ce";
+    "a7006f434e14ec88a0f4743ea2754998560cca3aff99285cd420c85b457574ea";
 
 const STRING_ONLY_BARREL_NAMES: &[&str] = &["PRECONDITION_FUNCS", "REGISTRY", "run_all_checks"];
 

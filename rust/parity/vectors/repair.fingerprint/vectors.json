@@ -1,7 +1,7 @@
 {
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.repair.fingerprint",
-  "python_commit": "e91d50b2ecea57ef4dd900e3b0b87b14946e847e",
+  "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "fingerprint_rs_sha256": "e7553e1c6b9f72b238c99b89ef8c4147216c9764674b7d2cb9518c0b6d4ce12f",
   "known_parity_gaps": [
     "canonical_json_bytes / plan inputs: JSON Number NaN and Infinity (Python float); Rust float codec rejects them — parity not required here.",
