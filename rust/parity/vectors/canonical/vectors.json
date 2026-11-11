@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.canonical",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "canonical_rs_sha256": "270270841371d0646ead0a3cb97dde7840f18c8d8aa6eac470072deb747cd7cb",
+  "canonical_rs_sha256": "3d609683dc78196bae1b3889bd1df984bddc3f14c7c52772b468b52973e8f510",
   "known_parity_gaps": [
-    "dump_session, dump_session_file, to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, compute_content_hash, and reparse_identity_hashes: Rust returns a typed unavailable error because model cannot depend on codec or adapters; Python performs the real call — parity not required here.",
+    "dump_session and dump_session_file encode sorted compact JSON inside model. reparse_identity_hashes hashes that JSON after dropping provenance fields. to_canonical_json, canonical_bytes, to_canonical_dict, normalize, content identity, and compute_content_hash still return a typed unavailable error. Python performs the real call — parity not required here.",
     "get_session_schema_path and load_session_schema: Rust does not read schemas/ — parity not required here.",
     "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on detail tail is not required.",
     "FileNotFoundError versus SchemaError for a missing file: parity on exception type is not required; a missing-file vector may compare message text only.",

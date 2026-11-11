@@ -3,8 +3,9 @@
 //! Port of `src/sesslint/canonical.py` lines 1–785
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`parse_session_event`], [`parse_session`], [`parse_session_lines`], and
-//! [`load_session_file`] follow the pin. [`dump_session`], [`dump_session_file`],
-//! [`get_session_schema_path`], and [`load_session_schema`] return
+//! [`load_session_file`] follow the pin. [`dump_session`] and
+//! [`dump_session_file`] encode canonical JSON inside this module.
+//! [`get_session_schema_path`] and [`load_session_schema`] return
 //! [`CanonicalUnavailable`]. This module has no `__all__`.
 //!
 //! # Recorded gaps
@@ -56,10 +57,9 @@
 //!   return [`CanonicalUnavailable`]. `model` cannot depend on the codec crate.
 //!   They do not encode JSON. [`to_canonical_dict`] calls normalize and does
 //!   not invent a dict or a `TypeError`.
-//! * [`reparse_identity_hashes`] returns [`CanonicalUnavailable`] because
-//!   `sesslint.adapters.synthetic.is_synthetic_id` is not available
-//!   (`adapters` depends on `model`). The hash loop is not simulated: the
-//!   function does not walk events, build a dict, or hash.
+//! * [`reparse_identity_hashes`] treats an id as synthetic when it starts with
+//!   `sesslint:synthetic:`. It does not call `adapters`. The digest is SHA-256
+//!   of sorted compact JSON after provenance fields are removed.
 //! * [`SessionEvent::content_identity_bytes`],
 //!   [`SessionEvent::content_identity_hash`], and [`compute_content_hash`]
 //!   stay on their codec seams. Nothing here hashes.
@@ -84,20 +84,20 @@
 //!   may differ from Python. The reader uses a heap stack and accepts nesting
 //!   deeper than [`MAX_PAYLOAD_DEPTH`]. [`validate_depth`] still reports
 //!   depth 101.
-//! * [`dump_session`] and [`dump_session_file`] return
-//!   [`CanonicalUnavailable`] for `canonical_json_bytes`.
-//!   [`dump_session_file`] does not create a directory or write a file.
-//!   `scan::atomic` is not callable from `model`.
+//! * [`dump_session`] writes sorted compact JSONL in this module. It does not
+//!   call `codec`. [`dump_session_file`] creates the parent directory and
+//!   replaces the destination through a temp file. `codec` is not a dependency.
 //! * [`get_session_schema_path`] and [`load_session_schema`] return
 //!   [`CanonicalUnavailable`] because `sesslint._resources.schema_path` is
 //!   not available. They do not read `schemas/`.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::errors::{SchemaError, UnknownFieldError, VersionError};
 
@@ -1090,15 +1090,463 @@ pub fn compute_content_hash(payload: &Payload) -> Result<String, CanonicalUnavai
     Err(CanonicalUnavailable::payload_content_hash())
 }
 
+const SYNTHETIC_ID_PREFIX: &str = "sesslint:synthetic:";
+
+static MODEL_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone)]
+enum CanonNode {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    Arr(Vec<CanonNode>),
+    Obj(BTreeMap<String, CanonNode>),
+}
+
+fn is_synthetic_id(event_id: &str) -> bool {
+    event_id.starts_with(SYNTHETIC_ID_PREFIX)
+}
+
+fn json_unavailable<T>(result: Result<T, ()>) -> Result<T, CanonicalUnavailable> {
+    result.map_err(|()| CanonicalUnavailable::canonical_json_bytes())
+}
+
+fn payload_node(payload: &Payload, seen: &mut Vec<*const PayloadKind>) -> Result<CanonNode, ()> {
+    if payload.is_null() {
+        return Ok(CanonNode::Null);
+    }
+    if let Some(value) = payload.as_bool() {
+        return Ok(CanonNode::Bool(value));
+    }
+    if let Some(value) = payload.as_int() {
+        return Ok(CanonNode::Int(value));
+    }
+    if let Some(value) = payload.as_float() {
+        if !value.is_finite() {
+            return Err(());
+        }
+        return Ok(CanonNode::Float(value));
+    }
+    if let Some(value) = payload.as_str() {
+        return Ok(CanonNode::Str(value.to_owned()));
+    }
+    let container = payload.is_map() || payload.is_list() || payload.is_tuple();
+    let identity = Rc::as_ptr(&payload.kind);
+    if container {
+        if seen.contains(&identity) {
+            return Err(());
+        }
+        seen.push(identity);
+    }
+    let result = if payload.is_map() {
+        let mut map = BTreeMap::new();
+        let mut failed = false;
+        let walk = payload.walk_string_entries(|key, child| {
+            if failed {
+                return;
+            }
+            match payload_node(child, seen) {
+                Ok(node) => {
+                    map.insert(key.to_owned(), node);
+                }
+                Err(()) => failed = true,
+            }
+        });
+        if failed || matches!(walk, MapWalk::Borrowed) {
+            Err(())
+        } else {
+            Ok(CanonNode::Obj(map))
+        }
+    } else if payload.is_list() {
+        sequence_node(payload, seen, true)
+    } else if payload.is_tuple() {
+        sequence_node(payload, seen, false)
+    } else {
+        Err(())
+    };
+    if container {
+        seen.pop();
+    }
+    result
+}
+
+fn sequence_node(
+    payload: &Payload,
+    seen: &mut Vec<*const PayloadKind>,
+    list: bool,
+) -> Result<CanonNode, ()> {
+    let mut items = Vec::new();
+    let mut failed = false;
+    let walk = if list {
+        payload.walk_list_items(|_, child| push_child(&mut items, &mut failed, child, seen))
+    } else {
+        payload.walk_tuple_items(|_, child| push_child(&mut items, &mut failed, child, seen))
+    };
+    if failed || matches!(walk, ListWalk::Borrowed) {
+        Err(())
+    } else {
+        Ok(CanonNode::Arr(items))
+    }
+}
+
+fn push_child(
+    items: &mut Vec<CanonNode>,
+    failed: &mut bool,
+    child: &Payload,
+    seen: &mut Vec<*const PayloadKind>,
+) {
+    if *failed {
+        return;
+    }
+    match payload_node(child, seen) {
+        Ok(node) => items.push(node),
+        Err(()) => *failed = true,
+    }
+}
+
+fn hoist_experimental(
+    extra: &Payload,
+    map: &mut BTreeMap<String, CanonNode>,
+) -> Result<(), ()> {
+    let mut failed = false;
+    let walk = extra.walk_string_entries(|key, child| {
+        if failed || !key.starts_with("experimental_") || map.contains_key(key) {
+            return;
+        }
+        match payload_node(child, &mut Vec::new()) {
+            Ok(node) => {
+                map.insert(key.to_owned(), node);
+            }
+            Err(()) => failed = true,
+        }
+    });
+    if failed || matches!(walk, MapWalk::Borrowed) {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+fn insert_str(map: &mut BTreeMap<String, CanonNode>, key: &str, value: &str) {
+    map.insert(key.to_owned(), CanonNode::Str(value.to_owned()));
+}
+
+fn insert_opt_str(map: &mut BTreeMap<String, CanonNode>, key: &str, value: &Option<String>) {
+    if let Some(value) = value {
+        insert_str(map, key, value);
+    }
+}
+
+fn metadata_omitted(payload: &Payload) -> Result<bool, ()> {
+    if !payload.is_map() {
+        return Ok(false);
+    }
+    let mut count = 0_usize;
+    let walk = payload.walk_string_entries(|_, _| count += 1);
+    match walk {
+        MapWalk::Borrowed => Err(()),
+        _ => Ok(count == 0),
+    }
+}
+
+fn header_node(header: &SessionHeader) -> Result<CanonNode, ()> {
+    let mut map = BTreeMap::new();
+    insert_str(&mut map, "schema_version", &header.schema_version);
+    insert_str(&mut map, "session_id", &header.session_id);
+    insert_str(&mut map, "created_at", &header.created_at);
+    insert_opt_str(&mut map, "title", &header.title);
+    if !metadata_omitted(&header.metadata)? {
+        map.insert(
+            "metadata".to_owned(),
+            payload_node(&header.metadata, &mut Vec::new())?,
+        );
+    }
+    if let Some(source) = &header.source {
+        map.insert("source".to_owned(), payload_node(source, &mut Vec::new())?);
+    }
+    if let Some(version) = header.version {
+        map.insert("version".to_owned(), CanonNode::Int(version));
+    }
+    hoist_experimental(&header.extra_fields, &mut map)?;
+    Ok(CanonNode::Obj(map))
+}
+
+fn event_node(event: &SessionEvent, drop_provenance: bool) -> Result<CanonNode, ()> {
+    let mut map = BTreeMap::new();
+    insert_str(&mut map, "actor", &event.actor);
+    insert_str(&mut map, "id", &event.id);
+    insert_str(&mut map, "kind", &event.kind);
+    map.insert(
+        "parent_id".to_owned(),
+        match &event.parent_id {
+            Some(parent) => CanonNode::Str(parent.clone()),
+            None => CanonNode::Null,
+        },
+    );
+    map.insert(
+        "payload".to_owned(),
+        payload_node(&event.payload, &mut Vec::new())?,
+    );
+    map.insert("seq".to_owned(), CanonNode::Int(event.seq));
+    insert_str(&mut map, "ts", &event.ts);
+    insert_opt_str(&mut map, "content_hash", &event.content_hash);
+    insert_opt_str(&mut map, "correlation_id", &event.correlation_id);
+    insert_opt_str(&mut map, "branch_id", &event.branch_id);
+    insert_opt_str(&mut map, "interaction_id", &event.interaction_id);
+    insert_opt_str(&mut map, "agent_id", &event.agent_id);
+    insert_opt_str(&mut map, "execution_state", &event.execution_state);
+    if !drop_provenance {
+        if let Some(line) = event.source_line {
+            map.insert("source_line".to_owned(), CanonNode::Int(line));
+        }
+        insert_opt_str(&mut map, "source_record_hash", &event.source_record_hash);
+        insert_opt_str(&mut map, "source_location", &event.source_location);
+    }
+    insert_opt_str(&mut map, "original_id", &event.original_id);
+    insert_opt_str(&mut map, "source_adapter", &event.source_adapter);
+    insert_opt_str(&mut map, "side_effects", &event.side_effects);
+    hoist_experimental(&event.extra_fields, &mut map)?;
+    Ok(CanonNode::Obj(map))
+}
+
+fn canonical_json(node: &CanonNode) -> Result<String, ()> {
+    let mut out = String::new();
+    write_json(node, &mut out)?;
+    Ok(out)
+}
+
+fn write_json(node: &CanonNode, out: &mut String) -> Result<(), ()> {
+    match node {
+        CanonNode::Null => out.push_str("null"),
+        CanonNode::Bool(true) => out.push_str("true"),
+        CanonNode::Bool(false) => out.push_str("false"),
+        CanonNode::Int(value) => out.push_str(&value.to_string()),
+        CanonNode::Float(value) => out.push_str(&format_json_float(*value)?),
+        CanonNode::Str(value) => push_json_string(out, value),
+        CanonNode::Arr(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_json(item, out)?;
+            }
+            out.push(']');
+        }
+        CanonNode::Obj(map) => {
+            out.push('{');
+            for (index, (key, value)) in map.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                push_json_string(out, key);
+                out.push(':');
+                write_json(value, out)?;
+            }
+            out.push('}');
+        }
+    }
+    Ok(())
+}
+
+fn format_json_float(value: f64) -> Result<String, ()> {
+    if !value.is_finite() {
+        return Err(());
+    }
+    let mut text = value.to_string();
+    if !text.contains('.') && !text.contains('e') && !text.contains('E') {
+        text.push_str(".0");
+    }
+    Ok(text)
+}
+
+fn push_json_string(out: &mut String, text: &str) {
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other if (other as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", u32::from(other)));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in sha256(data) {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn sha256(data: &[u8]) -> [u8; 32] {
+    let mut state = [
+        0x6a09e667_u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let bit_len = (data.len() as u64).wrapping_mul(8);
+    let mut padded = data.to_vec();
+    padded.push(0x80);
+    while (padded.len() % 64) != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bit_len.to_be_bytes());
+    for chunk in padded.chunks_exact(64) {
+        let mut words = [0_u32; 64];
+        for (index, word) in words.iter_mut().enumerate().take(16) {
+            let start = index * 4;
+            *word = u32::from_be_bytes([
+                chunk[start],
+                chunk[start + 1],
+                chunk[start + 2],
+                chunk[start + 3],
+            ]);
+        }
+        for index in 16..64 {
+            let s0 = words[index - 15].rotate_right(7)
+                ^ words[index - 15].rotate_right(18)
+                ^ (words[index - 15] >> 3);
+            let s1 = words[index - 2].rotate_right(17)
+                ^ words[index - 2].rotate_right(19)
+                ^ (words[index - 2] >> 10);
+            words[index] = words[index - 16]
+                .wrapping_add(s0)
+                .wrapping_add(words[index - 7])
+                .wrapping_add(s1);
+        }
+        let mut a = state[0];
+        let mut b = state[1];
+        let mut c = state[2];
+        let mut d = state[3];
+        let mut e = state[4];
+        let mut f = state[5];
+        let mut g = state[6];
+        let mut h = state[7];
+        for index in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let choice = (e & f) ^ ((!e) & g);
+            let temp1 = h
+                .wrapping_add(s1)
+                .wrapping_add(choice)
+                .wrapping_add(K[index])
+                .wrapping_add(words[index]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let majority = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(majority);
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        state[0] = state[0].wrapping_add(a);
+        state[1] = state[1].wrapping_add(b);
+        state[2] = state[2].wrapping_add(c);
+        state[3] = state[3].wrapping_add(d);
+        state[4] = state[4].wrapping_add(e);
+        state[5] = state[5].wrapping_add(f);
+        state[6] = state[6].wrapping_add(g);
+        state[7] = state[7].wrapping_add(h);
+    }
+    let mut out = [0_u8; 32];
+    for (index, word) in state.iter().enumerate() {
+        out[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    out
+}
+
+fn atomic_write_utf8(path: &Path, text: &str) -> Result<(), CanonicalUnavailable> {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return Err(CanonicalUnavailable::canonical_json_bytes());
+    }
+    let seq = MODEL_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let temp = parent.join(format!(".sesslint_model_tmp_{}_{seq}", std::process::id()));
+    if std::fs::write(&temp, text.as_bytes()).is_err() {
+        let _ = std::fs::remove_file(&temp);
+        return Err(CanonicalUnavailable::canonical_json_bytes());
+    }
+    if std::fs::rename(&temp, path).is_err() {
+        let _ = std::fs::remove_file(&temp);
+        return Err(CanonicalUnavailable::canonical_json_bytes());
+    }
+    Ok(())
+}
+
 /// Python: `reparse_identity_hashes`.
 ///
-/// `sesslint.adapters.synthetic.is_synthetic_id` is not available in this
-/// crate. The hash loop is not simulated: `events` is not walked, no dict is
-/// built, and nothing is hashed.
+/// Synthetic ids are the `sesslint:synthetic:` prefix. `seq` becomes the list
+/// position. A synthetic `id` or `parent_id` becomes that position. Provenance
+/// fields are omitted. The digest is SHA-256 of the sorted compact JSON.
 pub fn reparse_identity_hashes(
-    _events: &[SessionEvent],
+    events: &[SessionEvent],
 ) -> Result<Vec<String>, CanonicalUnavailable> {
-    Err(CanonicalUnavailable::synthetic_id())
+    let mut id_to_pos = BTreeMap::new();
+    for (index, event) in events.iter().enumerate() {
+        if is_synthetic_id(&event.id) && !id_to_pos.contains_key(event.id.as_str()) {
+            id_to_pos.insert(event.id.as_str(), i64::try_from(index).unwrap_or(i64::MAX));
+        }
+    }
+    let mut hashes = Vec::with_capacity(events.len());
+    for (index, event) in events.iter().enumerate() {
+        let mut node = json_unavailable(event_node(event, true))?;
+        let CanonNode::Obj(map) = &mut node else {
+            return Err(CanonicalUnavailable::canonical_json_bytes());
+        };
+        let position = i64::try_from(index).unwrap_or(i64::MAX);
+        map.insert("seq".to_owned(), CanonNode::Int(position));
+        if is_synthetic_id(&event.id) {
+            let mapped = id_to_pos.get(event.id.as_str()).copied().unwrap_or(position);
+            map.insert("id".to_owned(), CanonNode::Int(mapped));
+        }
+        if let Some(CanonNode::Str(parent)) = map.get("parent_id").cloned() {
+            if is_synthetic_id(&parent) {
+                if let Some(mapped) = id_to_pos.get(parent.as_str()).copied() {
+                    map.insert("parent_id".to_owned(), CanonNode::Int(mapped));
+                }
+            }
+        }
+        let encoded = json_unavailable(canonical_json(&node))?;
+        hashes.push(sha256_hex(encoded.as_bytes()));
+    }
+    Ok(hashes)
 }
 
 /// Python: `_normalize_for_canonical_json`.
@@ -1700,18 +2148,31 @@ pub fn load_session_file(path: impl AsRef<Path>) -> Result<Session, SchemaError>
 
 /// Python: `dump_session`.
 ///
-/// `sesslint._canonical_codec.canonical_json_bytes` is not available.
-/// This does not encode JSON.
-pub fn dump_session(_session: &Session) -> Result<String, CanonicalUnavailable> {
-    Err(CanonicalUnavailable::canonical_json_bytes())
+/// Header line, then one event line, then a trailing newline. Keys are sorted.
+/// `model` encodes this JSON itself and does not call `codec`.
+pub fn dump_session(session: &Session) -> Result<String, CanonicalUnavailable> {
+    let header = json_unavailable(canonical_json(&json_unavailable(header_node(
+        &session.header,
+    ))?))?;
+    if session.events.is_empty() {
+        return Ok(format!("{header}\n"));
+    }
+    let mut lines = Vec::with_capacity(session.events.len() + 1);
+    lines.push(header);
+    for event in &session.events {
+        lines.push(json_unavailable(canonical_json(&json_unavailable(event_node(
+            event, false,
+        ))?))?);
+    }
+    Ok(format!("{}\n", lines.join("\n")))
 }
 
 /// Python: `dump_session_file`.
 ///
-/// Fails before any filesystem change. `scan::atomic` is not callable from
-/// `model`. This does not create a directory or write a file.
-pub fn dump_session_file(_session: &Session, _path: &Path) -> Result<(), CanonicalUnavailable> {
-    Err(CanonicalUnavailable::canonical_json_bytes())
+/// Creates the parent directory and replaces `path` through a temp file in
+/// that directory. The bytes are [`dump_session`] encoded as UTF-8.
+pub fn dump_session_file(session: &Session, path: &Path) -> Result<(), CanonicalUnavailable> {
+    atomic_write_utf8(path, &dump_session(session)?)
 }
 
 /// Python: `get_session_schema_path`.
@@ -3757,7 +4218,7 @@ mod tests {
     }
 
     #[test]
-    fn reparse_identity_hashes_returns_the_synthetic_id_error_and_not_a_digest() {
+    fn reparse_identity_hashes_returns_a_digest_without_payload_text() {
         let mut event = SessionEvent::new(
             "evt-synthetic",
             Some("parent-synthetic".to_owned()),
@@ -3770,17 +4231,11 @@ mod tests {
             Payload::string("body"),
             Payload::string("synthetic-body"),
         )]);
-        let err = reparse_identity_hashes(std::slice::from_ref(&event)).unwrap_err();
-        assert_eq!(err, CanonicalUnavailable::synthetic_id());
-        assert_eq!(
-            err.to_string(),
-            "sesslint.adapters.synthetic.is_synthetic_id is not available"
-        );
-        assert!(!is_sha256_hex(&err.to_string()));
-        assert!(!err.to_string().contains("synthetic-body"));
-        assert!(!err.to_string().contains('{'));
-        let empty = reparse_identity_hashes(&[]).unwrap_err();
-        assert_eq!(empty, err);
+        let hashes = reparse_identity_hashes(std::slice::from_ref(&event)).expect("digest");
+        assert_eq!(hashes.len(), 1);
+        assert!(is_sha256_hex(&hashes[0]));
+        assert!(!hashes[0].contains("synthetic-body"));
+        assert!(reparse_identity_hashes(&[]).expect("empty").is_empty());
     }
 
     #[test]
@@ -4665,7 +5120,7 @@ mod tests {
     }
 
     #[test]
-    fn dump_and_schema_loaders_do_not_touch_the_filesystem() {
+    fn dump_session_writes_jsonl_and_schema_loaders_stay_closed() {
         let dir = TempSessionDir::new("untouched");
         let session = parse_session(&header(vec![
             ("schema_version", Payload::string(SCHEMA_VERSION)),
@@ -4675,15 +5130,11 @@ mod tests {
         ]))
         .unwrap();
         let nested = dir.child("missing-parent").join("out.jsonl");
-        let dump_err = dump_session(&session).unwrap_err();
-        assert_eq!(
-            dump_err.to_string(),
-            "sesslint._canonical_codec.canonical_json_bytes is not available"
-        );
-        let file_err = dump_session_file(&session, &nested).unwrap_err();
-        assert_eq!(file_err.to_string(), dump_err.to_string());
-        assert!(!nested.exists());
-        assert!(!dir.child("missing-parent").exists());
+        let dumped = dump_session(&session).expect("dump");
+        assert!(dumped.ends_with('\n'));
+        assert!(dumped.contains("sess-synthetic"));
+        dump_session_file(&session, &nested).expect("dump file");
+        assert_eq!(std::fs::read_to_string(&nested).expect("read dump"), dumped);
         assert_eq!(
             get_session_schema_path().unwrap_err().to_string(),
             "sesslint._resources.schema_path is not available"

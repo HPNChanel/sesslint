@@ -1,9 +1,9 @@
 //! Barrel for `src/sesslint/__init__.py` lines 1–263
 //! @ `02694d537104659df66cdd084354739f3cccc440`.
 //!
-//! The pin re-exports implementation modules. This crate has no dependency
-//! on those crates, so only the version constants copied from the pin are
-//! values. Every other public name fails closed with [`SupportError::Unsupported`].
+//! The pin re-exports implementation modules. [`api`] is the shared
+//! orchestration frame. The version constants copied from the pin are values.
+//! Every other barrel name fails closed with [`SupportError::Unsupported`].
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
@@ -14,6 +14,7 @@ pub use error::SupportError;
 
 #[path = "schema/sesslint-config.schema.rs"]
 pub mod config_schema;
+pub mod api;
 
 /// Pinned `sesslint._version.CLI_VERSION`.
 pub const CLI_VERSION: &str = "0.5.0";

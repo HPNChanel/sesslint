@@ -3,7 +3,7 @@
   "module": "sesslint.api",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "api_py_sha256": "7fd6a761bf73e57c3e5310a43a34e80f90dc7036f35edb50694cdf1ae6fdcfd5",
-  "api_rs_sha256": "63c3aa37353b211bfc602e86b9d0712e91a9ec8cbe0778b9f4892eb3abd435a2",
+  "api_rs_sha256": "680df98ca7ddc514277e3ffeda0e6da81ef4b1656e421232ffd7f097252eaecd",
   "known_parity_gaps": [
     "GAP-api-apply_rule_selection: after threshold and path guards, check_file and check_bytes call sesslint.profiles.apply_rule_selection in Python; Rust stops with sesslint.profiles.apply_rule_selection is not available.",
     "GAP-api-scan_path: check_dir and directory-mode check call sesslint.scan.scan_path in Python after limit and threshold guards; Rust stops with sesslint.scan.scan_path is not available.",
