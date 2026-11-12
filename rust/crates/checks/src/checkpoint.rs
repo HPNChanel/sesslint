@@ -13,14 +13,13 @@
 //!
 //! [`checkpoint_gap_records`] does not call [`make_finding`].
 //! [`check_checkpoint_gap`] uses that list. An empty list calls
-//! [`cap_checkpoint_findings`]. A non-empty list returns the first row's
-//! finding and does not call [`cap_checkpoint_findings`]. Later rows in that
-//! family are not emitted.
+//! [`cap_checkpoint_findings`]. A non-empty list returns every row, then
+//! applies [`cap_checkpoint_findings`].
 //!
 //! [`checkpoint_divergence_records`] does not call [`make_finding`].
 //! [`check_checkpoint_divergence`] uses that list. An empty list calls
-//! [`cap_checkpoint_findings`] with [`SL202`]. A non-empty list returns the
-//! first row's finding and does not call [`cap_checkpoint_findings`].
+//! [`cap_checkpoint_findings`] with [`SL202`]. A non-empty list returns
+//! every row, then applies [`cap_checkpoint_findings`].
 //!
 //! [`unsafe_continuation_record`] does not call [`make_finding`].
 //! [`check_unsafe_continuation`] returns `Ok([])` when there is no record and
@@ -34,14 +33,15 @@
 //! coverage claim makes [`check_compaction_coverage`] return `Ok([])`
 //! without building the id map and without [`cap_checkpoint_findings`],
 //! including when `max_findings` is `-1`. Claims that are all silent call
-//! [`cap_checkpoint_findings`] with [`SL205`]. One or more rows return the
-//! first row's finding. The cap is not called on that path.
+//! [`cap_checkpoint_findings`] with [`SL205`]. One or more rows are all
+//! returned, then [`cap_checkpoint_findings`] is applied.
 //!
 //! [`check_checkpoint`] calls [`extract_run_state_projection`] once, then
 //! the gap, the divergence, the continuation, and the coverage. An empty
 //! gap or divergence keeps that family's cap result, including one overflow
 //! finding when `max_findings_per_family == -1`. Those findings are kept
-//! and sorted. A non-empty family returns its first finding and stops.
+//! and sorted. A non-empty family returns every row in that family, caps
+//! them, and stops.
 //! Later families are not called after that stop. When every family is
 //! silent and the cap is not negative, the result is `Ok([])`.
 //!
@@ -108,8 +108,8 @@
 //!   `covered_through_id` is `None`.
 //! * [`check_checkpoint`] keeps empty-family overflow findings and sorts
 //!   them. A real row still stops the run: Python would continue and sort
-//!   every family together. Several rows in one family return only the
-//!   first finding.
+//!   every family together. A later non-empty family drops findings already
+//!   collected from earlier empty families.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -746,10 +746,9 @@ pub fn checkpoint_gap_records(
 
 /// Python: `check_checkpoint_gap`.
 ///
-/// An empty gap list calls [`cap_checkpoint_findings`] and returns that
-/// result. A non-empty list returns the first row's finding.
-/// [`cap_checkpoint_findings`] is not called on that path. Later rows are
-/// not emitted.
+/// Every gap row becomes a finding. The list then goes through
+/// [`cap_checkpoint_findings`]. An empty list still takes the overflow path
+/// when `max_findings == -1`.
 pub fn check_checkpoint_gap(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -765,10 +764,11 @@ pub fn check_checkpoint_gap(
         context,
         run_state_projection,
     )?;
-    match records.first() {
-        None => cap_checkpoint_findings(Vec::new(), SL201, max_findings, source_path, context),
-        Some(record) => emit_first_gap(record),
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.extend(emit_first_gap(record)?);
     }
+    cap_checkpoint_findings(findings, SL201, max_findings, source_path, context)
 }
 
 /// One SL202 divergence. Does not call [`make_finding`].
@@ -847,9 +847,9 @@ pub fn checkpoint_divergence_records(
 
 /// Python: `check_checkpoint_divergence`.
 ///
-/// An empty divergence list calls [`cap_checkpoint_findings`] with [`SL202`].
-/// A non-empty list returns the first row's finding.
-/// [`cap_checkpoint_findings`] is not called on that path.
+/// Every divergence row becomes a finding. The list then goes through
+/// [`cap_checkpoint_findings`] with [`SL202`]. An empty list still takes the
+/// overflow path when `max_findings == -1`.
 pub fn check_checkpoint_divergence(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -859,10 +859,11 @@ pub fn check_checkpoint_divergence(
 ) -> Result<Vec<Finding>, CheckpointError> {
     let records =
         checkpoint_divergence_records(events, source_path, context, run_state_projection)?;
-    match records.first() {
-        None => cap_checkpoint_findings(Vec::new(), SL202, max_findings, source_path, context),
-        Some(record) => emit_divergence(record),
+    let mut findings = Vec::new();
+    for record in &records {
+        findings.extend(emit_divergence(record)?);
     }
+    cap_checkpoint_findings(findings, SL202, max_findings, source_path, context)
 }
 
 /// Supplied SL201 priors. [`None`] recomputes via [`checkpoint_gap_records`].
@@ -1091,8 +1092,8 @@ pub fn compaction_coverage_records(
 /// No claim returns `Ok([])` and does not build the id map or call
 /// [`cap_checkpoint_findings`], including when `max_findings` is `-1`.
 /// Claims that are all silent call [`cap_checkpoint_findings`] with
-/// [`SL205`]. One or more rows return the first row's finding.
-/// The cap is not called on that path.
+/// [`SL205`]. One or more rows all become findings, then
+/// [`cap_checkpoint_findings`] is applied.
 pub fn check_compaction_coverage(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -1104,10 +1105,13 @@ pub fn check_compaction_coverage(
         CompactionCoverageRows::Silent => {
             cap_checkpoint_findings(Vec::new(), SL205, max_findings, source_path, context)
         }
-        CompactionCoverageRows::Rows(records) => match records.first() {
-            Some(record) => emit_coverage(record),
-            None => cap_checkpoint_findings(Vec::new(), SL205, max_findings, source_path, context),
-        },
+        CompactionCoverageRows::Rows(records) => {
+            let mut findings = Vec::new();
+            for record in &records {
+                findings.extend(emit_coverage(record)?);
+            }
+            cap_checkpoint_findings(findings, SL205, max_findings, source_path, context)
+        }
     }
 }
 
@@ -1122,7 +1126,7 @@ pub fn check_compaction_coverage(
 /// The pure builders decide whether a family has rows. An empty gap or
 /// divergence list keeps that family's cap result, including one overflow
 /// finding when `max_findings_per_family == -1`. A non-empty list returns
-/// the first finding and stops. Continuation receives
+/// every row in that family, caps them, and stops. Continuation receives
 /// [`Sl201Prior::Records`] and [`Sl202Prior::Records`] of empty slices when
 /// those families produced no rows. An empty supplied prior is not
 /// recomputed. Compaction triggers still run. One continuation record
@@ -1151,8 +1155,15 @@ pub fn check_checkpoint(
         Some(ctx),
         attached,
     )?;
-    if let Some(record) = gaps.first() {
-        return emit_first_gap(record);
+    if !gaps.is_empty() {
+        return check_checkpoint_gap(
+            events,
+            source_path,
+            max_findings_per_family,
+            checkpoint_sensitivity,
+            Some(ctx),
+            attached,
+        );
     }
     let mut all_findings = check_checkpoint_gap(
         events,
@@ -1164,8 +1175,14 @@ pub fn check_checkpoint(
     )?;
 
     let divergences = checkpoint_divergence_records(events, source_path, Some(ctx), attached)?;
-    if let Some(record) = divergences.first() {
-        return emit_divergence(record);
+    if !divergences.is_empty() {
+        return check_checkpoint_divergence(
+            events,
+            source_path,
+            max_findings_per_family,
+            Some(ctx),
+            attached,
+        );
     }
     all_findings.extend(check_checkpoint_divergence(
         events,
@@ -1198,18 +1215,12 @@ pub fn check_checkpoint(
             )?);
             sort_findings(all_findings)
         }
-        CompactionCoverageRows::Rows(records) => match records.first() {
-            Some(record) => emit_coverage(record),
-            None => {
-                all_findings.extend(check_compaction_coverage(
-                    events,
-                    source_path,
-                    max_findings_per_family,
-                    Some(ctx),
-                )?);
-                sort_findings(all_findings)
-            }
-        },
+        CompactionCoverageRows::Rows(_) => check_compaction_coverage(
+            events,
+            source_path,
+            max_findings_per_family,
+            Some(ctx),
+        ),
     }
 }
 
@@ -3051,10 +3062,8 @@ mod tests {
         EventValue::Mapping(EventMapping::new(entries))
     }
 
-    fn assert_one(findings: &[Finding], code: &str) {
-        assert_eq!(findings.len(), 1);
-        let finding = &findings[0];
-        assert_eq!(finding.code(), code);
+    fn assert_one(findings: &[Finding], code: &str, count: usize) {
+        assert_eq!(findings.len(), count);
         let (prefix, severity) = match code {
             SL201 => ("Checkpoint gap detected for record ", Severity::Error),
             SL202 => ("Checkpoint divergence detected for record ", Severity::Error),
@@ -3068,14 +3077,17 @@ mod tests {
             ),
             other => panic!("unexpected checkpoint code {other}"),
         };
-        assert!(
-            finding.message().starts_with(prefix),
-            "{}",
-            finding.message()
-        );
-        assert!(is_lower_hex16(finding.fingerprint()));
-        assert_eq!(finding.severity(), severity);
-        assert_eq!(finding.repairability(), Repairability::Manual);
+        for finding in findings {
+            assert_eq!(finding.code(), code);
+            assert!(
+                finding.message().starts_with(prefix),
+                "{}",
+                finding.message()
+            );
+            assert!(is_lower_hex16(finding.fingerprint()));
+            assert_eq!(finding.severity(), severity);
+            assert_eq!(finding.repairability(), Repairability::Manual);
+        }
     }
 
     fn synth_context() -> CheckContext {
@@ -3911,7 +3923,7 @@ mod tests {
         assert!(records[2].source.is_none());
         let findings =
             check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap();
-        assert_one(&findings, SL201);
+        assert_one(&findings, SL201, 3);
     }
 
     #[test]
@@ -3972,7 +3984,7 @@ mod tests {
         assert!(records[0].source.is_none());
         assert!(records[0].sensitivity.is_none());
         let findings = check_checkpoint_gap(&events, None, None, None, None, None).unwrap();
-        assert_one(&findings, SL201);
+        assert_one(&findings, SL201, 1);
     }
 
     #[test]
@@ -3988,7 +4000,7 @@ mod tests {
         assert_eq!(records[0].found_seq, Some(2));
         assert!(records[0].source.is_none());
         let findings = check_checkpoint_gap(&jumped, None, None, None, None, None).unwrap();
-        assert_one(&findings, SL201);
+        assert_one(&findings, SL201, 1);
 
         let adjacent = [
             checkpoint_session("evt-chk-0-synth", 0, Some("ab")),
@@ -4054,7 +4066,7 @@ mod tests {
         assert_eq!(records[1].found_seq, Some(3));
         let findings =
             check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap();
-        assert_one(&findings, SL201);
+        assert_one(&findings, SL201, 2);
     }
 
     #[test]
@@ -4092,8 +4104,8 @@ mod tests {
         assert_eq!(records[2].expected_seq, 2);
         let findings =
             check_checkpoint_gap(&[], Some("a\\b"), None, None, Some(&ctx), Some(&empty)).unwrap();
-        assert_one(&findings, SL201);
-        assert_eq!(findings[0].source().path(), "a/b");
+        assert_one(&findings, SL201, 3);
+        assert!(findings.iter().all(|finding| finding.source().path() == "a/b"));
     }
 
     #[test]
@@ -4180,7 +4192,7 @@ mod tests {
         );
         let findings =
             check_checkpoint_gap(&events, None, None, None, None, Some(&empty)).unwrap();
-        assert_one(&findings, SL201);
+        assert_one(&findings, SL201, 1);
     }
 
     #[test]
@@ -4316,7 +4328,7 @@ mod tests {
             ["hash_a", "hash_b", "seq"].as_slice()
         );
         let findings = check_checkpoint_divergence(&pair, None, None, None, None).unwrap();
-        assert_one(&findings, SL202);
+        assert_one(&findings, SL202, 1);
 
         let repeated = [
             checkpoint_session("evt-a-synth", 9, Some(hash_a)),
@@ -4436,7 +4448,7 @@ mod tests {
         );
         let findings =
             check_checkpoint_divergence(&[], Some("a\\b"), None, Some(&ctx), None).unwrap();
-        assert_one(&findings, SL202);
+        assert_one(&findings, SL202, 1);
         assert_eq!(findings[0].source().path(), "a/b");
 
         let empty = EventMapping::new(Vec::new());
@@ -4497,7 +4509,7 @@ mod tests {
             ["caused_by", "first_unsafe_index"].as_slice()
         );
         let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
-        assert_one(&findings, SL203);
+        assert_one(&findings, SL203, 1);
     }
 
     #[test]
@@ -4534,7 +4546,7 @@ mod tests {
         assert_eq!(record.first_unsafe_index, 1);
         assert_eq!(record.record_id.as_deref(), Some("evt-tool-synth"));
         let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
-        assert_one(&findings, SL203);
+        assert_one(&findings, SL203, 1);
     }
 
     #[test]
@@ -4572,7 +4584,7 @@ mod tests {
         assert_eq!(record.first_unsafe_index, 1);
         assert_eq!(record.code, SL203);
         let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
-        assert_one(&findings, SL203);
+        assert_one(&findings, SL203, 1);
     }
 
     #[test]
@@ -4986,6 +4998,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&events, None, None, Some(&synth_context())).unwrap(),
             SL205,
+            1,
         );
     }
 
@@ -5010,6 +5023,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&at_boundary, None, None, None).unwrap(),
             SL205,
+            1,
         );
 
         let after = [
@@ -5023,6 +5037,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&after, None, None, None).unwrap(),
             SL205,
+            1,
         );
     }
 
@@ -5040,6 +5055,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&at_boundary, None, None, None).unwrap(),
             SL205,
+            1,
         );
 
         let after = [
@@ -5054,6 +5070,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&after, None, None, None).unwrap(),
             SL205,
+            1,
         );
     }
 
@@ -5126,6 +5143,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&events, None, None, None).unwrap(),
             SL205,
+            1,
         );
     }
 
@@ -5155,6 +5173,7 @@ mod tests {
         assert_one(
             &check_compaction_coverage(&events, None, None, None).unwrap(),
             SL205,
+            1,
         );
     }
 
@@ -5241,6 +5260,7 @@ mod tests {
         assert_one(
             &check_checkpoint(&events, None, None, None, None, None).unwrap(),
             SL201,
+            1,
         );
     }
 
@@ -5250,6 +5270,7 @@ mod tests {
         assert_one(
             &check_checkpoint(&events, None, None, None, None, None).unwrap(),
             SL205,
+            1,
         );
     }
 
