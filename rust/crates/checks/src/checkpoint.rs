@@ -13,24 +13,20 @@
 //!
 //! [`checkpoint_gap_records`] does not call [`make_finding`].
 //! [`check_checkpoint_gap`] uses that list. An empty list calls
-//! [`cap_checkpoint_findings`]. A non-empty list calls [`make_finding`] once,
-//! with the fingerprint omitted, and returns
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. It does not keep a prefix, invent a
-//! digest, or call [`cap_checkpoint_findings`] on that path.
+//! [`cap_checkpoint_findings`]. A non-empty list returns the first row's
+//! finding and does not call [`cap_checkpoint_findings`]. Later rows in that
+//! family are not emitted.
 //!
 //! [`checkpoint_divergence_records`] does not call [`make_finding`].
 //! [`check_checkpoint_divergence`] uses that list. An empty list calls
-//! [`cap_checkpoint_findings`] with [`SL202`]. A non-empty list calls
-//! [`make_finding`] once, with the fingerprint omitted, and returns
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. It does not invent a digest or call
-//! [`cap_checkpoint_findings`] on that path.
+//! [`cap_checkpoint_findings`] with [`SL202`]. A non-empty list returns the
+//! first row's finding and does not call [`cap_checkpoint_findings`].
 //!
 //! [`unsafe_continuation_record`] does not call [`make_finding`].
 //! [`check_unsafe_continuation`] returns `Ok([])` when there is no record and
-//! does not call [`cap_checkpoint_findings`]. One record calls [`make_finding`]
-//! once, with the fingerprint omitted, and returns
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. Adapter `codex-rollout` returns `Ok([])`
-//! before events and priors are read.
+//! does not call [`cap_checkpoint_findings`]. One record returns that
+//! finding. Adapter `codex-rollout` returns `Ok([])` before events and
+//! priors are read.
 //!
 //! [`coverage_pointer`] does not call [`make_finding`].
 //!
@@ -38,16 +34,14 @@
 //! coverage claim makes [`check_compaction_coverage`] return `Ok([])`
 //! without building the id map and without [`cap_checkpoint_findings`],
 //! including when `max_findings` is `-1`. Claims that are all silent call
-//! [`cap_checkpoint_findings`] with [`SL205`]. One or more rows call
-//! [`make_finding`] once, with the fingerprint omitted, and return
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. The cap is not called on that path.
-//! A digest is not invented.
+//! [`cap_checkpoint_findings`] with [`SL205`]. One or more rows return the
+//! first row's finding. The cap is not called on that path.
 //!
 //! [`check_checkpoint`] calls [`extract_run_state_projection`] once, then
 //! the gap, the divergence, the continuation, and the coverage. An empty
 //! gap or divergence keeps that family's cap result, including one overflow
 //! finding when `max_findings_per_family == -1`. Those findings are kept
-//! and sorted. A non-empty family calls [`make_finding`] once and stops.
+//! and sorted. A non-empty family returns its first finding and stops.
 //! Later families are not called after that stop. When every family is
 //! silent and the cap is not negative, the result is `Ok([])`.
 //!
@@ -114,8 +108,8 @@
 //!   `covered_through_id` is `None`.
 //! * [`check_checkpoint`] keeps empty-family overflow findings and sorts
 //!   them. A real row still stops the run: Python would continue and sort
-//!   every family together. Several rows in one family call [`make_finding`]
-//!   once, on the first row.
+//!   every family together. Several rows in one family return only the
+//!   first finding.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -130,7 +124,7 @@ use model::events::{
 };
 use model::finding::{
     enforce_content_free_text, make_finding, Evidence, EvidenceLookup, Finding, MakeFindingInput,
-    PyValue, SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    PyValue, SourceLine, SourceRef,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -753,10 +747,9 @@ pub fn checkpoint_gap_records(
 /// Python: `check_checkpoint_gap`.
 ///
 /// An empty gap list calls [`cap_checkpoint_findings`] and returns that
-/// result. A non-empty list calls [`make_finding`] once with the fingerprint
-/// omitted and returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. The kept prefix is
-/// not returned. A digest is not invented. [`cap_checkpoint_findings`] is
-/// not called on that path.
+/// result. A non-empty list returns the first row's finding.
+/// [`cap_checkpoint_findings`] is not called on that path. Later rows are
+/// not emitted.
 pub fn check_checkpoint_gap(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -855,8 +848,7 @@ pub fn checkpoint_divergence_records(
 /// Python: `check_checkpoint_divergence`.
 ///
 /// An empty divergence list calls [`cap_checkpoint_findings`] with [`SL202`].
-/// A non-empty list calls [`make_finding`] once with the fingerprint omitted
-/// and returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. A digest is not invented.
+/// A non-empty list returns the first row's finding.
 /// [`cap_checkpoint_findings`] is not called on that path.
 pub fn check_checkpoint_divergence(
     events: &[EventValue],
@@ -954,8 +946,7 @@ pub fn unsafe_continuation_record<'a>(
 /// Python: `check_unsafe_continuation`.
 ///
 /// No record is `Ok([])` and does not call [`cap_checkpoint_findings`]. One
-/// record calls [`make_finding`] once with the fingerprint omitted and
-/// returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. The finding is not returned.
+/// record returns that finding.
 pub fn check_unsafe_continuation<'a>(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -1100,9 +1091,8 @@ pub fn compaction_coverage_records(
 /// No claim returns `Ok([])` and does not build the id map or call
 /// [`cap_checkpoint_findings`], including when `max_findings` is `-1`.
 /// Claims that are all silent call [`cap_checkpoint_findings`] with
-/// [`SL205`]. One or more rows call [`make_finding`] once, with the
-/// fingerprint omitted, and return [`FINGERPRINT_CODEC_UNAVAILABLE`].
-/// The cap is not called on that path. A digest is not invented.
+/// [`SL205`]. One or more rows return the first row's finding.
+/// The cap is not called on that path.
 pub fn check_compaction_coverage(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -1131,12 +1121,12 @@ pub fn check_compaction_coverage(
 ///
 /// The pure builders decide whether a family has rows. An empty gap or
 /// divergence list keeps that family's cap result, including one overflow
-/// finding when `max_findings_per_family == -1`. A non-empty list calls
-/// [`make_finding`] once and stops. Continuation receives
+/// finding when `max_findings_per_family == -1`. A non-empty list returns
+/// the first finding and stops. Continuation receives
 /// [`Sl201Prior::Records`] and [`Sl202Prior::Records`] of empty slices when
 /// those families produced no rows. An empty supplied prior is not
-/// recomputed. Compaction triggers still run. One continuation record calls
-/// [`make_finding`] once and stops.
+/// recomputed. Compaction triggers still run. One continuation record
+/// returns that finding and stops.
 ///
 /// Empty-family cap findings are kept and sorted. A real row still stops
 /// the run. When every family is silent and the cap is not negative, the
@@ -1405,7 +1395,7 @@ fn emit_coverage(record: &CompactionCoverageRecord) -> Result<Vec<Finding>, Chec
         record.line.map(SourceLine::Int),
         Some(record.record_id.as_str()),
     )?;
-    omitted_fingerprint(make_finding(&MakeFindingInput {
+    keep_finding(make_finding(&MakeFindingInput {
         code: PyValue::string(record.code),
         severity: PyValue::severity(record.severity),
         repairability: PyValue::repairability(record.repairability),
@@ -1953,7 +1943,7 @@ fn emit_divergence(record: &CheckpointDivergenceRecord) -> Result<Vec<Finding>, 
         record.line.map(SourceLine::Int),
         record.record_id.as_deref(),
     )?;
-    omitted_fingerprint(make_finding(&MakeFindingInput {
+    keep_finding(make_finding(&MakeFindingInput {
         code: PyValue::string(record.code),
         severity: PyValue::severity(record.severity),
         repairability: PyValue::repairability(record.repairability),
@@ -1979,7 +1969,7 @@ fn emit_continuation(record: &UnsafeContinuationRecord) -> Result<Vec<Finding>, 
         record.line.map(SourceLine::Int),
         record.record_id.as_deref(),
     )?;
-    omitted_fingerprint(make_finding(&MakeFindingInput {
+    keep_finding(make_finding(&MakeFindingInput {
         code: PyValue::string(record.code),
         severity: PyValue::severity(record.severity),
         repairability: PyValue::repairability(record.repairability),
@@ -1998,14 +1988,12 @@ fn emit_continuation(record: &UnsafeContinuationRecord) -> Result<Vec<Finding>, 
     }))
 }
 
-fn omitted_fingerprint(
+fn keep_finding(
     result: Result<Finding, FindingError>,
 ) -> Result<Vec<Finding>, CheckpointError> {
     match result {
         Err(error) => Err(error.into()),
-        Ok(_finding) => Err(CheckpointError::Finding(FindingError::new(
-            FINGERPRINT_CODEC_UNAVAILABLE,
-        ))),
+        Ok(finding) => Ok(vec![finding]),
     }
 }
 
@@ -2282,9 +2270,7 @@ fn emit_first_gap(record: &CheckpointGapRecord) -> Result<Vec<Finding>, Checkpoi
         context: None,
     }) {
         Err(error) => Err(error.into()),
-        Ok(_finding) => Err(CheckpointError::Finding(FindingError::new(
-            FINGERPRINT_CODEC_UNAVAILABLE,
-        ))),
+        Ok(finding) => Ok(vec![finding]),
     }
 }
 
@@ -2989,7 +2975,7 @@ mod tests {
         PYTHON_STR_UNREPRESENTABLE,
     };
     use model::finding::{
-        Finding, FindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
+        Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION,
     };
     use serde_json::{json, Map, Value};
     use std::collections::BTreeMap;
@@ -3065,10 +3051,31 @@ mod tests {
         EventValue::Mapping(EventMapping::new(entries))
     }
 
-    fn assert_codec(err: CheckpointError) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+    fn assert_one(findings: &[Finding], code: &str) {
+        assert_eq!(findings.len(), 1);
+        let finding = &findings[0];
+        assert_eq!(finding.code(), code);
+        let (prefix, severity) = match code {
+            SL201 => ("Checkpoint gap detected for record ", Severity::Error),
+            SL202 => ("Checkpoint divergence detected for record ", Severity::Error),
+            SL203 => (
+                "Unsafe continuation across loss detected for record ",
+                Severity::Error,
+            ),
+            SL205 => (
+                "Compaction coverage gap detected for record ",
+                Severity::Warning,
+            ),
+            other => panic!("unexpected checkpoint code {other}"),
+        };
+        assert!(
+            finding.message().starts_with(prefix),
+            "{}",
+            finding.message()
+        );
+        assert!(is_lower_hex16(finding.fingerprint()));
+        assert_eq!(finding.severity(), severity);
+        assert_eq!(finding.repairability(), Repairability::Manual);
     }
 
     fn synth_context() -> CheckContext {
@@ -3902,8 +3909,9 @@ mod tests {
         assert_eq!(records[2].found_seq, None);
         assert!(records[1].source.is_none());
         assert!(records[2].source.is_none());
-        let err = check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap_err();
-        assert_codec(err);
+        let findings =
+            check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap();
+        assert_one(&findings, SL201);
     }
 
     #[test]
@@ -3963,8 +3971,8 @@ mod tests {
         assert_eq!(records[0].found_seq, Some(3));
         assert!(records[0].source.is_none());
         assert!(records[0].sensitivity.is_none());
-        let err = check_checkpoint_gap(&events, None, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_checkpoint_gap(&events, None, None, None, None, None).unwrap();
+        assert_one(&findings, SL201);
     }
 
     #[test]
@@ -3979,8 +3987,8 @@ mod tests {
         assert_eq!(records[0].expected_seq, 1);
         assert_eq!(records[0].found_seq, Some(2));
         assert!(records[0].source.is_none());
-        let err = check_checkpoint_gap(&jumped, None, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_checkpoint_gap(&jumped, None, None, None, None, None).unwrap();
+        assert_one(&findings, SL201);
 
         let adjacent = [
             checkpoint_session("evt-chk-0-synth", 0, Some("ab")),
@@ -4044,8 +4052,9 @@ mod tests {
         assert_eq!(records[0].source.as_deref(), Some("run_state"));
         assert_eq!(records[1].expected_seq, 2);
         assert_eq!(records[1].found_seq, Some(3));
-        let err = check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap_err();
-        assert_codec(err);
+        let findings =
+            check_checkpoint_gap(&events, None, None, None, Some(&ctx), None).unwrap();
+        assert_one(&findings, SL201);
     }
 
     #[test]
@@ -4081,9 +4090,10 @@ mod tests {
         assert_eq!(records[1].found_seq, Some(5));
         assert_eq!(records[2].at_index, 0);
         assert_eq!(records[2].expected_seq, 2);
-        let err = check_checkpoint_gap(&[], Some("a\\b"), None, None, Some(&ctx), Some(&empty))
-            .unwrap_err();
-        assert_codec(err);
+        let findings =
+            check_checkpoint_gap(&[], Some("a\\b"), None, None, Some(&ctx), Some(&empty)).unwrap();
+        assert_one(&findings, SL201);
+        assert_eq!(findings[0].source().path(), "a/b");
     }
 
     #[test]
@@ -4168,8 +4178,9 @@ mod tests {
             records[0].evidence_keys().as_slice(),
             ["at_index", "expected_seq", "found_seq", "run_state"].as_slice()
         );
-        let err = check_checkpoint_gap(&events, None, None, None, None, Some(&empty)).unwrap_err();
-        assert_codec(err);
+        let findings =
+            check_checkpoint_gap(&events, None, None, None, None, Some(&empty)).unwrap();
+        assert_one(&findings, SL201);
     }
 
     #[test]
@@ -4304,8 +4315,8 @@ mod tests {
             records[0].evidence_keys(),
             ["hash_a", "hash_b", "seq"].as_slice()
         );
-        let err = check_checkpoint_divergence(&pair, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_checkpoint_divergence(&pair, None, None, None, None).unwrap();
+        assert_one(&findings, SL202);
 
         let repeated = [
             checkpoint_session("evt-a-synth", 9, Some(hash_a)),
@@ -4423,9 +4434,10 @@ mod tests {
             records[0].evidence_keys(),
             ["hash_a", "hash_b", "seq", "source"].as_slice()
         );
-        let err =
-            check_checkpoint_divergence(&[], Some("a\\b"), None, Some(&ctx), None).unwrap_err();
-        assert_codec(err);
+        let findings =
+            check_checkpoint_divergence(&[], Some("a\\b"), None, Some(&ctx), None).unwrap();
+        assert_one(&findings, SL202);
+        assert_eq!(findings[0].source().path(), "a/b");
 
         let empty = EventMapping::new(Vec::new());
         let events = [
@@ -4484,8 +4496,8 @@ mod tests {
             record.evidence_keys(),
             ["caused_by", "first_unsafe_index"].as_slice()
         );
-        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
+        assert_one(&findings, SL203);
     }
 
     #[test]
@@ -4521,8 +4533,8 @@ mod tests {
         assert_eq!(record.caused_by, ["compaction"]);
         assert_eq!(record.first_unsafe_index, 1);
         assert_eq!(record.record_id.as_deref(), Some("evt-tool-synth"));
-        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
+        assert_one(&findings, SL203);
     }
 
     #[test]
@@ -4559,8 +4571,8 @@ mod tests {
         assert_eq!(record.caused_by, ["SL201"]);
         assert_eq!(record.first_unsafe_index, 1);
         assert_eq!(record.code, SL203);
-        let err = check_unsafe_continuation(&events, None, None, None, None).unwrap_err();
-        assert_codec(err);
+        let findings = check_unsafe_continuation(&events, None, None, None, None).unwrap();
+        assert_one(&findings, SL203);
     }
 
     #[test]
@@ -4971,8 +4983,9 @@ mod tests {
         );
         assert_eq!(record.adapter_id, "synth-adapter-01");
         assert_eq!(record.path, "<canonical>");
-        assert_codec(
-            check_compaction_coverage(&events, None, None, Some(&synth_context())).unwrap_err(),
+        assert_one(
+            &check_compaction_coverage(&events, None, None, Some(&synth_context())).unwrap(),
+            SL205,
         );
     }
 
@@ -4994,7 +5007,10 @@ mod tests {
         assert!(at_rows[0].non_contiguous);
         assert_eq!(at_rows[0].boundary_index, 0);
         assert_eq!(at_rows[0].record_ordinal, 0);
-        assert_codec(check_compaction_coverage(&at_boundary, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&at_boundary, None, None, None).unwrap(),
+            SL205,
+        );
 
         let after = [
             boundary_event("bound-synth", Some("later-synth")),
@@ -5004,7 +5020,10 @@ mod tests {
         assert!(!after_rows[0].missing);
         assert!(after_rows[0].non_contiguous);
         assert_eq!(after_rows[0].boundary_index, 0);
-        assert_codec(check_compaction_coverage(&after, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&after, None, None, None).unwrap(),
+            SL205,
+        );
     }
 
     #[test]
@@ -5018,7 +5037,10 @@ mod tests {
         assert!(at_rows[0].non_contiguous);
         assert_eq!(at_rows[0].boundary_index, 1);
         assert_eq!(at_rows[0].record_ordinal, 1);
-        assert_codec(check_compaction_coverage(&at_boundary, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&at_boundary, None, None, None).unwrap(),
+            SL205,
+        );
 
         let after = [
             message_parent("leaf-synth", Some("after-synth")),
@@ -5029,7 +5051,10 @@ mod tests {
         assert!(after_rows[0].non_contiguous);
         assert_eq!(after_rows[0].boundary_index, 1);
         assert_eq!(after_rows[0].record_ordinal, after_rows[0].boundary_index);
-        assert_codec(check_compaction_coverage(&after, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&after, None, None, None).unwrap(),
+            SL205,
+        );
     }
 
     #[test]
@@ -5098,7 +5123,10 @@ mod tests {
         assert_eq!(records[0].related_ids().1, safe_id(Some("covered-synth")));
         assert!(records[0].missing);
         assert!(!records[0].non_contiguous);
-        assert_codec(check_compaction_coverage(&events, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&events, None, None, None).unwrap(),
+            SL205,
+        );
     }
 
     #[test]
@@ -5124,7 +5152,10 @@ mod tests {
             )
         );
         assert_eq!(records[0].boundary_index, 1);
-        assert_codec(check_compaction_coverage(&events, None, None, None).unwrap_err());
+        assert_one(
+            &check_compaction_coverage(&events, None, None, None).unwrap(),
+            SL205,
+        );
     }
 
     #[test]
@@ -5198,7 +5229,7 @@ mod tests {
     }
 
     #[test]
-    fn check_checkpoint_run_start_without_checkpoint_is_the_gap_codec_error() {
+    fn check_checkpoint_run_start_without_checkpoint_returns_the_gap() {
         let events = [
             kinded("evt-run-synth", "run_start"),
             boundary_event("bound-synth", Some("missing-synth")),
@@ -5207,13 +5238,19 @@ mod tests {
                 ("kind".to_owned(), EventField::Str("message".to_owned())),
             ])),
         ];
-        assert_codec(check_checkpoint(&events, None, None, None, None, None).unwrap_err());
+        assert_one(
+            &check_checkpoint(&events, None, None, None, None, None).unwrap(),
+            SL201,
+        );
     }
 
     #[test]
     fn check_checkpoint_reaches_coverage_when_earlier_families_are_silent() {
         let events = [boundary_event("bound-synth", Some("missing-synth"))];
-        assert_codec(check_checkpoint(&events, None, None, None, None, None).unwrap_err());
+        assert_one(
+            &check_checkpoint(&events, None, None, None, None, None).unwrap(),
+            SL205,
+        );
     }
 
     #[test]

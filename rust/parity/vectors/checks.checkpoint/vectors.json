@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.checkpoint",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_checkpoint_rs_sha256": "1794ae210d143b7bfe6cdc2a6400c96eca2fa2acf0e1bbb0b8d5ac5deb72c922",
+  "checks_checkpoint_rs_sha256": "9f5513b5b3052cf8f777684ef8767624b96e3cc434144fd6c5e920486ecb5efe",
   "python_all": [
     "MAX_CHECKPOINT_FINDINGS",
     "cap_checkpoint_findings",
@@ -18,7 +18,6 @@
     "compute_checkpoint_fingerprint"
   ],
   "known_parity_gaps": [
-    "A real SL201, SL202, SL203, or SL205 row calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits the finding.",
     "check_checkpoint stops at the first non-empty family that would call make_finding. Python runs every family and sorts the combined list.",
     "A non-empty family stops before the cap and does not append an overflow finding. Python caps that list and may append overflow.",
     "A float or list used where Python would call str is a typed error. Rust does not invent the Python repr.",

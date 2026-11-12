@@ -17,13 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CHECKPOINT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CHECKPOINT_RS_SHA256 = (
-    "1794ae210d143b7bfe6cdc2a6400c96eca2fa2acf0e1bbb0b8d5ac5deb72c922"
+    "9f5513b5b3052cf8f777684ef8767624b96e3cc434144fd6c5e920486ecb5efe"
 )
 MODULE = "sesslint.checks.checkpoint"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "A real SL201, SL202, SL203, or SL205 row calls make_finding with the fingerprint "
-    "omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits the finding.",
     "check_checkpoint stops at the first non-empty family that would call make_finding. "
     "Python runs every family and sorts the combined list.",
     "A non-empty family stops before the cap and does not append an overflow finding. "
