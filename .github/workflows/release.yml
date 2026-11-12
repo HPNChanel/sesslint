@@ -101,7 +101,7 @@ jobs:
           python-version: "3.11"
       - name: Set up uv for the portable Linux interpreter
         if: matrix.os == 'linux'
-        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           version: "0.10.10"
       - name: Build the Linux binary with python-build-standalone
@@ -220,7 +220,7 @@ jobs:
           pattern: binary-*
           merge-multiple: true
           path: dist
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Bind every asset and sign the complete set
         if: steps.reuse.outputs.restored != 'true'
         run: |
