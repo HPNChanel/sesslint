@@ -21,9 +21,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.tool_pairing_2";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_TOOL_PAIRING_2_RS_SHA256: &str =
-    "f50cc61cfde6a2f1ffc0a3bad288cae94f873b7cb661c1b39f5cf4dd060b4557";
+    "10e0eb133f1abe8d89fccc3d8d5fdfea03ca9539eac5443853b4dad6906c616a";
 const EXPECTED_VECTORS_SHA256: &str =
-    "a4a855c5598c8caf29a6728e5cce3908aeed251e42fc2d78bd21e31fa7cc38ef";
+    "95a30bfd95555a69d8a10abb552fb72428ea7e9e8face0d354282f313558b4eb";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -127,7 +127,6 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
         "SL107",
         "SL108",
         "sesslint.profiles is not available",
-        "max_findings -1",
         "Float and list ids",
         "Python uses str()",
     ];

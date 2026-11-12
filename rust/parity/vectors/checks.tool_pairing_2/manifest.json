@@ -2,14 +2,13 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_2",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_2_rs_sha256": "f50cc61cfde6a2f1ffc0a3bad288cae94f873b7cb661c1b39f5cf4dd060b4557",
+  "checks_tool_pairing_2_rs_sha256": "10e0eb133f1abe8d89fccc3d8d5fdfea03ca9539eac5443853b4dad6906c616a",
   "vector_count": 9,
-  "vectors_sha256": "a4a855c5598c8caf29a6728e5cce3908aeed251e42fc2d78bd21e31fa7cc38ef",
+  "vectors_sha256": "95a30bfd95555a69d8a10abb552fb72428ea7e9e8face0d354282f313558b4eb",
   "generator": "rust/parity/vectors/checks.tool_pairing_2/generate",
   "known_parity_gaps": [
     "Offender path calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or SL108.",
     "A string profile passes sesslint.profiles import in Python; the except returns the default severity. Rust returns sesslint.profiles is not available (PROFILES_UNAVAILABLE) and does not use the default severity.",
-    "Empty input with max_findings -1 takes the overflow path in Rust (codec error). Python emits an overflow finding for that family.",
     "Float and list ids or kinds are typed errors in Rust. Python uses str() on non-string values."
   ]
 }

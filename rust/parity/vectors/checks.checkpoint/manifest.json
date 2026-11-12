@@ -2,14 +2,14 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.checkpoint",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_checkpoint_rs_sha256": "324c7354ce6378e05881735cea87d68887ab65fc8ebff73141ab06be180be7da",
+  "checks_checkpoint_rs_sha256": "1794ae210d143b7bfe6cdc2a6400c96eca2fa2acf0e1bbb0b8d5ac5deb72c922",
   "vector_count": 10,
-  "vectors_sha256": "d79bd75540e0a60da921a87bf8a117eabad422e49ccc6387c25186471de6b277",
+  "vectors_sha256": "5ab0cd1ca78727f8d25af4f42cb9bf5ac83deaa418188027fa881e1bc97dd8f5",
   "generator": "rust/parity/vectors/checks.checkpoint/generate",
   "known_parity_gaps": [
     "A real SL201, SL202, SL203, or SL205 row calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits the finding.",
-    "check_checkpoint stops at the first family that would call make_finding. Python runs every family and sorts the combined list.",
-    "An empty gap or divergence list with max_findings -1 takes the overflow path. Rust returns the codec error. Python emits an overflow finding.",
+    "check_checkpoint stops at the first non-empty family that would call make_finding. Python runs every family and sorts the combined list.",
+    "A non-empty family stops before the cap and does not append an overflow finding. Python caps that list and may append overflow.",
     "A float or list used where Python would call str is a typed error. Rust does not invent the Python repr.",
     "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd."
   ]

@@ -40,10 +40,8 @@
 //! fall through to evidence `correlation_id`.
 //!
 //! Under the cap, [`cap_pairing_findings`] returns the sorted list and does
-//! not call [`make_finding`]. Over the cap, [`make_finding`] is called with
-//! the fingerprint omitted and returns [`FINGERPRINT_CODEC_UNAVAILABLE`].
-//! That error is propagated. This module does not append a synthetic overflow
-//! finding and does not return the kept prefix as if that finding existed.
+//! not call [`make_finding`]. Over the cap it keeps the Python prefix and
+//! appends the overflow finding from [`make_finding`].
 //!
 //! [`ToolPairingIndexer`] partitions tool events and does not call
 //! [`make_finding`]. It does not emit SL101 through SL104. It does not use
@@ -54,11 +52,10 @@
 //! [`check_orphans`], [`check_dangling`], [`check_reused`], and
 //! [`check_multi_results`] call [`make_finding`] only when that list is
 //! non-empty. The omitted fingerprint returns
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
+//! [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
 //! [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
-//! `max_findings == -1` takes the overflow path because `0 <= -1` is false.
-//! Today the first real record returns the codec error before cap. This
-//! slice does not append an overflow finding and does not invent a digest.
+//! `max_findings == -1` takes the overflow path because `0 <= -1` is false
+//! and appends one overflow finding.
 //! Correlation walks sort a copy of the indexer key lists. They do not
 //! iterate the [`HashMap`]. This slice does not call
 //! [`crate::graph::cap_finding_sort_key`].
@@ -86,10 +83,10 @@
 //!   call `.get` on a non-mapping. [`Finding::try_new`] only stores a
 //!   mapping or `None`, so this is not reachable from a constructed
 //!   finding.
-//! * Overflow [`make_finding`] does not produce a digest
-//!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//! * Overflow [`make_finding`] appends a finding. `cap`, `total_count`, and
+//!   `truncated_count` are outside the fingerprint evidence allowlist.
 //! * Offender [`make_finding`] does not produce a digest
-//!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//!   ([`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]).
 //! * A mapping result payload calls
 //!   [`model::canonical::compute_content_hash`]
 //!   ([`model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE`]). This slice
@@ -114,7 +111,7 @@ use model::events::{
 };
 use model::finding::{
     enforce_content_free_text, make_finding, EvidenceLookup, Finding, MakeFindingInput, PyValue,
-    SourceLine, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE,
+    SourceLine, SourceRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -334,6 +331,10 @@ pub fn cap_pairing_findings(
         return Ok(sorted);
     }
 
+    let keep = kept_prefix_len(sorted.len(), max_findings)?;
+    let mut kept = sorted;
+    kept.truncate(keep);
+
     let truncated_count = total_count
         .checked_sub(max_findings)
         .ok_or(ToolPairing1Error::PythonIntUnbounded)?;
@@ -370,10 +371,24 @@ pub fn cap_pairing_findings(
         context: None,
     }) {
         Err(error) => Err(error.into()),
-        Ok(_finding) => Err(ToolPairing1Error::Finding(FindingError::new(
-            FINGERPRINT_CODEC_UNAVAILABLE,
-        ))),
+        Ok(finding) => {
+            kept.push(finding);
+            Ok(kept)
+        }
     }
+}
+
+/// Python `sorted_findings[:max_findings]`. A negative cap drops from the end.
+fn kept_prefix_len(len: usize, max_findings: i64) -> Result<usize, ToolPairing1Error> {
+    if max_findings >= 0 {
+        let max = usize::try_from(max_findings).map_err(|_| ToolPairing1Error::PythonIntUnbounded)?;
+        return Ok(max.min(len));
+    }
+    let drop = max_findings
+        .checked_neg()
+        .ok_or(ToolPairing1Error::PythonIntUnbounded)?;
+    let drop = usize::try_from(drop).map_err(|_| ToolPairing1Error::PythonIntUnbounded)?;
+    Ok(len.saturating_sub(drop))
 }
 
 /// Python: `_resolve_source_coords`.
@@ -732,7 +747,7 @@ pub fn record_orphans(
 ///
 /// Context `None` is [`CheckContext::default`]. A non-empty record list
 /// calls [`make_finding`] with the fingerprint omitted; the first record
-/// returns [`FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
+/// returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
 /// [`cap_pairing_findings`].
 pub fn check_orphans(
     events: &[EventValue],
@@ -1233,7 +1248,7 @@ pub fn record_multi_results(
 ///
 /// Context `None` is [`CheckContext::default`]. A single result is silent.
 /// A non-empty record list calls [`make_finding`] with the fingerprint
-/// omitted; the first record returns [`FINGERPRINT_CODEC_UNAVAILABLE`].
+/// omitted; the first record returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`].
 /// An empty list still calls [`cap_pairing_findings`].
 pub fn check_multi_results(
     events: &[EventValue],
@@ -1490,7 +1505,7 @@ mod tests {
         PYTHON_STR_UNREPRESENTABLE,
     };
     use model::finding::{
-        Finding, FindingInput, PyValue, SourceRef, FINGERPRINT_CODEC_UNAVAILABLE, SCHEMA_VERSION,
+        Finding, FindingInput, PyValue, SourceRef, SCHEMA_VERSION,
     };
 
     fn is_lower_hex16(text: &str) -> bool {
@@ -1560,13 +1575,6 @@ mod tests {
 
     fn field_str(value: &str) -> EventField {
         EventField::Str(value.to_owned())
-    }
-
-    fn assert_codec_unavailable(err: ToolPairing1Error) {
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
-        assert!(matches!(err, ToolPairing1Error::Finding(_)));
     }
 
     fn assert_emitted(findings: &[model::finding::Finding], code: &str) {
@@ -1685,11 +1693,17 @@ mod tests {
             "aaaaaaaaaaaaaaaa",
             PyValue::None,
         );
-        let err = cap_pairing_findings(vec![item], SL103, Some(0), None, None).unwrap_err();
-        assert_codec_unavailable(err);
-        let empty_err =
-            cap_pairing_findings(Vec::new(), SL103, Some(-1), Some("a\\b"), None).unwrap_err();
-        assert_codec_unavailable(empty_err);
+        let out = cap_pairing_findings(vec![item], SL103, Some(0), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), SL103);
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(out[0].fingerprint()));
+        let empty =
+            cap_pairing_findings(Vec::new(), SL103, Some(-1), Some("a\\b"), None).unwrap();
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty[0].code(), SL103);
+        assert_eq!(empty[0].source().path(), "a/b");
+        assert!(is_lower_hex16(empty[0].fingerprint()));
     }
 
     #[test]
@@ -2050,9 +2064,9 @@ mod tests {
         assert!(check_orphans(&[], None, None, None).unwrap().is_empty());
         assert!(check_dangling(&[], None, None, None).unwrap().is_empty());
         assert!(check_reused(&[], None, None, None).unwrap().is_empty());
-        assert_codec_unavailable(check_orphans(&[], None, Some(-1), None).unwrap_err());
-        assert_codec_unavailable(check_dangling(&[], None, Some(-1), None).unwrap_err());
-        assert_codec_unavailable(check_reused(&[], None, Some(-1), None).unwrap_err());
+        assert_emitted(&check_orphans(&[], None, Some(-1), None).unwrap(), "SL101");
+        assert_emitted(&check_dangling(&[], None, Some(-1), None).unwrap(), "SL102");
+        assert_emitted(&check_reused(&[], None, Some(-1), None).unwrap(), "SL103");
     }
 
     #[test]
@@ -2342,8 +2356,22 @@ mod tests {
         assert!(check_multi_results(&[], None, None, None)
             .unwrap()
             .is_empty());
-        assert_codec_unavailable(check_multi_results(&[], None, Some(-1), None).unwrap_err());
-        assert_codec_unavailable(check_tool_pairing_1(&[], None, Some(-1), None).unwrap_err());
+        assert_emitted(
+            &check_multi_results(&[], None, Some(-1), None).unwrap(),
+            "SL104",
+        );
+        let aggregate = check_tool_pairing_1(&[], None, Some(-1), None).unwrap();
+        assert_eq!(
+            aggregate
+                .iter()
+                .map(|finding| finding.code())
+                .collect::<Vec<_>>(),
+            ["SL101", "SL102", "SL103", "SL104"]
+        );
+        for finding in &aggregate {
+            assert_eq!(finding.message(), MSG_OVERFLOW);
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]

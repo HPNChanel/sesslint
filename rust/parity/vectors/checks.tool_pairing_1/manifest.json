@@ -2,14 +2,13 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_1",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_1_rs_sha256": "702adad87171771521c77b5d6df4afb9ac628c6ac70f1a8a7547f4e4f3af15a0",
+  "checks_tool_pairing_1_rs_sha256": "fb117f7e7f338cb3aea16ff55c095c1efbc6b74b716fcfb8cae100e881e94fe6",
   "vector_count": 7,
-  "vectors_sha256": "3e78bf260a56f6b04d3fe41d1aebf750df98baf2a3cf51a7bb33445c0dc4c663",
+  "vectors_sha256": "da1a6f922f08d8edb548ef7d498f7831d294ef0fefc9d874c18313dcc06d31dc",
   "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
   "known_parity_gaps": [
     "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",
     "A mapping tool_result payload calls compute_content_hash. Rust returns sesslint._canonical_codec.payload_content_hash is not available and does not hash. Python hashes the payload.",
-    "Empty input with max_findings -1 takes the overflow path. Rust returns the codec error. Python emits an overflow finding.",
     "Float and list ids or payloads are typed errors in Rust. Python uses str().",
     "Null tool_call correlation is still dangling on codex-rollout (SL102 finding). That case belongs in known_parity_gaps, not silent vectors."
   ]

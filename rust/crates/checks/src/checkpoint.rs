@@ -8,11 +8,8 @@
 //! digest and does not call [`make_finding`].
 //!
 //! Under the cap, [`cap_checkpoint_findings`] returns the stably sorted list
-//! and does not call [`make_finding`]. Over the cap, [`make_finding`] is
-//! called with the fingerprint omitted and returns
-//! [`FINGERPRINT_CODEC_UNAVAILABLE`]. That error is propagated. This module
-//! does not append a synthetic overflow finding and does not return the kept
-//! prefix as if that finding existed.
+//! and does not call [`make_finding`]. Over the cap it keeps the Python
+//! prefix and appends the overflow finding from [`make_finding`].
 //!
 //! [`checkpoint_gap_records`] does not call [`make_finding`].
 //! [`check_checkpoint_gap`] uses that list. An empty list calls
@@ -47,12 +44,12 @@
 //! A digest is not invented.
 //!
 //! [`check_checkpoint`] calls [`extract_run_state_projection`] once, then
-//! the gap, the divergence, the continuation, and the coverage. It does not
-//! cap the combined list. A real finding cannot be built, so the only
-//! success is every family silent: `Ok([])`. The first family that would
-//! call [`make_finding`], including an empty-cap overflow at
-//! `max_findings_per_family == -1`, stops the run. Later families are not
-//! called.
+//! the gap, the divergence, the continuation, and the coverage. An empty
+//! gap or divergence keeps that family's cap result, including one overflow
+//! finding when `max_findings_per_family == -1`. Those findings are kept
+//! and sorted. A non-empty family calls [`make_finding`] once and stops.
+//! Later families are not called after that stop. When every family is
+//! silent and the cap is not negative, the result is `Ok([])`.
 //!
 //! Sort key is `(code, overflow flag, source.record_id or "", fingerprint)`.
 //! Overflow is 1 only when evidence `overflow` is JSON true. This module
@@ -79,8 +76,8 @@
 //! * [`SessionEvent::kind`] is a `String`. Python `None` on that attribute
 //!   is [`EventValue::Other`]: missing kind on a non-mapping, and this
 //!   branch does not read a mapping.
-//! * Overflow [`make_finding`] does not produce a digest
-//!   ([`FINGERPRINT_CODEC_UNAVAILABLE`]).
+//! * Overflow [`make_finding`] appends the finding. `cap`, `total_count`,
+//!   and `truncated_count` are stored and are not fingerprint keys.
 //! * A list of events has no `source` attribute.
 //!   [`extract_run_state_projection`] and
 //!   [`extract_run_state_checkpoints`] do not scan events.
@@ -115,11 +112,10 @@
 //!   U+001C..=U+001F as space. A string of only those controls stays present.
 //!   A failed payload-map borrow is [`BORROWED_LOOKUP`]. A non-string
 //!   `covered_through_id` is `None`.
-//! * [`check_checkpoint`] stops at the first family that would call
-//!   [`make_finding`], including an empty-cap overflow. Python runs every
-//!   family, then sorts the combined list with the checkpoint cap key.
-//!   This port does not return that combined list. Several rows in one
-//!   family call [`make_finding`] once, on the first row.
+//! * [`check_checkpoint`] keeps empty-family overflow findings and sorts
+//!   them. A real row still stops the run: Python would continue and sort
+//!   every family together. Several rows in one family call [`make_finding`]
+//!   once, on the first row.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -397,6 +393,10 @@ pub fn cap_checkpoint_findings(
         return Ok(sorted);
     }
 
+    let keep = kept_prefix_len(sorted.len(), max_findings)?;
+    let mut kept = sorted;
+    kept.truncate(keep);
+
     let truncated_count = total_count
         .checked_sub(max_findings)
         .ok_or(CheckpointError::PythonIntUnbounded)?;
@@ -433,10 +433,24 @@ pub fn cap_checkpoint_findings(
         context: None,
     }) {
         Err(error) => Err(error.into()),
-        Ok(_finding) => Err(CheckpointError::Finding(FindingError::new(
-            FINGERPRINT_CODEC_UNAVAILABLE,
-        ))),
+        Ok(finding) => {
+            kept.push(finding);
+            Ok(kept)
+        }
     }
+}
+
+/// Python `sorted_findings[:max_findings]`. A negative cap drops from the end.
+fn kept_prefix_len(len: usize, max_findings: i64) -> Result<usize, CheckpointError> {
+    if max_findings >= 0 {
+        let max = usize::try_from(max_findings).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+        return Ok(max.min(len));
+    }
+    let drop = max_findings
+        .checked_neg()
+        .ok_or(CheckpointError::PythonIntUnbounded)?;
+    let drop = usize::try_from(drop).map_err(|_| CheckpointError::PythonIntUnbounded)?;
+    Ok(len.saturating_sub(drop))
 }
 
 /// Python: `_resolve_source_coords`.
@@ -1116,18 +1130,17 @@ pub fn check_compaction_coverage(
 /// projection. Coverage does not receive the projection or the sensitivity.
 ///
 /// The pure builders decide whether a family has rows. An empty gap or
-/// divergence list calls that family's check so the cap can return `Ok([])`
-/// or the `max_findings_per_family == -1` codec error. A non-empty list
-/// calls [`make_finding`] once and stops. Continuation receives
+/// divergence list keeps that family's cap result, including one overflow
+/// finding when `max_findings_per_family == -1`. A non-empty list calls
+/// [`make_finding`] once and stops. Continuation receives
 /// [`Sl201Prior::Records`] and [`Sl202Prior::Records`] of empty slices when
 /// those families produced no rows. An empty supplied prior is not
 /// recomputed. Compaction triggers still run. One continuation record calls
 /// [`make_finding`] once and stops.
 ///
-/// This does not cap the combined list. A real finding cannot be built, so
-/// the only success is every family silent: `Ok([])`. The first family that
-/// would call [`make_finding`], including an empty-cap overflow, stops the
-/// run. Later families are not called.
+/// Empty-family cap findings are kept and sorted. A real row still stops
+/// the run. When every family is silent and the cap is not negative, the
+/// result is `Ok([])`. Later families are not called after that stop.
 pub fn check_checkpoint(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -1151,7 +1164,7 @@ pub fn check_checkpoint(
     if let Some(record) = gaps.first() {
         return emit_first_gap(record);
     }
-    check_checkpoint_gap(
+    let mut all_findings = check_checkpoint_gap(
         events,
         source_path,
         max_findings_per_family,
@@ -1164,13 +1177,13 @@ pub fn check_checkpoint(
     if let Some(record) = divergences.first() {
         return emit_divergence(record);
     }
-    check_checkpoint_divergence(
+    all_findings.extend(check_checkpoint_divergence(
         events,
         source_path,
         max_findings_per_family,
         Some(ctx),
         attached,
-    )?;
+    )?);
 
     let prior_sl201: &[CheckpointGapRecord] = &[];
     let prior_sl202: &[CheckpointDivergenceRecord] = &[];
@@ -1185,17 +1198,39 @@ pub fn check_checkpoint(
     }
 
     match compaction_coverage_records(events, source_path, Some(ctx))? {
-        CompactionCoverageRows::NoClaims => Ok(Vec::new()),
+        CompactionCoverageRows::NoClaims => sort_findings(all_findings),
         CompactionCoverageRows::Silent => {
-            check_compaction_coverage(events, source_path, max_findings_per_family, Some(ctx))
+            all_findings.extend(check_compaction_coverage(
+                events,
+                source_path,
+                max_findings_per_family,
+                Some(ctx),
+            )?);
+            sort_findings(all_findings)
         }
         CompactionCoverageRows::Rows(records) => match records.first() {
             Some(record) => emit_coverage(record),
             None => {
-                check_compaction_coverage(events, source_path, max_findings_per_family, Some(ctx))
+                all_findings.extend(check_compaction_coverage(
+                    events,
+                    source_path,
+                    max_findings_per_family,
+                    Some(ctx),
+                )?);
+                sort_findings(all_findings)
             }
         },
     }
+}
+
+fn sort_findings(findings: Vec<Finding>) -> Result<Vec<Finding>, CheckpointError> {
+    let mut keyed = Vec::new();
+    for finding in findings {
+        let key = cap_finding_sort_key(&finding)?;
+        keyed.push((key, finding));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, finding)| finding).collect())
 }
 
 /// Python: `check_sl202 = check_checkpoint_divergence`.
@@ -3181,19 +3216,21 @@ mod tests {
             "aaaaaaaaaaaaaaaa",
             PyValue::None,
         );
-        let err = cap_checkpoint_findings(vec![item], SL201, Some(0), None, None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert_eq!(err.message(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
-        assert!(matches!(err, CheckpointError::Finding(_)));
+        let out = cap_checkpoint_findings(vec![item], SL201, Some(0), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), SL201);
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]
     fn empty_list_with_max_minus_one_returns_the_codec_error() {
-        let err =
-            cap_checkpoint_findings(Vec::new(), SL201, Some(-1), Some("a\\b"), None).unwrap_err();
-        assert_eq!(err.to_string(), FINGERPRINT_CODEC_UNAVAILABLE);
-        assert!(!is_lower_hex16(&err.to_string()));
+        let out =
+            cap_checkpoint_findings(Vec::new(), SL201, Some(-1), Some("a\\b"), None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), SL201);
+        assert_eq!(out[0].source().path(), "a/b");
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]
@@ -3823,8 +3860,11 @@ mod tests {
     fn empty_events_with_max_minus_one_return_codec_error() {
         let records = checkpoint_gap_records(&[], None, None, None, None).unwrap();
         assert!(records.is_empty());
-        let err = check_checkpoint_gap(&[], None, Some(-1), None, None, None).unwrap_err();
-        assert_codec(err);
+        let out = check_checkpoint_gap(&[], None, Some(-1), None, None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), "SL201");
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]
@@ -4219,8 +4259,11 @@ mod tests {
 
     #[test]
     fn divergence_of_empty_events_with_max_minus_one_is_the_codec_error() {
-        let err = check_checkpoint_divergence(&[], None, Some(-1), None, None).unwrap_err();
-        assert_codec(err);
+        let out = check_checkpoint_divergence(&[], None, Some(-1), None, None).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].code(), "SL202");
+        assert_eq!(out[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(out[0].fingerprint()));
     }
 
     #[test]
@@ -5006,7 +5049,11 @@ mod tests {
             boundary_event("bound-synth", Some("leaf-synth")),
         ];
         assert_silent_claims(&events);
-        assert_codec(check_compaction_coverage(&events, None, Some(-1), None).unwrap_err());
+        let capped = check_compaction_coverage(&events, None, Some(-1), None).unwrap();
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0].code(), SL205);
+        assert_eq!(capped[0].message(), MSG_OVERFLOW);
+        assert!(is_lower_hex16(capped[0].fingerprint()));
 
         let chain = [
             message_parent("root-synth", None),
@@ -5139,7 +5186,15 @@ mod tests {
     fn check_checkpoint_of_empty_events_follows_the_cap() {
         let empty = check_checkpoint(&[], None, None, None, None, None).unwrap();
         assert!(empty.is_empty());
-        assert_codec(check_checkpoint(&[], None, Some(-1), None, None, None).unwrap_err());
+        let capped = check_checkpoint(&[], None, Some(-1), None, None, None).unwrap();
+        assert_eq!(
+            capped.iter().map(|finding| finding.code()).collect::<Vec<_>>(),
+            ["SL201", "SL202"]
+        );
+        for finding in &capped {
+            assert_eq!(finding.message(), MSG_OVERFLOW);
+            assert!(is_lower_hex16(finding.fingerprint()));
+        }
     }
 
     #[test]
