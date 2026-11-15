@@ -10,21 +10,20 @@
 //! `str(True)` is `True`, `str(False)` is `False`, an int is its decimal text,
 //! and a string stays the string.
 //!
-//! Hashing and canonical JSON stay on their seams. This module does not call
-//! the codec crate, does not call `sesslint.determinism.canonical_json_bytes`,
-//! and does not hash.
+//! Hashing uses [`compute_content_hash`] and [`to_canonical_json`] in this
+//! crate. This module does not call the codec crate.
 //!
 //! # Recorded gaps
 //!
 //! * [`event_content_fingerprint`] on a [`SessionEvent`] with a missing or
-//!   empty `content_hash` does not call [`SessionEvent::payload_hash`]. That
-//!   Rust method returns a stored empty string and would hide
-//!   [`CanonicalUnavailable::payload_content_hash`].
-//! * A mapping payload, or a whole mapping, needs
-//!   `sesslint.determinism.canonical_json_bytes`. The typed error Display is
-//!   [`DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE`]. Nothing is hashed.
-//! * [`SessionEvent::to_canonical_bytes`] is the codec canonical-bytes seam.
-//!   The error is propagated; no digest is produced.
+//!   empty `content_hash` returns [`compute_content_hash`] of the payload,
+//!   including the `sha256:` prefix. A non-empty stored hash is returned as
+//!   itself.
+//! * A mapping with no usable `content_hash` hashes the payload mapping when
+//!   that value is a mapping, otherwise the whole mapping. The digest is 64
+//!   hex characters and has no `sha256:` prefix.
+//! * [`event_canonical_hash`] on a [`SessionEvent`] returns
+//!   [`SessionEvent::canonical_hash`]. A mapping hashes its canonical JSON.
 //! * The final `sha256(str(ev))` branch is not representable for the values
 //!   this crate can hold ([`PYTHON_STR_HASH_UNREPRESENTABLE`]). `sha2` is not
 //!   added to cover it.
@@ -42,7 +41,10 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::canonical::{to_canonical_dict, CanonicalUnavailable, Payload, SessionEvent};
+use crate::canonical::{
+    compute_content_hash, sha256_hex, to_canonical_dict, to_canonical_json, CanonicalUnavailable,
+    Payload, SessionEvent,
+};
 
 /// Late import. `model` cannot depend on the codec crate, and this module
 /// does not reimplement canonical JSON.
@@ -220,6 +222,9 @@ pub fn event_corr_id(ev: &EventValue) -> Result<Option<String>, EventError> {
 ///
 /// Order follows the pin. A non-empty string `content_hash` is returned as
 /// itself. An empty string is false in Python and falls through.
+/// A [`SessionEvent`] then returns [`compute_content_hash`] of its payload.
+/// A mapping hashes the payload when that value is a mapping, otherwise the
+/// whole mapping. [`EventValue::Other`] has no Python `str`.
 pub fn event_content_fingerprint(ev: &EventValue) -> Result<String, EventError> {
     let ch = match ev {
         EventValue::Session(event) => event.content_hash.clone().map(EventField::Str),
@@ -232,31 +237,32 @@ pub fn event_content_fingerprint(ev: &EventValue) -> Result<String, EventError> 
         }
     }
     match ev {
-        EventValue::Session(_) => Err(EventError::from(
-            CanonicalUnavailable::payload_content_hash(),
-        )),
-        EventValue::Mapping(mapping) => {
-            if matches!(mapping.get("payload"), Some(EventField::Mapping(_))) {
-                return Err(EventError::DeterminismCanonicalJsonBytes);
-            }
-            Err(EventError::DeterminismCanonicalJsonBytes)
-        }
+        EventValue::Session(event) => Ok(compute_content_hash(&event.payload)?),
+        EventValue::Mapping(mapping) => match mapping.get("payload") {
+            Some(EventField::Mapping(payload)) => canonical_sha256(&payload.to_payload()),
+            Some(EventField::Float(_)) => Err(EventError::PythonFloatStr),
+            Some(EventField::List(_)) => Err(EventError::PythonStr),
+            _ => canonical_sha256(&mapping.to_payload()),
+        },
         EventValue::Other => Err(EventError::PythonStrHash),
     }
 }
 
 /// Python: `_event_canonical_hash`.
+///
+/// A [`SessionEvent`] returns [`SessionEvent::canonical_hash`]. A mapping
+/// hashes its canonical JSON. [`EventValue::Other`] has no Python `str`.
 pub fn event_canonical_hash(ev: &EventValue) -> Result<String, EventError> {
     match ev {
-        EventValue::Session(event) => match event.canonical_hash() {
-            Ok(_digest) => Err(EventError::from(
-                CanonicalUnavailable::canonical_json_bytes(),
-            )),
-            Err(error) => Err(EventError::from(error)),
-        },
-        EventValue::Mapping(_) => Err(EventError::DeterminismCanonicalJsonBytes),
+        EventValue::Session(event) => Ok(event.canonical_hash()?),
+        EventValue::Mapping(mapping) => canonical_sha256(&mapping.to_payload()),
         EventValue::Other => Err(EventError::PythonStrHash),
     }
+}
+
+fn canonical_sha256(payload: &Payload) -> Result<String, EventError> {
+    let json = to_canonical_json(payload)?;
+    Ok(sha256_hex(json.as_bytes()))
 }
 
 /// Python: `_to_event_dict`.
@@ -367,7 +373,6 @@ mod tests {
         PYTHON_STR_HASH_UNREPRESENTABLE,
     };
     use crate::canonical::{CanonicalUnavailable, Payload, SessionEvent};
-    use std::error::Error;
 
     #[test]
     fn mapping_returns_kind_id_parent_id_and_correlation_id() {
@@ -489,34 +494,20 @@ mod tests {
             "message",
         );
         event.content_hash = Some(String::new());
-        let err = event_content_fingerprint(&EventValue::from_session(event)).unwrap_err();
-        assert_eq!(
-            err,
-            EventError::from(CanonicalUnavailable::payload_content_hash())
-        );
-        assert_eq!(
-            err.to_string(),
-            "sesslint._canonical_codec.payload_content_hash is not available"
-        );
-        assert_ne!(err.to_string(), "");
-        assert!(!is_sha256_hex(&err.to_string()));
+        let digest = event_content_fingerprint(&EventValue::from_session(event)).unwrap();
+        assert!(digest.starts_with("sha256:"));
+        assert!(is_sha256_hex(&digest["sha256:".len()..]));
 
         let mapping = EventMapping::new(vec![(
             "content_hash".to_owned(),
             EventField::Str(String::new()),
         )]);
-        let mapping_err = event_content_fingerprint(&EventValue::Mapping(mapping)).unwrap_err();
-        assert_eq!(mapping_err, EventError::DeterminismCanonicalJsonBytes);
-        assert_eq!(
-            mapping_err.to_string(),
-            "sesslint.determinism.canonical_json_bytes is not available"
-        );
-        assert_ne!(mapping_err.to_string(), "");
-        assert!(!is_sha256_hex(&mapping_err.to_string()));
+        let mapping_digest = event_content_fingerprint(&EventValue::Mapping(mapping)).unwrap();
+        assert!(is_sha256_hex(&mapping_digest));
     }
 
     #[test]
-    fn canonical_hash_of_session_event_is_canonical_bytes_unavailable() {
+    fn canonical_hash_of_session_event_is_the_event_digest() {
         let event = SessionEvent::new(
             "evt-synthetic",
             None,
@@ -525,25 +516,16 @@ mod tests {
             "assistant",
             "message",
         );
-        let err = event_canonical_hash(&EventValue::from_session(event)).unwrap_err();
-        assert_eq!(
-            err,
-            EventError::from(CanonicalUnavailable::canonical_json_bytes())
-        );
-        assert_eq!(
-            err.to_string(),
-            "sesslint._canonical_codec.canonical_json_bytes is not available"
-        );
-        assert!(!is_sha256_hex(&err.to_string()));
-        assert!(Error::source(&err).is_none());
+        let digest = event_canonical_hash(&EventValue::from_session(event.clone())).unwrap();
+        assert_eq!(digest, event.canonical_hash().unwrap());
+        assert!(is_sha256_hex(&digest));
 
         let mapping = EventMapping::new(vec![(
             "kind".to_owned(),
             EventField::Str("message".to_owned()),
         )]);
-        let mapping_err = event_canonical_hash(&EventValue::Mapping(mapping)).unwrap_err();
-        assert_eq!(mapping_err, EventError::DeterminismCanonicalJsonBytes);
-        assert!(!is_sha256_hex(&mapping_err.to_string()));
+        let mapping_digest = event_canonical_hash(&EventValue::Mapping(mapping)).unwrap();
+        assert!(is_sha256_hex(&mapping_digest));
 
         let other_err = event_canonical_hash(&EventValue::Other).unwrap_err();
         assert_eq!(other_err, EventError::PythonStrHash);

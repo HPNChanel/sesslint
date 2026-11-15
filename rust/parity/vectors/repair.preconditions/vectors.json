@@ -3,12 +3,10 @@
   "module": "sesslint.repair.preconditions",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "preconditions_py_sha256": "cb075b5296a1df4f980c4e82370b42eccbb7308f33f8409a0c497c038c2a2808",
-  "preconditions_rs_sha256": "4f4c83b974369cc68eec2ee12ca3e4b9c4b10bb1443d4e696f3c8e5175780431",
+  "preconditions_rs_sha256": "f8379d5cbeea4412956908640d0191bdcf61ec62bc86a7381a260c828d438a2c",
   "known_parity_gaps": [
     "GAP-preconditions-must-abstain: no_prior_safe_tool_after_cut would call sesslint.policy.abstention.must_abstain; Rust returns Unavailable instead of true.",
     "GAP-preconditions-parent-candidates: unique_parent_candidate would call sesslint.checks.graph.find_qualifying_parent_candidates; Rust returns Unavailable.",
-    "GAP-preconditions-canonical-json-bytes: fingerprint comparison may call sesslint.determinism.canonical_json_bytes; Rust returns Unavailable where Python returns a bool.",
-    "GAP-preconditions-payload-content-hash: fingerprint comparison may call sesslint._canonical_codec.payload_content_hash; Rust returns Unavailable where Python returns a bool.",
     "GAP-preconditions-dunder-all: Python __all__ has 22 names, including types and helpers. precondition_func_names is the 16-name registry. The module_all vector keeps the pin list and does not treat that list as the registry."
   ],
   "vectors": [
@@ -547,13 +545,11 @@
           "finding_index": null,
           "policy": "conservative",
           "acknowledge_side_effects": false
-        },
-        "gap": "GAP-preconditions-canonical-json-bytes"
+        }
       },
       "expected": {
-        "mode": "gap",
-        "gap_id": "GAP-preconditions-canonical-json-bytes",
-        "python_bool": false
+        "mode": "bool",
+        "value": false
       }
     },
     {

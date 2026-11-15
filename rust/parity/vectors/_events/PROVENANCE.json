@@ -5,9 +5,7 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error",
-    "a mapping with no usable content_hash: Python hashes the payload or the whole mapping",
-    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "SessionEvent to_canonical_dict still returns the normalize seam",
     "sha256(str(ev))",
     "Python str(float), str(list), and str(dict) for a getter field",
     "the tolerant dict(ev) fallback",

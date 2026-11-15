@@ -1947,7 +1947,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_scan_propagates_fingerprint_seams_and_stops_on_a_match() {
+    fn duplicate_scan_compares_computed_hashes_and_stops_on_a_float_kind() {
         let missing = [
             hashed("evt-a", "message", "abc"),
             mapped(vec![
@@ -1955,12 +1955,7 @@ mod tests {
                 ("kind", EventField::Str("message".to_owned())),
             ]),
         ];
-        let error = adjacent_identical_duplicate(&context(&[], &missing, "")).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "sesslint.determinism.canonical_json_bytes is not available"
-        );
-        assert!(std::error::Error::source(&error).is_some());
+        assert!(!adjacent_identical_duplicate(&context(&[], &missing, "")).unwrap());
 
         let session = session_tool("message", Some("none"), None);
         let mut bare = SessionEvent::new(
@@ -1973,11 +1968,7 @@ mod tests {
         );
         bare.content_hash = Some(String::new());
         let events = [session, EventValue::from_session(bare)];
-        let error = adjacent_identical_duplicate(&context(&[], &events, "")).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "sesslint._canonical_codec.payload_content_hash is not available"
-        );
+        assert!(!adjacent_identical_duplicate(&context(&[], &events, "")).unwrap());
 
         let float_kind = mapped(vec![("kind", EventField::Float(1.0))]);
         let events = [hashed("evt-a", "message", "abc"), float_kind];
@@ -2249,12 +2240,7 @@ mod tests {
         ];
         let mut ctx = context(std::slice::from_ref(&by_corr), &late_error, "");
         ctx.finding = Some(&by_corr);
-        assert_eq!(
-            duplicate_projection_identical(&ctx)
-                .unwrap_err()
-                .to_string(),
-            "sesslint.determinism.canonical_json_bytes is not available"
-        );
+        assert!(!duplicate_projection_identical(&ctx).unwrap());
     }
 
     fn coded(code: &str, record_id: Option<&str>, evidence: PyValue) -> Finding {

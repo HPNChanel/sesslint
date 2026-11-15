@@ -14,13 +14,12 @@ PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 
 # rust/crates/checks/src/abstention.rs — must match manifest (card invariant).
 ABSTENTION_RS_SHA256 = (
-    "46b681a6b615bd59d73730b402e73b76fc5b007d41766a3517500ee683c5f824"
+    "f33452b789a01539b14a0a02745103fb01938308ddac436ade7bc226c0368d03"
 )
 
 ABSTENTION_PY_BLOB_SHA1 = "45b240fc059adaa0ee928ac02b4bb2785129c044"
 
 KNOWN_PARITY_GAPS = [
-    "a missing or empty content_hash, because Python hashes and Rust returns a typed unavailable error",
     "a bool used as an evidence index or a range endpoint",
     "Python str(float), str(list), and str(dict)",
     "reason order when more than one correlation id is present, because Python iterates a set",

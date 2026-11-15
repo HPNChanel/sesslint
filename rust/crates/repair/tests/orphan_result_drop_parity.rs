@@ -3,12 +3,11 @@
 //! Expected refusals are the pin's results. A covered row is the whole
 //! direct-apply refusal test: the same function and a `PreconditionFailed`
 //! outcome for every call. The affected-region seam and the planner seam are
-//! not covered. A missing `canonical_json_bytes` call stays an error.
+//! not covered. A mapping with no `content_hash` is a digest.
 
 use model::canonical::SessionEvent;
 use model::events::{
     event_canonical_hash, event_content_fingerprint, EventField, EventMapping, EventValue,
-    DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
 };
 use model::finding::Finding;
 use repair::planner::{plan, PlanPolicy, PlanProfile, SourceHashEvent};
@@ -127,29 +126,15 @@ fn orphan_result_drop_parity_vectors() {
 }
 
 #[test]
-fn missing_canonical_json_bytes_is_not_a_successful_plan() {
+fn mapping_without_content_hash_is_a_digest() {
     let mapping = EventValue::Mapping(EventMapping::new(vec![
         ("id".to_owned(), EventField::Str("m0".to_owned())),
         ("kind".to_owned(), EventField::Str("message".to_owned())),
     ]));
-    let hash_err = event_canonical_hash(&mapping).expect_err("canonical_json_bytes");
-    assert_eq!(hash_err.to_string(), DETERMINISM_SEAM);
-    assert_eq!(
-        hash_err.to_string(),
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
-    );
-    assert_eq!(
-        hash_err.message(),
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
-    );
-    assert!(!is_sha256_hex(&hash_err.to_string()));
-    let fingerprint_err = event_content_fingerprint(&mapping).expect_err("content fingerprint");
-    assert_eq!(fingerprint_err.to_string(), DETERMINISM_SEAM);
-    assert_eq!(
-        fingerprint_err.message(),
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
-    );
-    assert!(!is_sha256_hex(&fingerprint_err.to_string()));
+    let hash = event_canonical_hash(&mapping).expect("canonical hash");
+    let fingerprint = event_content_fingerprint(&mapping).expect("content fingerprint");
+    assert!(is_sha256_hex(&hash));
+    assert_eq!(hash, fingerprint);
 
     let findings: &[Finding] = &[];
     let err = plan(

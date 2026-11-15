@@ -39,8 +39,8 @@
 //! * The affected-region tool walk uses ascending indices. Python set order is
 //!   not a contract. An `extract_side_effects` error still propagates.
 //! * Identical results compare [`event_content_fingerprint`] strings. A
-//!   non-empty `content_hash` is compared. An error propagates and is not
-//!   treated as identical. Nothing is hashed.
+//!   non-empty `content_hash` is compared. A missing or empty hash is the
+//!   payload digest. An error propagates and is not treated as identical.
 //! * [`check_step_scope`] takes the caller step as a generic value. No planner
 //!   type is imported.
 //! * [`should_abstain_from_repair`] and [`must_abstain`] return [`Result`].
@@ -1889,20 +1889,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_content_hash_propagates_unavailable_and_is_not_a_digest() {
+    fn missing_content_hash_uses_the_payload_hash_and_is_not_conflicting() {
         let events = hash_pair(None, None, "none");
-        let err = find_ambiguous_events(&events, None).unwrap_err();
-        assert_eq!(
-            err,
-            AbstentionError::Event(EventError::from(
-                CanonicalUnavailable::payload_content_hash()
-            ))
-        );
-        assert_eq!(
-            err.to_string(),
-            "sesslint._canonical_codec.payload_content_hash is not available"
-        );
-        assert!(!err.to_string().chars().all(|ch| ch.is_ascii_hexdigit()));
+        let found = find_ambiguous_events(&events, None).unwrap();
+        assert!(found.indices().is_empty());
+        assert!(found.ids().is_empty());
+        assert!(found.reasons().is_empty());
     }
 
     #[test]

@@ -3098,11 +3098,12 @@ mod tests {
             "assistant",
             "message",
         );
-        let bytes = session.to_canonical_bytes().expect_err("session bytes");
+        let bytes = session.to_canonical_bytes().expect("session bytes");
+        assert!(bytes.starts_with(b"{"));
         let hashed = compute_events_source_hash(&[SourceHashEvent::Session(Box::new(session))])
             .expect_err("session");
-        assert_eq!(hashed, SourceHashError::Canonical(bytes));
-        assert_ne!(hashed.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+        assert_eq!(hashed, SourceHashError::Hashlib);
+        assert_eq!(hashed.to_string(), HASHLIB_SHA256_UNAVAILABLE);
     }
 
     fn target_finding(code: &str, record_id: Option<&str>, evidence: PyValue) -> Finding {
@@ -3515,7 +3516,8 @@ mod tests {
             "assistant",
             "message",
         );
-        let bytes = session.to_canonical_bytes().expect_err("session bytes");
+        let bytes = session.to_canonical_bytes().expect("session bytes");
+        assert!(bytes.starts_with(b"{"));
         let session_events = [SourceHashEvent::Session(Box::new(session))];
         let direct = compute_events_source_hash(&session_events).expect_err("session");
         let via = plan_error(
@@ -3528,8 +3530,8 @@ mod tests {
             None,
         );
         assert_eq!(via, PlanError::SourceHash(direct));
-        assert_eq!(direct, SourceHashError::Canonical(bytes));
-        assert_ne!(via.to_string(), HASHLIB_SHA256_UNAVAILABLE);
+        assert_eq!(direct, SourceHashError::Hashlib);
+        assert_eq!(via.to_string(), HASHLIB_SHA256_UNAVAILABLE);
 
         let stored = plan_error(
             &[],

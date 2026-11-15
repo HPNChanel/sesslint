@@ -12,18 +12,12 @@ from typing import Any
 SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 EVENTS_RS_SHA256 = (
-    "7cb5cb9aa2bf64030792490986617f06d8549d7c3293f5bc0265cb53b7301913"
+    "e4beaced2519cb6560b15497e5f4ba03a2e579c74e3ce6cd0e3d81ed14c1dce0"
 )
 EVENTS_PY_BLOB_SHA1 = "eaba4eb0d85b1517933cdb47f6765cb82867f662"
 
 KNOWN_PARITY_GAPS = [
-    (
-        "missing or empty content_hash: Python hashes and Rust returns a typed unavailable error"
-    ),
-    (
-        "a mapping with no usable content_hash: Python hashes the payload or the whole mapping"
-    ),
-    "SessionEvent canonical_hash, payload_hash, and to_canonical_dict",
+    "SessionEvent to_canonical_dict still returns the normalize seam",
     "sha256(str(ev))",
     "Python str(float), str(list), and str(dict) for a getter field",
     "the tolerant dict(ev) fallback",

@@ -661,8 +661,7 @@ fn parent_candidates_unavailable(
 #[cfg(test)]
 mod tests {
     use model::events::{
-        EventError, EventField, EventMapping, EventValue,
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_UNREPRESENTABLE,
     };
 
@@ -960,26 +959,19 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_seam_does_not_collapse() {
+    fn different_computed_hashes_do_not_collapse() {
         let events = vec![note("evt-a"), note("evt-b")];
         let snapshot = mappings(&events);
         let error = apply_identical_duplicate_collapse(
             &events,
             &make_step(IndexValue::None, ParamMap::NotMapping),
         )
-        .expect_err("fingerprint");
+        .expect_err("no pair");
         assert_eq!(
             error.to_string(),
-            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
+            "identical-duplicate-collapse: no eligible duplicate pair found"
         );
-        assert!(matches!(
-            &error,
-            ConservativeError::Event(EventError::DeterminismCanonicalJsonBytes)
-        ));
-        assert_ne!(
-            error.to_string(),
-            "identical-duplicate-collapse: event content fingerprints differ"
-        );
+        assert!(matches!(error, ConservativeError::Precondition(_)));
         assert_eq!(mappings(&events), snapshot);
     }
 
@@ -1946,7 +1938,7 @@ mod tests_recipes_02 {
     use model::canonical::SessionEvent;
     use model::events::{
         copy_events_as_dicts, EventError, EventField, EventMapping, EventValue,
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_UNREPRESENTABLE,
     };
 
@@ -2607,7 +2599,7 @@ mod tests_recipes_02 {
     }
 
     #[test]
-    fn removal_fingerprint_error_is_not_a_difference() {
+    fn removal_keeps_a_later_match_and_refuses_the_different_hash() {
         let gap = ev(vec![
             ("kind", text("tool_result")),
             ("id", text("evt-gap")),
@@ -2619,23 +2611,12 @@ mod tests_recipes_02 {
             result("evt-match", "hash-a", None),
         ];
         let before = snapshot(&events);
-        let error = apply_duplicate_projection_removal(
+        let output = apply_duplicate_projection_removal(
             &events,
             &corr_step(IndexValue::None, "corr-synthetic"),
         )
-        .expect_err("gap fingerprint");
-        assert_eq!(
-            error.to_string(),
-            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
-        );
-        assert!(matches!(
-            error,
-            ConservativeError::Event(EventError::DeterminismCanonicalJsonBytes)
-        ));
-        assert_ne!(
-            error.to_string(),
-            "duplicate-projection-removal: projection fingerprints differ (refusing near-match collapse)"
-        );
+        .expect("later match");
+        assert_eq!(ids(&output), vec![Some("evt-kept"), Some("evt-gap")]);
         assert_eq!(before, snapshot(&events));
         let error = apply_duplicate_projection_removal(
             &events,
@@ -2644,7 +2625,7 @@ mod tests_recipes_02 {
         .expect_err("targeted gap");
         assert_eq!(
             error.to_string(),
-            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
+            "duplicate-projection-removal: projection fingerprints differ (refusing near-match collapse)"
         );
         let output = apply_duplicate_projection_removal(
             &events,
@@ -2854,7 +2835,7 @@ mod tests_recipes_02 {
         );
         assert_eq!(
             identical_duplicate_region_parts(&none_step(), &bare_notes),
-            IdenticalDuplicateRegion::Exception(EventError::DeterminismCanonicalJsonBytes)
+            IdenticalDuplicateRegion::Unproven
         );
         assert_seam(&high, &bare_notes);
         assert_seam(&none_step(), &bare_notes);
@@ -2908,7 +2889,7 @@ mod tests_recipes_02 {
         ];
         assert_eq!(
             identical_duplicate_region_parts(&none_step(), &blocked),
-            IdenticalDuplicateRegion::Exception(EventError::DeterminismCanonicalJsonBytes)
+            proven_span(vec![1, 2], &["evt-b", "evt-c"], (1, 2))
         );
         let seam_text = affected_region_identical_duplicate_collapse(&none_step(), &blocked)
             .expect_err("seam")
@@ -4372,7 +4353,7 @@ mod tests_recipes_03 {
         ];
         assert_eq!(
             duplicate_projection_removal_check(&step, &blocked),
-            stopped(EventError::DeterminismCanonicalJsonBytes)
+            proven(&[0, 2], &["evt-keep", "evt-later"], &[])
         );
         let aimed = make_step(
             IndexValue::Int(2),
@@ -4388,7 +4369,7 @@ mod tests_recipes_03 {
         );
         assert_eq!(
             duplicate_projection_removal_check(&aimed_bad, &blocked),
-            stopped(EventError::DeterminismCanonicalJsonBytes)
+            unproven()
         );
         let float_kind = vec![
             ev(vec![("kind", EventField::Float(1.5))]),
@@ -5072,12 +5053,11 @@ mod tests_recipes_04 {
     use std::error::Error;
 
     use model::canonical::{
-        SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE, PAYLOAD_CONTENT_HASH_UNAVAILABLE,
+        SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE,
     };
     use model::codes::{SL003, SL004, SL005, SL104, SL108};
     use model::events::{
-        EventError, EventField, EventMapping, EventValue,
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE, PYTHON_FLOAT_STR_UNREPRESENTABLE,
+        EventError, EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_HASH_UNREPRESENTABLE,
     };
 
@@ -5361,11 +5341,8 @@ mod tests_recipes_04 {
             ev(vec![("kind", text("note")), ("id", text("evt-a"))]),
             ev(vec![("kind", text("note")), ("id", text("evt-a"))]),
         ];
-        assert_event_error(
-            &hashless,
-            &pair,
-            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
-        );
+        let dropped = apply_identical_duplicate_drop(&hashless, &pair).expect("drop");
+        assert_eq!(dropped, vec![mapping_at(&hashless, 0)]);
         let float_id = vec![
             ev(vec![
                 ("kind", text("note")),
@@ -5379,10 +5356,10 @@ mod tests_recipes_04 {
             note("evt-a", "hash-a"),
             ev(vec![("kind", text("note")), ("id", text("evt-b"))]),
         ];
-        assert_event_error(
+        assert_precondition(
             &second_hashless,
             &pair,
-            DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE,
+            "identical-duplicate-drop: content drift at occurrence 1",
         );
         assert_event_error(
             &[EventValue::Other, EventValue::Other],
@@ -5395,7 +5372,7 @@ mod tests_recipes_04 {
             EventValue::from_session(first.clone()),
             EventValue::from_session(second),
         ];
-        assert_event_error(&sessions, &pair, PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        assert_event_error(&sessions, &pair, NORMALIZE_CANONICAL_UNAVAILABLE);
         first.content_hash = Some("hash-a".to_owned());
         let mut other = first.clone();
         other.id = "evt-b".to_owned();
@@ -5694,7 +5671,11 @@ mod tests_recipes_04 {
         assert_seam(
             &affected_region_identical_duplicate_drop(&session_step, &sessions).expect_err("seam"),
         );
-        assert_event_error(&sessions, &session_step, PAYLOAD_CONTENT_HASH_UNAVAILABLE);
+        assert_precondition(
+            &sessions,
+            &session_step,
+            "identical-duplicate-drop: event id drift at occurrence 2",
+        );
     }
 
     #[test]
