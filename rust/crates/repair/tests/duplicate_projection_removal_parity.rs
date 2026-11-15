@@ -375,15 +375,12 @@ fn duplicate_projection_removal_payload_fingerprint_is_not_claimed() {
     };
     let got = apply_duplicate_projection_removal(&events, &step);
     let err = match got {
-        Ok(_) => panic!("payload fingerprint returned Ok"),
+        Ok(_) => panic!("different payloads collapsed"),
         Err(err) => err,
     };
-    assert!(matches!(err, ConservativeError::Event(_)), "{err}");
-    assert_eq!(
-        err.to_string(),
-        DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE
-    );
-    assert_ne!(err.to_string(), message);
+    assert!(matches!(err, ConservativeError::Precondition(_)), "{err}");
+    assert_eq!(err.to_string(), message);
+    assert_ne!(err.to_string(), DETERMINISM_CANONICAL_JSON_BYTES_UNAVAILABLE);
     let raw = read_lf(&parity_dir().join(VECTORS_NAME));
     assert!(raw.contains(GAP_FINGERPRINT));
     assert!(!raw.contains(SEAM_DETERMINISM));

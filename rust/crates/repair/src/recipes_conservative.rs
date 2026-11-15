@@ -2439,15 +2439,20 @@ mod tests_recipes_02 {
             row("compaction_boundary", "evt-boundary", None, None),
             EventValue::from_session(result),
         ];
-        let error = apply_compaction_projection_reunion(
+        let output = apply_compaction_projection_reunion(
             &session_events,
             &corr_step(IndexValue::None, "corr-synthetic"),
         )
-        .expect_err("copy");
-        let direct = copy_events_as_dicts(&session_events).expect_err("direct");
-        assert_eq!(error.to_string(), direct.to_string());
-        assert!(matches!(error, ConservativeError::Event(_)));
-        assert_ne!(error.to_string(), pair_message);
+        .expect("copy");
+        assert_eq!(
+            ids(&output),
+            vec![
+                Some("evt-call"),
+                Some("evt-result"),
+                Some("evt-boundary")
+            ]
+        );
+        assert_ne!(output.len().to_string(), pair_message);
     }
 
     #[test]
@@ -2658,18 +2663,12 @@ mod tests_recipes_02 {
             EventValue::from_session(first),
             EventValue::from_session(second),
         ];
-        let error = apply_duplicate_projection_removal(
+        let output = apply_duplicate_projection_removal(
             &session_events,
             &corr_step(IndexValue::None, "corr-synthetic"),
         )
-        .expect_err("session copy");
-        let direct = copy_events_as_dicts(&session_events).expect_err("direct");
-        assert_eq!(error.to_string(), direct.to_string());
-        assert!(matches!(error, ConservativeError::Event(_)));
-        assert_ne!(
-            error.to_string(),
-            "duplicate-projection-removal: projection fingerprints differ (refusing near-match collapse)"
-        );
+        .expect("session copy");
+        assert_eq!(ids(&output), vec![Some("evt-kept")]);
     }
 
     fn proven_span(
@@ -5053,7 +5052,7 @@ mod tests_recipes_04 {
     use std::error::Error;
 
     use model::canonical::{
-        SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE,
+        SessionEvent,
     };
     use model::codes::{SL003, SL004, SL005, SL104, SL108};
     use model::events::{
@@ -5372,7 +5371,9 @@ mod tests_recipes_04 {
             EventValue::from_session(first.clone()),
             EventValue::from_session(second),
         ];
-        assert_event_error(&sessions, &pair, NORMALIZE_CANONICAL_UNAVAILABLE);
+        let dropped = apply_identical_duplicate_drop(&sessions, &pair).expect("drop");
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].get("id"), Some(&text("evt-a")));
         first.content_hash = Some("hash-a".to_owned());
         let mut other = first.clone();
         other.id = "evt-b".to_owned();
@@ -5392,9 +5393,9 @@ mod tests_recipes_04 {
             EventValue::from_session(first),
             EventValue::from_session(same),
         ];
-        let error = apply_identical_duplicate_drop(&copied, &pair).expect_err("copy");
-        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert!(matches!(error, ConservativeError::Event(_)));
+        let dropped = apply_identical_duplicate_drop(&copied, &pair).expect("copy");
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].get("id"), Some(&text("evt-a")));
     }
 
     #[test]
@@ -5727,9 +5728,10 @@ mod tests_recipes_04 {
             "user",
             "note",
         ));
-        let error = apply_seq_renumber(std::slice::from_ref(&session), &step).expect_err("copy");
-        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert!(matches!(error, ConservativeError::Event(_)));
+        let output = apply_seq_renumber(std::slice::from_ref(&session), &step).expect("copy");
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].get("id"), Some(&text("evt-session")));
+        assert_eq!(output[0].get("seq"), Some(&EventField::Int(0)));
         match &session {
             EventValue::Session(event) => assert_eq!(event.seq, 9),
             EventValue::Mapping(_) | EventValue::Other => panic!("session"),

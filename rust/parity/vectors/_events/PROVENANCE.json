@@ -5,7 +5,6 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "SessionEvent to_canonical_dict still returns the normalize seam",
     "sha256(str(ev))",
     "Python str(float), str(list), and str(dict) for a getter field",
     "the tolerant dict(ev) fallback",

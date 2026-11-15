@@ -20,7 +20,7 @@ use std::sync::{Mutex, MutexGuard};
 const VECTORS_REL: &str = "../../parity/vectors/repair.recipes_salvage/vectors.json";
 const EXPECTED_VECTOR_COUNT: usize = 11;
 const EXPECTED_VECTORS_SHA256: &str =
-    "e5a0be3ed2e6936d3c9ac37035b211891688222b4bc83a3046e14373b88e9520";
+    "cc90530607734b779ec32437be11666707bdfe549623987f269452fd2ce63482";
 const GAP_ORPHAN_REGION: &str = "GAP-recipes-salvage-affected-region-orphan";
 const SEAM: &str = "sesslint.policy.abstention.AffectedRegion is not available";
 

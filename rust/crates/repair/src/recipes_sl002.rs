@@ -647,19 +647,15 @@ mod tests {
                 "message",
             )),
         ];
-        let direct = copy_events_as_dicts(&events).expect_err("session copy");
+        let direct = copy_events_as_dicts(&events).expect("session copy");
+        assert_eq!(direct.len(), 2);
         let step = step(
             StepScalar::Int(1),
             params(vec![("cut_index", EventField::Int(1))]),
         );
-        let err = apply_torn_terminal_record_discard(events, step).expect_err("propagated");
-        assert_eq!(err.to_string(), direct.to_string());
-        assert!(matches!(err, TornDiscardError::Copy(copy) if copy == direct));
-        assert_eq!(
-            Error::source(&err).map(ToString::to_string).as_deref(),
-            Some(direct.to_string().as_str())
-        );
-        assert!(!err.to_string().contains("keep"));
+        let out = apply_torn_terminal_record_discard(events, step).expect("discard");
+        assert_eq!(out.len(), 1);
+        assert_eq!(ids(&out), vec![Some("keep")]);
     }
 
     #[test]

@@ -1,15 +1,15 @@
 //! Parity for torn-terminal-record-discard against pinned Python vectors.
 //!
 //! Expected values are the pin's results. No pinned test is only this
-//! function, so covered_count stays 0. A plan, a fixture diff, a payload,
-//! and a kept SessionEvent copy are not covered.
+//! function, so covered_count stays 0. A plan, a fixture diff, and a payload
+//! are not covered. A SessionEvent copies, and a matching cut discards it.
 
 use model::canonical::{
     SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
 };
 use model::events::{EventField, EventMapping, EventValue};
 use repair::planner::{
-    plan, PlanPolicy, PlanProfile, SourceHashEvent, EMPTY_EVENTS_HASH,
+    plan, PlanPolicy, PlanProfile, SourceHashEvent, EMPTY_EVENTS_HASH, HASHLIB_SHA256_UNAVAILABLE,
     RECIPES_CONSERVATIVE_REGISTER_ALL_UNAVAILABLE,
 };
 use repair::recipes_sl002::{
@@ -298,16 +298,13 @@ fn torn_terminal_record_discard_coverage_names_the_gaps() {
 }
 
 #[test]
-fn torn_terminal_record_discard_session_copy_is_not_ok() {
-    let err = apply_torn_terminal_record_discard(
+fn torn_terminal_record_discard_session_copy_discards_the_matching_cut() {
+    let out = apply_torn_terminal_record_discard(
         vec![EventValue::from_session(sample_session())],
         int_step(0, 0),
     )
-    .expect_err("session copy");
-    assert!(matches!(err, TornDiscardError::Copy(_)));
-    assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-    assert!(err.source().is_some());
-    assert_ne!(err.to_string(), POP_MESSAGE);
+    .expect("session copy");
+    assert!(out.is_empty());
 }
 
 #[test]
@@ -338,7 +335,7 @@ fn torn_terminal_record_discard_plan_is_not_a_fingerprint() {
         None,
     )
     .expect_err("session plan");
-    assert_eq!(session_err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+    assert_eq!(session_err.to_string(), HASHLIB_SHA256_UNAVAILABLE);
     assert_ne!(session_err.to_string(), EMPTY_EVENTS_HASH);
     assert!(!session_err.to_string().contains("diff"));
     let empty_err = plan(

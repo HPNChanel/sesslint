@@ -2,9 +2,8 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint._events",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "events_rs_sha256": "e4beaced2519cb6560b15497e5f4ba03a2e579c74e3ce6cd0e3d81ed14c1dce0",
+  "events_rs_sha256": "9fdf83f3dcada5d106d566e3106e0ba28b31f7f54866d7af9898247254582881",
   "known_parity_gaps": [
-    "SessionEvent to_canonical_dict still returns the normalize seam",
     "sha256(str(ev))",
     "Python str(float), str(list), and str(dict) for a getter field",
     "the tolerant dict(ev) fallback",

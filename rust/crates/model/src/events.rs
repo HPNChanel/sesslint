@@ -30,12 +30,8 @@
 //! * A float's Python `str` is not matched here
 //!   ([`PYTHON_FLOAT_STR_UNREPRESENTABLE`]). The getter returns that error and
 //!   does not panic.
-//! * [`to_event_dict`] on a [`SessionEvent`] calls
-//!   [`SessionEvent::to_canonical_dict`] and propagates
-//!   [`CanonicalUnavailable::normalize_canonical`]. The `hasattr` path does
-//!   not catch the error and does not fall back to `dict(ev)`.
-//! * The module `to_canonical_dict` is the same unavailable normalize seam.
-//!   The tolerant `dict(ev)` fallback is not simulated
+//! * [`to_event_dict`] on a [`SessionEvent`] returns the canonical dict.
+//!   [`EventValue::Other`] still has no `dict(ev)` fallback
 //!   ([`DICT_FALLBACK_NOT_SIMULATED`]).
 
 use std::error::Error;
@@ -43,7 +39,7 @@ use std::fmt;
 
 use crate::canonical::{
     compute_content_hash, sha256_hex, to_canonical_dict, to_canonical_json, CanonicalUnavailable,
-    Payload, SessionEvent,
+    ListWalk, MapWalk, Payload, SessionEvent,
 };
 
 /// Late import. `model` cannot depend on the codec crate, and this module
@@ -270,17 +266,14 @@ fn canonical_sha256(payload: &Payload) -> Result<String, EventError> {
 /// A mapping is a deep copy in insertion order. Keys are not sorted.
 pub fn to_event_dict(ev: &EventValue) -> Result<EventMapping, EventError> {
     match ev {
-        EventValue::Session(event) => match event.to_canonical_dict() {
-            Ok(()) => Err(EventError::from(CanonicalUnavailable::normalize_canonical())),
-            Err(error) => Err(EventError::from(error)),
-        },
+        EventValue::Session(event) => mapping_from_payload(&event.to_canonical_dict()?),
         EventValue::Mapping(mapping) => {
             let copied = mapping.clone();
             let _payload = copied.to_payload();
             Ok(copied)
         }
         EventValue::Other => match to_canonical_dict(ev) {
-            Ok(()) => Err(EventError::from(CanonicalUnavailable::normalize_canonical())),
+            Ok(payload) => mapping_from_payload(&payload),
             Err(error) => Err(EventError::from(error)),
         },
     }
@@ -297,32 +290,92 @@ pub fn copy_events_as_dicts(events: &[EventValue]) -> Result<Vec<EventMapping>, 
 /// Python: `_copy_events_as_dicts_strict`.
 ///
 /// Executor semantics: deep-copy events with no `dict(ev)` fallback.
-/// A mapping is copied. A [`SessionEvent`] and any other value return the
-/// unavailable normalize error.
+/// A mapping is copied. A [`SessionEvent`] becomes its canonical dict.
+/// Any other value returns the normalize error.
 pub fn copy_events_as_dicts_strict(events: &[EventValue]) -> Result<Vec<EventMapping>, EventError> {
     let mut result = Vec::new();
     for ev in events {
         match ev {
-            EventValue::Session(event) => match event.to_canonical_dict() {
-                Ok(()) => {
-                    return Err(EventError::from(CanonicalUnavailable::normalize_canonical()));
-                }
-                Err(error) => return Err(EventError::from(error)),
-            },
+            EventValue::Session(event) => {
+                result.push(mapping_from_payload(&event.to_canonical_dict()?)?);
+            }
             EventValue::Mapping(mapping) => {
                 let copied = mapping.clone();
                 let _payload = copied.to_payload();
                 result.push(copied);
             }
-            EventValue::Other => match to_canonical_dict(ev) {
-                Ok(()) => {
-                    return Err(EventError::from(CanonicalUnavailable::normalize_canonical()));
-                }
-                Err(error) => return Err(EventError::from(error)),
-            },
+            EventValue::Other => result.push(mapping_from_payload(&to_canonical_dict(ev)?)?),
         }
     }
     Ok(result)
+}
+
+fn mapping_from_payload(payload: &Payload) -> Result<EventMapping, EventError> {
+    if !payload.is_map() {
+        return Err(EventError::from(CanonicalUnavailable::canonical_json_bytes()));
+    }
+    let mut entries = Vec::new();
+    let mut failed = None;
+    let walk = payload.walk_string_entries(|key, value| {
+        if failed.is_some() {
+            return;
+        }
+        match field_from_payload(value) {
+            Ok(field) => entries.push((key.to_owned(), field)),
+            Err(error) => failed = Some(error),
+        }
+    });
+    if let Some(error) = failed {
+        return Err(error);
+    }
+    if matches!(walk, MapWalk::Borrowed) {
+        return Err(EventError::from(CanonicalUnavailable::canonical_json_bytes()));
+    }
+    Ok(EventMapping::new(entries))
+}
+
+fn field_from_payload(value: &Payload) -> Result<EventField, EventError> {
+    if value.is_null() {
+        return Ok(EventField::Null);
+    }
+    if let Some(flag) = value.as_bool() {
+        return Ok(EventField::Bool(flag));
+    }
+    if let Some(number) = value.as_int() {
+        return Ok(EventField::Int(number));
+    }
+    if let Some(number) = value.as_float() {
+        return Ok(EventField::Float(number));
+    }
+    if let Some(text) = value.as_str() {
+        return Ok(EventField::Str(text.to_owned()));
+    }
+    if value.is_list() {
+        let mut items = Vec::new();
+        let mut failed = None;
+        let walk = value.walk_list_items(|_, child| {
+            if failed.is_some() {
+                return;
+            }
+            match field_from_payload(child) {
+                Ok(field) => items.push(field),
+                Err(error) => failed = Some(error),
+            }
+        });
+        if let Some(error) = failed {
+            return Err(error);
+        }
+        if matches!(walk, ListWalk::Borrowed) {
+            return Err(EventError::from(
+                CanonicalUnavailable::canonical_json_bytes(),
+            ));
+        }
+        return Ok(EventField::List(items));
+    }
+    if value.is_map() {
+        return Ok(EventField::Mapping(mapping_from_payload(value)?));
+    }
+    Err(EventError::from(CanonicalUnavailable::canonical_json_bytes()))
 }
 
 fn attribute_or_mapping(
@@ -372,7 +425,7 @@ mod tests {
         DICT_FALLBACK_NOT_SIMULATED, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_HASH_UNREPRESENTABLE,
     };
-    use crate::canonical::{CanonicalUnavailable, Payload, SessionEvent};
+    use crate::canonical::{Payload, SessionEvent};
 
     #[test]
     fn mapping_returns_kind_id_parent_id_and_correlation_id() {
@@ -575,16 +628,14 @@ mod tests {
                 "message",
             )),
         ])
-        .unwrap_err();
-        assert_eq!(
-            mixed,
-            EventError::from(CanonicalUnavailable::normalize_canonical())
-        );
+        .unwrap();
+        assert_eq!(mixed.len(), 2);
+        assert_eq!(mixed[1].get("id"), Some(&EventField::Str("evt-synthetic".to_owned())));
         assert!(DICT_FALLBACK_NOT_SIMULATED.contains("dict(ev)"));
     }
 
     #[test]
-    fn strict_converter_copies_a_mapping_and_rejects_a_session_event() {
+    fn strict_converter_copies_a_mapping_and_a_session_event() {
         let mapping = EventMapping::new(vec![
             ("key-z".to_owned(), EventField::Str("last".to_owned())),
             ("key-a".to_owned(), EventField::Str("first".to_owned())),
@@ -602,16 +653,13 @@ mod tests {
             "assistant",
             "message",
         );
-        let err = copy_events_as_dicts_strict(&[EventValue::from_session(event)]).unwrap_err();
+        let copied = copy_events_as_dicts_strict(&[EventValue::from_session(event)]).unwrap();
+        assert_eq!(copied.len(), 1);
         assert_eq!(
-            err,
-            EventError::from(CanonicalUnavailable::normalize_canonical())
+            copied[0].get("id"),
+            Some(&EventField::Str("evt-synthetic".to_owned()))
         );
-        assert_eq!(
-            err.to_string(),
-            "sesslint._canonical_codec.normalize_canonical is not available"
-        );
-        assert!(!is_sha256_hex(&err.to_string()));
+        assert_eq!(copied[0].get("kind"), Some(&EventField::Str("message".to_owned())));
     }
 
     fn is_sha256_hex(text: &str) -> bool {

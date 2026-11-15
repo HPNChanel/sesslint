@@ -1,14 +1,16 @@
 //! Parity for torn-compaction-project against pinned Python vectors.
 //!
 //! Expected values are the pin's results. The covered row is the whole
-//! three-refusal validation test. A plan, a fixture diff, a payload-bearing
-//! success, and a kept SessionEvent copy are not covered.
+//! three-refusal validation test. A plan, a fixture diff, and a payload-bearing
+//! success are not covered. A kept SessionEvent copies before the projection.
 
 use model::canonical::{
     SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
 };
 use model::events::{EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE};
-use repair::planner::{plan, PlanPolicy, PlanProfile, SourceHashEvent};
+use repair::planner::{
+    plan, PlanPolicy, PlanProfile, SourceHashEvent, HASHLIB_SHA256_UNAVAILABLE,
+};
 use repair::recipes_salvage::{
     apply_torn_compaction_project, apply_torn_compaction_project_with_loss,
     recipe_torn_compaction_project, IndexValue, LossDelta, ParamMap, SalvageError, SalvageStep,
@@ -289,13 +291,20 @@ fn torn_compaction_project_session_copy_and_plan_fail_closed() {
     };
     let listed = apply_torn_compaction_project(&events, &step);
     let detailed = apply_torn_compaction_project_with_loss(&events, &step);
-    match (listed, detailed) {
-        (Err(left), Err(right)) => {
-            assert_eq!(left.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-            assert_eq!(right.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+    let (right, loss) = match (listed, detailed) {
+        (Ok(left), Ok((right, loss))) => {
+            assert_eq!(left, right);
+            (right, loss)
         }
-        (Ok(_), _) | (_, Ok(_)) => panic!("kept SessionEvent was copied"),
-    }
+        (Err(left), Err(right)) => panic!("{} / {}", left, right),
+        (Ok(_), Err(right)) => panic!("{right}"),
+        (Err(left), Ok(_)) => panic!("{left}"),
+    };
+    assert_eq!(
+        right[0].get("id"),
+        Some(&EventField::Str("evt-call".to_owned()))
+    );
+    assert_eq!(loss.entries()[0].0, "projected-orphans");
     let raw = read_lf(&parity_dir().join(VECTORS_NAME));
     assert!(!raw.contains(NORMALIZE_CANONICAL_UNAVAILABLE));
     assert!(raw.contains(GAP_COPY));
@@ -322,7 +331,7 @@ fn torn_compaction_project_session_copy_and_plan_fail_closed() {
     };
     let text = err.to_string();
     assert!(
-        text == CANONICAL_JSON_BYTES_UNAVAILABLE || text == SEAM_DETERMINISM,
+        text == HASHLIB_SHA256_UNAVAILABLE,
         "{text}"
     );
     assert!(!text.contains("diff"), "{text}");

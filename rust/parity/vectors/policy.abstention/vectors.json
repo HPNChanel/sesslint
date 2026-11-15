@@ -2,7 +2,7 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.policy.abstention",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "abstention_rs_sha256": "f33452b789a01539b14a0a02745103fb01938308ddac436ade7bc226c0368d03",
+  "abstention_rs_sha256": "50a16b76d4d6ae70e94a2415e0b99429ba68e2295b791689f3eb12ce9ee8c7eb",
   "known_parity_gaps": [
     "a bool used as an evidence index or a range endpoint",
     "Python str(float), str(list), and str(dict)",

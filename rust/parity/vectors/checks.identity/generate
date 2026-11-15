@@ -18,20 +18,18 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 IDENTITY_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 IDENTITY_RS_SHA256 = (
-    "eb088d8d0f1c0d2c69b562deed8b2e4e8e58608738a1c7483c81ef3d60544220"
+    "57490cc6c09ba02b7ea3b490da4d312fcdddefac465919bf4848748c90f5e0af"
 )
 MODULE = "sesslint.checks.identity"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "A duplicate SessionEvent calls to_canonical_dict and Rust returns "
-    "NORMALIZE_CANONICAL_UNAVAILABLE. Python emits an SL003 finding.",
+    "A duplicate SessionEvent builds the canonical dict, then returns "
+    "CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits an SL003 finding.",
     "A duplicate mapping returns CANONICAL_JSON_BYTES_UNAVAILABLE. Python emits a finding. "
     "Do not build the provenance dict and do not hash.",
     "Overflow cap_findings keeps the Python prefix and appends an SL003 finding. "
     "This card does not pin that fingerprint because cap, total_duplicate_ids, "
     "and truncated_count are outside the evidence allowlist.",
-    "diff_field_names of two events returns NORMALIZE_CANONICAL_UNAVAILABLE. "
-    "Python returns field names. Do not invent names.",
     "A float id is PYTHON_FLOAT_STR_UNREPRESENTABLE. Rust Display is not Python str.",
     "A list or mapping id is PYTHON_STR_UNREPRESENTABLE. No Python repr.",
     "A bool is not an int. True becomes the text True only as an id coercion.",

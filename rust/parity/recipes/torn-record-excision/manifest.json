@@ -3,9 +3,9 @@
   "module": "sesslint.repair.recipes_salvage",
   "recipe": "torn-record-excision",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "recipes_salvage_rs_sha256": "7d4e52fda15fbdc6a5d4b131ef01138132f9026553d26cf5798c479be8f7b584",
   "vector_count": 6,
-  "vectors_sha256": "9b4fffaf7bd14e2769cbf0e978955cdda9971b52d0b3d40447249330d8b375b3",
+  "vectors_sha256": "419d36a6cf323741e9ebbcb4143ef6f65bdf06ea76261edfd4a7b2caed93fbaf",
   "generator": "rust/parity/recipes/torn-record-excision/generate",
   "known_parity_gaps": [
     "GAP-torn-record-excision-affected-region: RECIPE_TORN_RECORD_EXCISION.affected_region is absent. This set does not construct sesslint.policy.abstention.AffectedRegion and does not cover a region row.",

@@ -14,12 +14,12 @@ from typing import Any
 SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "02694d537104659df66cdd084354739f3cccc440"
 CANONICAL_RS_SHA256 = (
-    "295fb272931b2cd4e9116c5eeb7488e74a8644f32d0e204990ed70e2b9adb13f"
+    "595c58eca2e8ee8c69ae86d85ff83117ded637906611fdbd032405b3d92ae1a1"
 )
 
 KNOWN_PARITY_GAPS = [
     (
-        "dump_session and dump_session_file encode sorted compact JSON inside model. reparse_identity_hashes hashes that JSON after dropping provenance fields. to_canonical_json and canonical_bytes encode a Payload or a SessionEvent, and content identity omits provenance fields. Other types, to_canonical_dict, and normalize still return a typed unavailable error. Python performs the real call — parity not required here."
+        "dump_session and dump_session_file encode sorted compact JSON inside model. reparse_identity_hashes hashes that JSON after dropping provenance fields. to_canonical_json and canonical_bytes encode a Payload or a SessionEvent, and content identity omits provenance fields. to_canonical_dict returns the dict for a SessionEvent or a map Payload. Other types and normalize_for_canonical_json still return a typed unavailable error. Python performs the real call — parity not required here."
     ),
     (
         "The text after the colon in a JSON syntax error and in a UTF-8 decode error: parity on "

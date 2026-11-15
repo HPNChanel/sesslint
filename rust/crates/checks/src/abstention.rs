@@ -1258,7 +1258,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::error::Error;
 
-    use model::canonical::{CanonicalUnavailable, Payload, SessionEvent};
+    use model::canonical::{Payload, SessionEvent};
     use model::codes::{Repairability, Severity};
     use model::events::{
         EventError, EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,

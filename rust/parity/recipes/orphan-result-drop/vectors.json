@@ -4,7 +4,7 @@
   "recipe": "orphan-result-drop",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "recipes_salvage_py_sha256": "ad738eb553cf41d7630fa45223eaac3a21fe13c9b04d0b715f110d594fd92166",
-  "recipes_salvage_rs_sha256": "c206b6dadd66cece559951e50bab6920034ea209456071c98b58ccf995f1d85a",
+  "recipes_salvage_rs_sha256": "7d4e52fda15fbdc6a5d4b131ef01138132f9026553d26cf5798c479be8f7b584",
   "known_parity_gaps": [
     "GAP-orphan-result-drop-affected-region: Python affected_region_orphan_result_drop returns a sesslint.policy.abstention.AffectedRegion. Rust does not construct that type. The seam is not covered.",
     "GAP-orphan-result-drop-planner: plan is not executed. A missing canonical_json_bytes call is not a successful plan. No fingerprint is stored. Zero steps are not a diff."

@@ -7,12 +7,10 @@
 //! [`compute_identity_fingerprint`] hashes locally. It is not a finding
 //! digest and does not call [`make_finding`].
 //!
-//! [`diff_field_names`] with fewer than two events returns an empty list
-//! and does not call [`to_canonical_dict`]. Two or more events call
-//! [`SessionEvent::to_canonical_dict`], which returns
-//! [`CanonicalUnavailable`] and does not build a dict. That typed error is
-//! propagated. This slice does not walk event fields and does not invent
-//! differing names.
+//! [`diff_field_names`] with fewer than two events returns an empty list.
+//! Two or more events compare [`SessionEvent::to_canonical_dict`] and return
+//! the sorted names that differ. Provenance fields are omitted. Values are
+//! not returned.
 //!
 //! Identity sort key is `(code, record id, fingerprint)`. This module does
 //! not call [`crate::graph::cap_finding_sort_key`]. That key also has an
@@ -48,9 +46,7 @@
 //!   call `.get` on a non-mapping. [`Finding::try_new`] only stores a
 //!   mapping or `None`, so this is not reachable from a constructed
 //!   finding.
-//! * [`to_canonical_dict`] does not build a dict
-//!   ([`model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE`]). Differing
-//!   field names are not invented.
+//! * [`diff_field_names`] returns sorted field names and never values.
 //! * Overflow [`make_finding`] appends an SL003 finding. `cap`,
 //!   `total_duplicate_ids`, and `truncated_count` are outside the
 //!   fingerprint evidence allowlist.
@@ -58,9 +54,9 @@
 //!   Rust `Display` is not used.
 //! * A list or mapping id is [`model::events::PYTHON_STR_UNREPRESENTABLE`].
 //!   A Python repr is not invented.
-//! * Duplicate [`SessionEvent`] members call
-//!   [`SessionEvent::to_canonical_dict`]
-//!   ([`model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE`]). Later ids are
+//! * Duplicate [`SessionEvent`] members build the canonical dict, then
+//!   discard [`to_canonical_json`] and return
+//!   [`model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE`]. Later ids are
 //!   not classified.
 //! * Duplicate mappings do not drop provenance fields or `seq` into a
 //!   dict ([`model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE`]).
@@ -68,11 +64,14 @@
 //! * `enforce_content_free_text` runs after the hash in Python, so it is
 //!   not reached. A credential-shaped duplicate still returns the
 //!   canonical error first.
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error;
 use std::fmt;
 
-use model::canonical::{canonical_bytes, to_canonical_json, CanonicalUnavailable, SessionEvent};
+use model::canonical::{
+    canonical_bytes, to_canonical_json, CanonicalUnavailable, MapLookup, MapWalk, Payload,
+    SessionEvent, PROVENANCE_FIELDS,
+};
 use model::codes::{Repairability, Severity, SL003};
 use model::errors::FindingError;
 use model::events::{
@@ -236,10 +235,40 @@ pub fn diff_field_names(events: &[SessionEvent]) -> Result<Vec<String>, Identity
     if events.len() < 2 {
         return Ok(Vec::new());
     }
+    let mut dicts = Vec::with_capacity(events.len());
     for event in events {
-        event.to_canonical_dict()?;
+        dicts.push(event.to_canonical_dict()?);
     }
-    Ok(Vec::new())
+    let mut keys = BTreeSet::new();
+    for dict in &dicts {
+        let walk = dict.walk_string_entries(|key, _| {
+            if !PROVENANCE_FIELDS.contains(&key) {
+                keys.insert(key.to_owned());
+            }
+        });
+        if matches!(walk, MapWalk::Borrowed) {
+            return Err(CanonicalUnavailable::canonical_json_bytes().into());
+        }
+    }
+    let mut differing = Vec::new();
+    for key in keys {
+        let first = dict_field(&dicts[0], &key)?;
+        for other in dicts.iter().skip(1) {
+            if dict_field(other, &key)? != first {
+                differing.push(key);
+                break;
+            }
+        }
+    }
+    Ok(differing)
+}
+
+fn dict_field(dict: &Payload, key: &str) -> Result<Option<String>, IdentityError> {
+    match dict.map_string(key) {
+        MapLookup::Present(value) => Ok(Some(to_canonical_json(&value)?)),
+        MapLookup::Absent | MapLookup::NotAMap => Ok(None),
+        MapLookup::Borrowed => Err(CanonicalUnavailable::canonical_json_bytes().into()),
+    }
 }
 
 /// Overflow evidence without hashing. Counts that do not fit the Python
@@ -464,7 +493,7 @@ fn classify_duplicate_event(event: &EventValue) -> Result<(), IdentityError> {
     match event {
         EventValue::Session(session) => match session.to_canonical_dict() {
             Err(error) => Err(error.into()),
-            Ok(()) => match to_canonical_json(session) {
+            Ok(_dict) => match to_canonical_json(session) {
                 Err(error) => Err(error.into()),
                 Ok(_json) => Err(CanonicalUnavailable::canonical_json_bytes().into()),
             },
@@ -570,7 +599,7 @@ mod tests {
     };
     use crate::context::CheckContext;
     use model::canonical::{
-        SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
+        SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE,
     };
     use model::codes::{Repairability, Severity, SL003};
     use model::events::{
@@ -661,13 +690,16 @@ mod tests {
     }
 
     #[test]
-    fn diff_of_two_events_is_canonical_unavailable() {
-        let err = diff_field_names(&[session("evt-a-synthetic"), session("evt-b-synthetic")])
-            .unwrap_err();
-        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert_eq!(err.message(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert!(matches!(err, IdentityError::Canonical(_)));
-        assert!(!matches!(err, IdentityError::Finding(_)));
+    fn diff_of_two_events_returns_the_changed_field_name() {
+        assert_eq!(
+            diff_field_names(&[session("evt-a-synthetic"), session("evt-b-synthetic")]).unwrap(),
+            vec!["id".to_owned()]
+        );
+        assert!(
+            diff_field_names(&[session("evt-a-synthetic"), session("evt-a-synthetic")])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -836,8 +868,8 @@ mod tests {
             session_value("evt-dup-synthetic"),
         ];
         let err = check_identities(&events, None, None, None).unwrap_err();
-        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert_eq!(err.message(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
+        assert_eq!(err.message(), CANONICAL_JSON_BYTES_UNAVAILABLE);
         assert!(matches!(err, IdentityError::Canonical(_)));
         assert!(!matches!(err, IdentityError::Finding(_)));
         assert!(!is_lower_hex16(&err.to_string()));
@@ -930,7 +962,7 @@ mod tests {
         assert_eq!(groups[1].id, "b");
         assert_eq!(groups[1].indexes, vec![0, 2]);
         let err = check_identities(&events, None, None, None).unwrap_err();
-        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
         assert!(!matches!(err, IdentityError::Finding(_)));
         assert!(!is_lower_hex16(&err.to_string()));
     }
@@ -963,6 +995,6 @@ mod tests {
         assert_eq!(groups[0].first_index, 0);
         assert!(groups[0].truncated);
         let err = check_identities(&events, None, None, None).unwrap_err();
-        assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        assert_eq!(err.to_string(), CANONICAL_JSON_BYTES_UNAVAILABLE);
     }
 }

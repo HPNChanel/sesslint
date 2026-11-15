@@ -1,16 +1,16 @@
 //! Parity for torn-record-excision against pinned Python vectors.
 //!
 //! Expected values are the pin's results. A covered row is the whole
-//! `sl001_excisable` test. Apply refusals fail closed. A `SessionEvent` copy
-//! and `plan` are not `Ok`, and those paths are not covered.
+//! `sl001_excisable` test. Apply refusals fail closed. A SessionEvent copies
+//! and the torn-record loss is one. `plan` stays on its later seam.
 
-use model::canonical::{
-    SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
-};
+use model::canonical::SessionEvent;
 use model::codes::{Repairability, Severity, SL001, SL006};
 use model::events::{EventField, EventMapping, EventValue};
 use model::finding::{Finding, FindingInput, PyValue, SourceLine, SourceRef, SCHEMA_VERSION};
-use repair::planner::{plan, PlanPolicy, PlanProfile, SourceHashEvent};
+use repair::planner::{
+    plan, PlanPolicy, PlanProfile, SourceHashEvent, HASHLIB_SHA256_UNAVAILABLE,
+};
 use repair::preconditions::PreconditionContext;
 use repair::recipes_salvage::{
     apply_torn_record_excision, apply_torn_record_excision_with_loss, recipe_torn_record_excision,
@@ -26,7 +26,7 @@ const EXPECTED_VECTOR_COUNT: usize = 6;
 const EXPECTED_COVERED: usize = 1;
 const EXPECTED_NOT_APPLICABLE: usize = 6;
 const EXPECTED_VECTORS_SHA256: &str =
-    "9b4fffaf7bd14e2769cbf0e978955cdda9971b52d0b3d40447249330d8b375b3";
+    "419d36a6cf323741e9ebbcb4143ef6f65bdf06ea76261edfd4a7b2caed93fbaf";
 const COVERED_TEST: &str = "tests/repair/test_sl001_excision.py::test_sl001_excisable_precondition";
 const COVERED_VECTOR: &str = "sl001_excisable_precondition";
 const APPLY_TEST: &str =
@@ -237,18 +237,17 @@ fn torn_record_excision_session_copy_and_plan_fail_closed() {
             ),
         ])),
     };
-    let copied = apply_torn_record_excision(vec![event.clone()], step.clone());
-    let err = match copied {
-        Ok(_) => panic!("SessionEvent copy returned Ok"),
-        Err(err) => err,
-    };
-    assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-    let with_loss = apply_torn_record_excision_with_loss(std::slice::from_ref(&event), &step);
-    let err = match with_loss {
-        Ok(_) => panic!("SessionEvent with_loss returned Ok"),
-        Err(err) => err,
-    };
-    assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+    let copied =
+        apply_torn_record_excision(vec![event.clone()], step.clone()).expect("session copy");
+    assert_eq!(copied.len(), 1);
+    assert_eq!(
+        copied[0].get("id"),
+        Some(&EventField::Str("msg-0".to_owned()))
+    );
+    let (with_loss, loss) =
+        apply_torn_record_excision_with_loss(std::slice::from_ref(&event), &step).expect("loss");
+    assert_eq!(with_loss, copied);
+    assert_eq!(loss.entries(), &[("torn-record".to_owned(), 1)]);
 
     let planned = plan(
         &[],
@@ -272,7 +271,7 @@ fn torn_record_excision_session_copy_and_plan_fail_closed() {
     };
     let text = err.to_string();
     assert!(
-        text == CANONICAL_JSON_BYTES_UNAVAILABLE || text == SEAM_DETERMINISM,
+        text == HASHLIB_SHA256_UNAVAILABLE,
         "{text}"
     );
     assert!(!text.contains("diff"), "{text}");

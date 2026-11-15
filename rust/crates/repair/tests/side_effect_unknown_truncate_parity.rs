@@ -1,14 +1,16 @@
 //! Parity for side-effect-unknown-truncate against pinned Python vectors.
 //!
 //! Expected values are the pin's results. The covered row is the whole
-//! three-refusal validation test. A plan, a fixture diff, a payload-bearing
-//! success, and a SessionEvent copy are not covered.
+//! three-refusal validation test. A plan, a fixture diff, and a payload-bearing
+//! success are not covered. A SessionEvent prefix copies.
 
 use model::canonical::{
     SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
 };
 use model::events::{EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE};
-use repair::planner::{plan, PlanPolicy, PlanProfile, SourceHashEvent};
+use repair::planner::{
+    plan, PlanPolicy, PlanProfile, SourceHashEvent, HASHLIB_SHA256_UNAVAILABLE,
+};
 use repair::recipes_salvage::{
     apply_side_effect_unknown_truncate, apply_side_effect_unknown_truncate_with_loss,
     recipe_side_effect_unknown_truncate, IndexValue, LossDelta, ParamMap, SalvageError,
@@ -297,9 +299,13 @@ fn side_effect_unknown_truncate_session_copy_and_plan_fail_closed() {
         target_index: IndexValue::Int(1),
         params: empty_params(),
     };
-    let err = apply_side_effect_unknown_truncate_with_loss(&events, &step)
-        .expect_err("SessionEvent prefix is not copied");
-    assert_eq!(err.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+    let (out, loss) = apply_side_effect_unknown_truncate_with_loss(&events, &step)
+        .expect("SessionEvent prefix is copied");
+    assert_eq!(
+        out[0].get("id"),
+        Some(&EventField::Str("evt-session".to_owned()))
+    );
+    assert_eq!(loss.entries(), &[("truncated-side-effects".to_owned(), 1)]);
     let raw = read_lf(&parity_dir().join(VECTORS_NAME));
     assert!(!raw.contains(NORMALIZE_CANONICAL_UNAVAILABLE));
     assert!(raw.contains(GAP_COPY));
@@ -326,7 +332,7 @@ fn side_effect_unknown_truncate_session_copy_and_plan_fail_closed() {
     };
     let text = err.to_string();
     assert!(
-        text == CANONICAL_JSON_BYTES_UNAVAILABLE || text == SEAM_DETERMINISM,
+        text == HASHLIB_SHA256_UNAVAILABLE,
         "{text}"
     );
     assert!(!text.contains("diff"), "{text}");

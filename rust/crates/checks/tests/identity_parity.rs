@@ -21,9 +21,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.identity";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_IDENTITY_RS_SHA256: &str =
-    "eb088d8d0f1c0d2c69b562deed8b2e4e8e58608738a1c7483c81ef3d60544220";
+    "57490cc6c09ba02b7ea3b490da4d312fcdddefac465919bf4848748c90f5e0af";
 const EXPECTED_VECTORS_SHA256: &str =
-    "31aae1238f39c2ab177cbcea8e1de2979a77be7b88ef890b0c633cd065cf1132";
+    "791fd3574354b13685003305c014cbd8c6adbf1808d9bd040257c03b432a8f8b";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -110,9 +110,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     let gap_markers = [
-        "NORMALIZE_CANONICAL_UNAVAILABLE",
         "CANONICAL_JSON_BYTES_UNAVAILABLE",
-        "diff_field_names of two events",
         "PYTHON_FLOAT_STR_UNREPRESENTABLE",
         "PYTHON_STR_UNREPRESENTABLE",
         "True becomes the text True",

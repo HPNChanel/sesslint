@@ -14,7 +14,7 @@ PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 
 # rust/crates/checks/src/abstention.rs — must match manifest (card invariant).
 ABSTENTION_RS_SHA256 = (
-    "f33452b789a01539b14a0a02745103fb01938308ddac436ade7bc226c0368d03"
+    "50a16b76d4d6ae70e94a2415e0b99429ba68e2295b791689f3eb12ce9ee8c7eb"
 )
 
 ABSTENTION_PY_BLOB_SHA1 = "45b240fc059adaa0ee928ac02b4bb2785129c044"

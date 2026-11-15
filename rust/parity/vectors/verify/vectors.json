@@ -3,7 +3,7 @@
   "module": "sesslint.verify",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "verify_py_sha256": "2ca1ba2373a560df0065144932d72ec7ecc0399d60a4c764eaa318f8c8fa964a",
-  "verify_rs_sha256": "ac04154d260f614b38239bbab4cfbb311fd15e1af53afdf485eb7b6e94354c3d",
+  "verify_rs_sha256": "daf686f0a6d59e18f080d07ca5b710ae84fee3bc1228315832a1ae38f8245224",
   "known_parity_gaps": [
     "GAP-verify-invalid-utf8: Python _parse_session_events surfaces CPython UnicodeDecodeError text; Rust reports invalid UTF-8 (not byte-compared here).",
     "GAP-verify-end-to-end: verify() on committed fixture bundles calls sesslint.report.parse_manifest in Python; Rust returns sesslint.report.parse_manifest is not available (fixture directories are not vector-compared here).",

@@ -55,8 +55,9 @@
 //! * [`to_canonical_json`] and [`canonical_bytes`] encode a [`Payload`] or a
 //!   [`SessionEvent`]. Any other type still returns [`CanonicalUnavailable`].
 //!   `model` cannot depend on the codec crate.
-//!   [`normalize_for_canonical_json`] and [`to_canonical_dict`] stay on that
-//!   seam and do not invent a dict.
+//!   [`to_canonical_dict`] returns that dict for a [`SessionEvent`] or a map
+//!   [`Payload`]. Any other type, and [`normalize_for_canonical_json`], stay
+//!   on the normalize seam.
 //! * [`reparse_identity_hashes`] treats an id as synthetic when it starts with
 //!   `sesslint:synthetic:`. It does not call `adapters`. The digest is SHA-256
 //!   of sorted compact JSON after provenance fields are removed.
@@ -1016,9 +1017,11 @@ impl SessionEvent {
 
     /// Python: `SessionEvent.to_canonical_dict`.
     ///
-    /// Calls [`to_canonical_dict`].
-    pub fn to_canonical_dict(&self) -> Result<(), CanonicalUnavailable> {
-        crate::canonical::to_canonical_dict(self)
+    /// The normalized event dict. Keys are sorted. A non-finite payload
+    /// float or a borrowed container returns
+    /// [`CanonicalUnavailable::canonical_json_bytes`].
+    pub fn to_canonical_dict(&self) -> Result<Payload, CanonicalUnavailable> {
+        event_as_dict(self)
     }
 
     /// Python: `SessionEvent.to_canonical_bytes`.
@@ -1610,10 +1613,42 @@ fn encode_session_event_json(event: &SessionEvent) -> Result<String, CanonicalUn
 
 /// Python: `to_canonical_dict`.
 ///
-/// Calls [`normalize_for_canonical_json`] and returns that error. It does not
-/// invent a dict and does not substitute `TypeError`.
-pub fn to_canonical_dict<T>(obj: &T) -> Result<(), CanonicalUnavailable> {
-    normalize_for_canonical_json(obj)
+/// A [`SessionEvent`] or a map [`Payload`] becomes the normalized dict.
+/// Any other value returns [`CanonicalUnavailable::normalize_canonical`].
+pub fn to_canonical_dict<T: Any>(obj: &T) -> Result<Payload, CanonicalUnavailable> {
+    let value = obj as &dyn Any;
+    if let Some(event) = value.downcast_ref::<SessionEvent>() {
+        return event_as_dict(event);
+    }
+    if let Some(payload) = value.downcast_ref::<Payload>() {
+        if payload.is_map() {
+            let node = payload_node(payload, &mut Vec::new())
+                .map_err(|()| CanonicalUnavailable::canonical_json_bytes())?;
+            return Ok(node_to_payload(&node));
+        }
+    }
+    Err(CanonicalUnavailable::normalize_canonical())
+}
+
+fn event_as_dict(event: &SessionEvent) -> Result<Payload, CanonicalUnavailable> {
+    let node = event_node(event, false).map_err(|()| CanonicalUnavailable::canonical_json_bytes())?;
+    Ok(node_to_payload(&node))
+}
+
+fn node_to_payload(node: &CanonNode) -> Payload {
+    match node {
+        CanonNode::Null => Payload::null(),
+        CanonNode::Bool(value) => Payload::bool_value(*value),
+        CanonNode::Int(value) => Payload::int(*value),
+        CanonNode::Float(value) => Payload::float(*value),
+        CanonNode::Str(value) => Payload::string(value.clone()),
+        CanonNode::Arr(items) => Payload::list(items.iter().map(node_to_payload).collect()),
+        CanonNode::Obj(map) => Payload::map(
+            map.iter()
+                .map(|(key, value)| (Payload::string(key.clone()), node_to_payload(value)))
+                .collect(),
+        ),
+    }
 }
 
 /// Python: `parse_session_header`.
@@ -3798,11 +3833,11 @@ mod tests {
             event.content_identity_hash().expect("identity hash"),
             "65cf64fe88807a9db62511b11d8b379d7817dd6d91832f70703b271dee75060b"
         );
-        let dict_err = event.to_canonical_dict().unwrap_err();
-        assert_eq!(dict_err, to_canonical_dict(&event).unwrap_err());
+        let dict = event.to_canonical_dict().expect("event dict");
+        assert_eq!(to_canonical_json(&dict).expect("dict json"), json);
         assert_eq!(
-            dict_err.to_string(),
-            "sesslint._canonical_codec.normalize_canonical is not available"
+            to_canonical_json(&to_canonical_dict(&event).expect("free dict")).expect("free json"),
+            json
         );
 
         let mut rich = SessionEvent::new(
@@ -4354,15 +4389,17 @@ mod tests {
         assert!(!other.to_string().contains("synthetic-value"));
         assert!(!other.to_string().contains('{'));
         assert!(!is_sha256_hex(&other.to_string()));
-        let dict_err = to_canonical_dict(&obj).unwrap_err();
-        assert_eq!(dict_err, CanonicalUnavailable::normalize_canonical());
+        let dict = to_canonical_dict(&obj).expect("payload dict");
+        assert_eq!(to_canonical_json(&dict).expect("dict json"), json);
+        let other_dict = to_canonical_dict(&1_u8).unwrap_err();
+        assert_eq!(other_dict, CanonicalUnavailable::normalize_canonical());
         assert_eq!(
-            dict_err.to_string(),
+            other_dict.to_string(),
             "sesslint._canonical_codec.normalize_canonical is not available"
         );
-        assert!(!dict_err.to_string().contains("synthetic-value"));
-        assert!(!dict_err.to_string().contains('{'));
-        assert!(!is_sha256_hex(&dict_err.to_string()));
+        assert!(!other_dict.to_string().contains("synthetic-value"));
+        assert!(!other_dict.to_string().contains('{'));
+        assert!(!is_sha256_hex(&other_dict.to_string()));
     }
 
     fn header(pairs: Vec<(&str, Payload)>) -> Payload {

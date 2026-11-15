@@ -1,14 +1,16 @@
 //! Parity for unresolvable-branch-amputate against pinned Python vectors.
 //!
 //! Expected values are the pin's results. The covered row is the whole
-//! four-refusal validation test. A plan, a fixture diff, a payload-bearing
-//! success, and a kept SessionEvent copy are not covered.
+//! four-refusal validation test. A plan, a fixture diff, and a payload-bearing
+//! success are not covered. A kept SessionEvent copies before the branch walk.
 
 use model::canonical::{
     SessionEvent, CANONICAL_JSON_BYTES_UNAVAILABLE, NORMALIZE_CANONICAL_UNAVAILABLE,
 };
 use model::events::{EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE};
-use repair::planner::{plan, PlanPolicy, PlanProfile, SourceHashEvent};
+use repair::planner::{
+    plan, PlanPolicy, PlanProfile, SourceHashEvent, HASHLIB_SHA256_UNAVAILABLE,
+};
 use repair::recipes_salvage::{
     apply_unresolvable_branch_amputate, apply_unresolvable_branch_amputate_with_loss,
     recipe_unresolvable_branch_amputate, IndexValue, LossDelta, ParamMap, SalvageError,
@@ -344,11 +346,16 @@ fn unresolvable_branch_amputate_session_copy_and_plan_fail_closed() {
     let listed = apply_unresolvable_branch_amputate(&events, &step);
     let detailed = apply_unresolvable_branch_amputate_with_loss(&events, &step);
     match (listed, detailed) {
-        (Err(left), Err(right)) => {
-            assert_eq!(left.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-            assert_eq!(right.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        (Ok(left), Ok((right, loss))) => {
+            assert_eq!(left, right);
+            assert_eq!(mapping_id_of(&left[0]), "evt-keep");
+            assert_eq!(loss.entries()[0].0, "amputated-branch");
         }
-        (Ok(_), _) | (_, Ok(_)) => panic!("kept SessionEvent was copied"),
+        (Err(left), Err(right)) => {
+            assert_eq!(left.to_string(), right.to_string());
+            assert_ne!(left.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        }
+        (Ok(_), Err(_)) | (Err(_), Ok(_)) => panic!("listed and detailed diverged"),
     }
     let raw = read_lf(&parity_dir().join(VECTORS_NAME));
     assert!(!raw.contains(NORMALIZE_CANONICAL_UNAVAILABLE));
@@ -376,7 +383,7 @@ fn unresolvable_branch_amputate_session_copy_and_plan_fail_closed() {
     };
     let text = err.to_string();
     assert!(
-        text == CANONICAL_JSON_BYTES_UNAVAILABLE || text == SEAM_DETERMINISM,
+        text == HASHLIB_SHA256_UNAVAILABLE,
         "{text}"
     );
     assert!(!text.contains("diff"), "{text}");

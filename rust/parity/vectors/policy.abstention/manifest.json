@@ -2,9 +2,9 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.policy.abstention",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "abstention_rs_sha256": "f33452b789a01539b14a0a02745103fb01938308ddac436ade7bc226c0368d03",
+  "abstention_rs_sha256": "50a16b76d4d6ae70e94a2415e0b99429ba68e2295b791689f3eb12ce9ee8c7eb",
   "vector_count": 25,
-  "vectors_sha256": "ca94ba88b6fe5e49c5ef2c325615f14e3994a97f24e136c880b51747a4c5f29c",
+  "vectors_sha256": "95e1fb63b21135cab81b63b2f135ad28ad6711b3bf9411009c0cbbe15b4079be",
   "generator": "rust/parity/vectors/policy.abstention/generate",
   "known_parity_gaps": [
     "a bool used as an evidence index or a range endpoint",

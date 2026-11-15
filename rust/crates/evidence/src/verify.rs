@@ -2736,7 +2736,7 @@ mod tests {
             run_detector_checks(&duplicates, "<canonical>", "neutral", "canonical").unwrap_err();
         assert_eq!(
             duplicate_err,
-            DetectorChecksError::Unsupported(model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE)
+            DetectorChecksError::Unsupported(model::canonical::CANONICAL_JSON_BYTES_UNAVAILABLE)
         );
         let unknown =
             run_detector_checks(&[], "<canonical>", "secret-looking", "canonical").unwrap_err();
@@ -3159,7 +3159,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             err,
-            VerifyError::Unsupported(model::canonical::NORMALIZE_CANONICAL_UNAVAILABLE)
+            VerifyError::Unsupported(checks::tool_pairing_2::PROFILES_UNAVAILABLE)
         );
     }
 

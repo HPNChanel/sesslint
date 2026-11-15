@@ -981,7 +981,7 @@ enum RangeStatus {
 
 #[cfg(test)]
 mod tests {
-    use model::canonical::{SessionEvent, NORMALIZE_CANONICAL_UNAVAILABLE};
+    use model::canonical::SessionEvent;
     use model::events::{
         EventField, EventMapping, EventValue, PYTHON_FLOAT_STR_UNREPRESENTABLE,
         PYTHON_STR_UNREPRESENTABLE,
@@ -1340,10 +1340,10 @@ mod tests {
         );
         kept.correlation_id = None;
         let mixed = vec![EventValue::from_session(kept), message("evt-branch", None)];
-        let error = apply_unresolvable_branch_amputate_with_loss(&mixed, &at(1))
-            .expect_err("copying a SessionEvent stops");
-        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
-        assert!(matches!(error, SalvageError::Event(_)));
+        let (out, loss) = apply_unresolvable_branch_amputate_with_loss(&mixed, &at(1))
+            .expect("copying a SessionEvent");
+        assert_eq!(ids(&out), ["evt-keep"]);
+        assert_eq!(loss_pair(&loss), ("amputated-branch".to_owned(), 1));
 
         let mut dropped = SessionEvent::new(
             "evt-branch",
@@ -1498,9 +1498,10 @@ mod tests {
                 Some("evt-call"),
             ),
         ];
-        let error = apply_torn_compaction_project_with_loss(&session_kept, &at(1))
-            .expect_err("the kept SessionEvent is not copied");
-        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        let (out, loss) = apply_torn_compaction_project_with_loss(&session_kept, &at(1))
+            .expect("the kept SessionEvent is copied");
+        assert_eq!(ids(&out), ["evt-call"]);
+        assert_eq!(loss_pair(&loss), ("projected-orphans".to_owned(), 2));
     }
 
     #[test]
@@ -1643,9 +1644,10 @@ mod tests {
         );
         head.correlation_id = None;
         let session_prefix = vec![EventValue::from_session(head), message("evt-tail", None)];
-        let error = apply_side_effect_unknown_truncate_with_loss(&session_prefix, &at(1))
-            .expect_err("copying the SessionEvent prefix stops");
-        assert_eq!(error.to_string(), NORMALIZE_CANONICAL_UNAVAILABLE);
+        let (out, loss) = apply_side_effect_unknown_truncate_with_loss(&session_prefix, &at(1))
+            .expect("copying the SessionEvent prefix");
+        assert_eq!(ids(&out), ["evt-session"]);
+        assert_eq!(loss_pair(&loss), ("truncated-side-effects".to_owned(), 1));
         let other = vec![message("evt-0", None), EventValue::Other];
         let (out, _) = apply_side_effect_unknown_truncate_with_loss(&other, &at(1))
             .expect("a dropped Other value is not copied");
@@ -3099,10 +3101,11 @@ mod tests_salvage_02 {
                 "message",
             )),
         ];
-        let direct = to_event_dict(&kept_fails[1]).expect_err("session copy");
-        let error = apply_orphan_result_drop_with_loss(&kept_fails, &at(0))
-            .expect_err("kept session is not Ok");
-        assert_eq!(error.to_string(), direct.to_string());
+        let direct = to_event_dict(&kept_fails[1]).expect("session copy");
+        let (out, loss) =
+            apply_orphan_result_drop_with_loss(&kept_fails, &at(0)).expect("kept session");
+        assert_eq!(out, vec![direct]);
+        assert_eq!(loss_pair(&loss), ("orphan-result".to_owned(), 1));
     }
 
     #[test]
@@ -3561,10 +3564,11 @@ mod tests_salvage_02 {
             "assistant",
             "message",
         ))];
-        let direct = to_event_dict(&session[0]).expect_err("session");
-        let error = apply_torn_record_excision_with_loss(&session, &valid_torn(Vec::new()))
-            .expect_err("copy failure is not Ok");
-        assert_eq!(error.to_string(), direct.to_string());
+        let direct = to_event_dict(&session[0]).expect("session");
+        let (out, loss) = apply_torn_record_excision_with_loss(&session, &valid_torn(Vec::new()))
+            .expect("copy");
+        assert_eq!(out, vec![direct]);
+        assert_eq!(loss_pair(&loss), ("torn-record".to_owned(), 1));
     }
 
     #[test]

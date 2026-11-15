@@ -24,7 +24,7 @@ const EXPECTED_VECTOR_COUNT: usize = 4;
 const EXPECTED_COVERED: usize = 1;
 const EXPECTED_NOT_APPLICABLE: usize = 23;
 const EXPECTED_VECTORS_SHA256: &str =
-    "74234739afccdcc35532d5030800676aedda001cd26383a7e7f8e2314bae5e5d";
+    "8a9260f3dd5427ef07abe3a2a26a6cbef09d51794c28898459774b2733a40b68";
 const GAP_REGION: &str = "GAP-orphan-result-drop-affected-region";
 const GAP_PLANNER: &str = "GAP-orphan-result-drop-planner";
 const SEAM: &str = "sesslint.policy.abstention.AffectedRegion is not available";
