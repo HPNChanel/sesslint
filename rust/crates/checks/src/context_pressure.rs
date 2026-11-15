@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/context_pressure.py` lines 1–119
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_context_pressure`] calls [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
+//! omitted. [`make_finding`] fills the digest and the finding is kept.
 //! This module does not call [`crate::graph::cap_graph_findings`].
 //!
 //! Codex-rollout-scoped check: `event_msg/token_count` records carry the
@@ -22,8 +22,8 @@
 //!
 //! [`last_pressure_marker`] reports whether the last qualifying marker
 //! fires. It does not hash. [`check_context_pressure`] calls
-//! [`make_finding`] only when that function says it fires, and
-//! propagates the codec error.
+//! [`make_finding`] only when that function says it fires.
+//! [`make_finding`] fills the digest and the finding is kept.
 //!
 //! # Recorded gaps
 //!
@@ -263,8 +263,8 @@ fn pressure_evidence(marker: &LastPressureMarker, line_num: Option<i64>) -> PyVa
 ///
 /// No qualifying marker, or a last marker at or above the 15% boundary,
 /// returns an empty list and does not call [`make_finding`]. A firing
-/// marker calls [`make_finding`] with the fingerprint omitted; that codec
-/// error is propagated.
+/// marker calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept.
 pub fn check_context_pressure(
     events: &[EventValue],
     source_path: Option<&str>,
