@@ -51,8 +51,8 @@
 //! [`record_multi_results`] collect records and do not call [`make_finding`].
 //! [`check_orphans`], [`check_dangling`], [`check_reused`], and
 //! [`check_multi_results`] call [`make_finding`] only when that list is
-//! non-empty. The omitted fingerprint returns
-//! [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
+//! non-empty. The omitted fingerprint is filled by [`make_finding`] and
+//! the finding is kept. An empty list still calls
 //! [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
 //! `max_findings == -1` takes the overflow path because `0 <= -1` is false
 //! and appends one overflow finding.
@@ -85,8 +85,6 @@
 //!   finding.
 //! * Overflow [`make_finding`] appends a finding. `cap`, `total_count`, and
 //!   `truncated_count` are outside the fingerprint evidence allowlist.
-//! * Offender [`make_finding`] does not produce a digest
-//!   ([`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]).
 //! * A mapping result payload calls
 //!   [`model::canonical::compute_content_hash`]
 //!   ([`model::canonical::PAYLOAD_CONTENT_HASH_UNAVAILABLE`]). This slice
@@ -746,8 +744,8 @@ pub fn record_orphans(
 /// Python: `check_orphans`.
 ///
 /// Context `None` is [`CheckContext::default`]. A non-empty record list
-/// calls [`make_finding`] with the fingerprint omitted; the first record
-/// returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still calls
+/// calls [`make_finding`] with the fingerprint omitted. [`make_finding`]
+/// fills the digest and every record is kept. An empty list still calls
 /// [`cap_pairing_findings`].
 pub fn check_orphans(
     events: &[EventValue],
@@ -1248,7 +1246,7 @@ pub fn record_multi_results(
 ///
 /// Context `None` is [`CheckContext::default`]. A single result is silent.
 /// A non-empty record list calls [`make_finding`] with the fingerprint
-/// omitted; the first record returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`].
+/// omitted. [`make_finding`] fills the digest and every record is kept.
 /// An empty list still calls [`cap_pairing_findings`].
 pub fn check_multi_results(
     events: &[EventValue],

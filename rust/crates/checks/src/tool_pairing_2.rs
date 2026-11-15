@@ -69,8 +69,6 @@
 //!   finding.
 //! * Overflow [`make_finding`] appends a finding. `cap`, `total_count`, and
 //!   `truncated_count` are outside the fingerprint evidence allowlist.
-//! * Offender [`make_finding`] does not produce a digest
-//!   ([`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]).
 //! * [`resolve_rule_severity`] on a string or other profile returns
 //!   [`PROFILES_UNAVAILABLE`]. It does not catch a missing module and
 //!   does not return the default. `rule_severities` is not invented.
@@ -952,8 +950,8 @@ pub fn record_reversed_order(
 ///
 /// Context `None` is [`CheckContext::default`]. An optional indexer is used
 /// when supplied; otherwise one is built from `events`. A non-empty record
-/// list calls [`make_finding`] with the fingerprint omitted; the first
-/// record returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still
+/// list calls [`make_finding`] with the fingerprint omitted. [`make_finding`]
+/// fills the digest and every record is kept. An empty list still
 /// calls [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
 /// `max_findings == -1` takes the overflow path because `0 <= -1` is false.
 pub fn check_reversed_order(
@@ -1090,8 +1088,8 @@ pub fn record_cross_branch(
 ///
 /// Context `None` is [`CheckContext::default`]. An optional indexer is used
 /// when supplied; otherwise one is built from `events`. A non-empty record
-/// list calls [`make_finding`] with the fingerprint omitted; the first
-/// record returns [`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]. An empty list still
+/// list calls [`make_finding`] with the fingerprint omitted. [`make_finding`]
+/// fills the digest and every record is kept. An empty list still
 /// calls [`cap_pairing_findings`]. Default max 500 returns `Ok([])`.
 /// `max_findings == -1` takes the overflow path because `0 <= -1` is false.
 pub fn check_cross_branch(

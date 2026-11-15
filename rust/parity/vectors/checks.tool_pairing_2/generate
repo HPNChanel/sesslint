@@ -17,14 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_RS_SHA256 = (
-    "10e0eb133f1abe8d89fccc3d8d5fdfea03ca9539eac5443853b4dad6906c616a"
+    "1d22f269a5cbba09f2643278e48b94d9cf06d08b22ad7bb9f2f23e07fd3365a4"
 )
 MODULE = "sesslint.checks.tool_pairing_2"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "Offender path calls make_finding with the fingerprint omitted. Rust returns "
-    "FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or "
-    "SL108.",
     "A string profile passes sesslint.profiles import in Python; the except returns the default "
     "severity. Rust returns sesslint.profiles is not available (PROFILES_UNAVAILABLE) and does not "
     "use the default severity.",

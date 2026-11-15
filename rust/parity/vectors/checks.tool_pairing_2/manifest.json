@@ -2,12 +2,11 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_2",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_2_rs_sha256": "10e0eb133f1abe8d89fccc3d8d5fdfea03ca9539eac5443853b4dad6906c616a",
+  "checks_tool_pairing_2_rs_sha256": "1d22f269a5cbba09f2643278e48b94d9cf06d08b22ad7bb9f2f23e07fd3365a4",
   "vector_count": 9,
-  "vectors_sha256": "95a30bfd95555a69d8a10abb552fb72428ea7e9e8face0d354282f313558b4eb",
+  "vectors_sha256": "4ec9af5b63c4c3e23eccea0ba55a92d1eaa4d8e1888a0762e817707a59b62761",
   "generator": "rust/parity/vectors/checks.tool_pairing_2/generate",
   "known_parity_gaps": [
-    "Offender path calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a normal finding with code SL105, SL106, SL107, or SL108.",
     "A string profile passes sesslint.profiles import in Python; the except returns the default severity. Rust returns sesslint.profiles is not available (PROFILES_UNAVAILABLE) and does not use the default severity.",
     "Float and list ids or kinds are typed errors in Rust. Python uses str() on non-string values."
   ]

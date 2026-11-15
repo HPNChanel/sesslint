@@ -2,12 +2,11 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.tool_pairing_1",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_tool_pairing_1_rs_sha256": "fb117f7e7f338cb3aea16ff55c095c1efbc6b74b716fcfb8cae100e881e94fe6",
+  "checks_tool_pairing_1_rs_sha256": "9fa6704624d65a08c688e8f3a9885af37b6832b10048cb5ed1d2f104fade3486",
   "vector_count": 7,
-  "vectors_sha256": "da1a6f922f08d8edb548ef7d498f7831d294ef0fefc9d874c18313dcc06d31dc",
+  "vectors_sha256": "433d2d1384bc6d9c34c8713befec2d19d54823fc1939e9bdaed51577129acdc0",
   "generator": "rust/parity/vectors/checks.tool_pairing_1/generate",
   "known_parity_gaps": [
-    "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding (orphan, dangling, reused id, or multi-result).",
     "A mapping tool_result payload calls compute_content_hash. Rust returns sesslint._canonical_codec.payload_content_hash is not available and does not hash. Python hashes the payload.",
     "Float and list ids or payloads are typed errors in Rust. Python uses str().",
     "Null tool_call correlation is still dangling on codex-rollout (SL102 finding). That case belongs in known_parity_gaps, not silent vectors."

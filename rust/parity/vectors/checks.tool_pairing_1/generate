@@ -17,13 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 TOOL_PAIRING_RS_SHA256 = (
-    "fb117f7e7f338cb3aea16ff55c095c1efbc6b74b716fcfb8cae100e881e94fe6"
+    "9fa6704624d65a08c688e8f3a9885af37b6832b10048cb5ed1d2f104fade3486"
 )
 MODULE = "sesslint.checks.tool_pairing_1"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "Offender make_finding omits the fingerprint. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. "
-    "Python emits a finding (orphan, dangling, reused id, or multi-result).",
     "A mapping tool_result payload calls compute_content_hash. Rust returns "
     "sesslint._canonical_codec.payload_content_hash is not available and does not hash. "
     "Python hashes the payload.",

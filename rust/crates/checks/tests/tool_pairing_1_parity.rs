@@ -24,9 +24,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.tool_pairing_1";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_TOOL_PAIRING_1_RS_SHA256: &str =
-    "fb117f7e7f338cb3aea16ff55c095c1efbc6b74b716fcfb8cae100e881e94fe6";
+    "9fa6704624d65a08c688e8f3a9885af37b6832b10048cb5ed1d2f104fade3486";
 const EXPECTED_VECTORS_SHA256: &str =
-    "da1a6f922f08d8edb548ef7d498f7831d294ef0fefc9d874c18313dcc06d31dc";
+    "433d2d1384bc6d9c34c8713befec2d19d54823fc1939e9bdaed51577129acdc0";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -114,7 +114,6 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     let gap_markers = [
-        "FINGERPRINT_CODEC_UNAVAILABLE",
         PAYLOAD_CONTENT_HASH_UNAVAILABLE,
         "sesslint._canonical_codec.payload_content_hash is not available",
         "Float and list ids",
