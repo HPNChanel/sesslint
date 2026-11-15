@@ -5,8 +5,6 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "check_checkpoint stops at the first non-empty family that would call make_finding. Python runs every family and sorts the combined list.",
-    "check_checkpoint drops earlier families when a later family has rows. Python sorts the combined list and may append one overflow finding.",
     "A float or list used where Python would call str is a typed error. Rust does not invent the Python repr.",
     "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd."
   ]

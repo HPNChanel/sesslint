@@ -17,15 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CHECKPOINT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CHECKPOINT_RS_SHA256 = (
-    "e6b32e2aec9e047f963ef2f31beebcfa8f97dc097d9068c365e41857415a5263"
+    "90a80b3d6fff3e02d5d2c651a1256d1b3df581a2c969861108d117e912912a76"
 )
 MODULE = "sesslint.checks.checkpoint"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "check_checkpoint stops at the first non-empty family that would call make_finding. "
-    "Python runs every family and sorts the combined list.",
-    "check_checkpoint drops earlier families when a later family has rows. "
-    "Python sorts the combined list and may append one overflow finding.",
     "A float or list used where Python would call str is a typed error. Rust does not "
     "invent the Python repr.",
     "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd.",

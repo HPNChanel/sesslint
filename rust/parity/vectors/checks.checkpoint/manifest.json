@@ -2,13 +2,11 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.checkpoint",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_checkpoint_rs_sha256": "e6b32e2aec9e047f963ef2f31beebcfa8f97dc097d9068c365e41857415a5263",
+  "checks_checkpoint_rs_sha256": "90a80b3d6fff3e02d5d2c651a1256d1b3df581a2c969861108d117e912912a76",
   "vector_count": 10,
-  "vectors_sha256": "07eb034ed6ff71bb4723ab71e546504474818d2a492e52c50b3691504d771ee0",
+  "vectors_sha256": "4d421db91dac9e22d201b0db87e44051d7693bea94a0e8c6fbc28765ed458059",
   "generator": "rust/parity/vectors/checks.checkpoint/generate",
   "known_parity_gaps": [
-    "check_checkpoint stops at the first non-empty family that would call make_finding. Python runs every family and sorts the combined list.",
-    "check_checkpoint drops earlier families when a later family has rows. Python sorts the combined list and may append one overflow finding.",
     "A float or list used where Python would call str is a typed error. Rust does not invent the Python repr.",
     "A seq string of Unicode digits is a typed error. Python str.isdigit accepts Unicode Nd."
   ]

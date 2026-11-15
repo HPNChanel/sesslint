@@ -37,12 +37,11 @@
 //! returned, then [`cap_checkpoint_findings`] is applied.
 //!
 //! [`check_checkpoint`] calls [`extract_run_state_projection`] once, then
-//! the gap, the divergence, the continuation, and the coverage. An empty
-//! gap or divergence keeps that family's cap result, including one overflow
-//! finding when `max_findings_per_family == -1`. Those findings are kept
-//! and sorted. A non-empty family returns every row in that family, caps
-//! them, and stops.
-//! Later families are not called after that stop. When every family is
+//! the gap, the divergence, the continuation, and the coverage. Each family
+//! keeps its own cap result, including one overflow finding when
+//! `max_findings_per_family == -1`. Continuation receives those gap and
+//! divergence findings as priors. The four lists are concatenated and
+//! sorted. The combined list is not capped again. When every family is
 //! silent and the cap is not negative, the result is `Ok([])`.
 //!
 //! Sort key is `(code, overflow flag, source.record_id or "", fingerprint)`.
@@ -106,10 +105,8 @@
 //!   U+001C..=U+001F as space. A string of only those controls stays present.
 //!   A failed payload-map borrow is [`BORROWED_LOOKUP`]. A non-string
 //!   `covered_through_id` is `None`.
-//! * [`check_checkpoint`] keeps empty-family overflow findings and sorts
-//!   them. A real row still stops the run: Python would continue and sort
-//!   every family together. A later non-empty family drops findings already
-//!   collected from earlier empty families.
+//! * [`check_checkpoint`] sorts the combined family lists and does not cap
+//!   that list again. Each family already applied its own cap.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -1123,18 +1120,14 @@ pub fn check_compaction_coverage(
 /// divergence, and the coverage. Continuation does not receive the
 /// projection. Coverage does not receive the projection or the sensitivity.
 ///
-/// The pure builders decide whether a family has rows. An empty gap or
-/// divergence list keeps that family's cap result, including one overflow
-/// finding when `max_findings_per_family == -1`. A non-empty list returns
-/// every row in that family, caps them, and stops. Continuation receives
-/// [`Sl201Prior::Records`] and [`Sl202Prior::Records`] of empty slices when
-/// those families produced no rows. An empty supplied prior is not
-/// recomputed. Compaction triggers still run. One continuation record
-/// returns that finding and stops.
-///
-/// Empty-family cap findings are kept and sorted. A real row still stops
-/// the run. When every family is silent and the cap is not negative, the
-/// result is `Ok([])`. Later families are not called after that stop.
+/// Every family runs. An empty gap or divergence list keeps that family's
+/// cap result, including one overflow finding when
+/// `max_findings_per_family == -1`. Continuation receives
+/// [`Sl201Prior::Findings`] and [`Sl202Prior::Findings`] from those two
+/// lists. Compaction triggers still run. The four lists are concatenated
+/// and sorted with [`cap_finding_sort_key`]. The combined list is not
+/// capped again. When every family is silent and the cap is not negative,
+/// the result is `Ok([])`.
 pub fn check_checkpoint(
     events: &[EventValue],
     source_path: Option<&str>,
@@ -1148,24 +1141,7 @@ pub fn check_checkpoint(
     let projection = extract_run_state_projection(Some(ctx), Some(events), run_state_projection)?;
     let attached = projection.as_ref();
 
-    let gaps = checkpoint_gap_records(
-        events,
-        source_path,
-        checkpoint_sensitivity,
-        Some(ctx),
-        attached,
-    )?;
-    if !gaps.is_empty() {
-        return check_checkpoint_gap(
-            events,
-            source_path,
-            max_findings_per_family,
-            checkpoint_sensitivity,
-            Some(ctx),
-            attached,
-        );
-    }
-    let mut all_findings = check_checkpoint_gap(
+    let gaps = check_checkpoint_gap(
         events,
         source_path,
         max_findings_per_family,
@@ -1173,55 +1149,31 @@ pub fn check_checkpoint(
         Some(ctx),
         attached,
     )?;
-
-    let divergences = checkpoint_divergence_records(events, source_path, Some(ctx), attached)?;
-    if !divergences.is_empty() {
-        return check_checkpoint_divergence(
-            events,
-            source_path,
-            max_findings_per_family,
-            Some(ctx),
-            attached,
-        );
-    }
-    all_findings.extend(check_checkpoint_divergence(
+    let divergences = check_checkpoint_divergence(
         events,
         source_path,
         max_findings_per_family,
         Some(ctx),
         attached,
-    )?);
-
-    let prior_sl201: &[CheckpointGapRecord] = &[];
-    let prior_sl202: &[CheckpointDivergenceRecord] = &[];
-    if let Some(record) = unsafe_continuation_record(
+    )?;
+    let continuation = check_unsafe_continuation(
         events,
         source_path,
-        Some(Sl201Prior::Records(prior_sl201)),
-        Some(Sl202Prior::Records(prior_sl202)),
+        Some(Sl201Prior::Findings(&gaps)),
+        Some(Sl202Prior::Findings(&divergences)),
         Some(ctx),
-    )? {
-        return emit_continuation(&record);
-    }
-
-    match compaction_coverage_records(events, source_path, Some(ctx))? {
-        CompactionCoverageRows::NoClaims => sort_findings(all_findings),
-        CompactionCoverageRows::Silent => {
-            all_findings.extend(check_compaction_coverage(
-                events,
-                source_path,
-                max_findings_per_family,
-                Some(ctx),
-            )?);
-            sort_findings(all_findings)
-        }
-        CompactionCoverageRows::Rows(_) => check_compaction_coverage(
-            events,
-            source_path,
-            max_findings_per_family,
-            Some(ctx),
-        ),
-    }
+    )?;
+    let coverage = check_compaction_coverage(
+        events,
+        source_path,
+        max_findings_per_family,
+        Some(ctx),
+    )?;
+    let mut all_findings = gaps;
+    all_findings.extend(divergences);
+    all_findings.extend(continuation);
+    all_findings.extend(coverage);
+    sort_findings(all_findings)
 }
 
 fn sort_findings(findings: Vec<Finding>) -> Result<Vec<Finding>, CheckpointError> {
@@ -5257,11 +5209,29 @@ mod tests {
                 ("kind".to_owned(), EventField::Str("message".to_owned())),
             ])),
         ];
-        assert_one(
-            &check_checkpoint(&events, None, None, None, None, None).unwrap(),
-            SL201,
-            1,
+        let err = check_checkpoint(&events, None, None, None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), PYTHON_FLOAT_STR_UNREPRESENTABLE);
+        assert!(matches!(err, CheckpointError::PythonFloatStr));
+    }
+
+    #[test]
+    fn check_checkpoint_joins_the_gap_and_the_continuation() {
+        let events = [
+            kinded("evt-run-synth", "run_start"),
+            kinded("evt-tool-synth", "tool_call"),
+        ];
+        let findings = check_checkpoint(&events, None, None, None, None, None).unwrap();
+        assert_eq!(
+            findings.iter().map(|finding| finding.code()).collect::<Vec<_>>(),
+            ["SL201", "SL203"]
         );
+        assert_eq!(findings[0].severity(), Severity::Error);
+        assert_eq!(findings[1].severity(), Severity::Error);
+        assert!(findings[0].message().starts_with("Checkpoint gap detected for record "));
+        assert!(findings[1]
+            .message()
+            .starts_with("Unsafe continuation across loss detected for record "));
+        assert!(findings.iter().all(|finding| is_lower_hex16(finding.fingerprint())));
     }
 
     #[test]
