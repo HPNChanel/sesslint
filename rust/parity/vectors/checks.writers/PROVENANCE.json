@@ -4,7 +4,5 @@
   "generator": "rust/parity/vectors/checks.writers/generate",
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "known_parity_gaps": [
-    "An interleave calls make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE; Python emits one SL010 finding."
-  ]
+  "known_parity_gaps": []
 }

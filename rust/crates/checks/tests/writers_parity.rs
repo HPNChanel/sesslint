@@ -17,9 +17,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.writers";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_WRITERS_RS_SHA256: &str =
-    "2391907cbb69723d5a8de43f536191f85527224581cd599450a0f9d8e2ede3c5";
+    "9b39e6a33eb89971f66a50d59ddcb4f48337a73e82f392b4420de8001f4e996a";
 const EXPECTED_VECTORS_SHA256: &str =
-    "6a602d046cab03ab3e8dcb4175b8fc66cec4f1ff04c018a87775329cf8863865";
+    "361e96a40cdd071b1432b0ef0a946f5baa993489aeef6642136178bc45434d72";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -115,19 +115,12 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     }
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
-    let gap_markers = [
-        "FINGERPRINT_CODEC_UNAVAILABLE",
-        "SL010",
-        "interleave",
-        "fingerprint omitted",
-    ];
-    for marker in gap_markers {
-        assert!(
-            gaps.iter()
-                .any(|item| matches!(item, JsonValue::Str(s) if s.contains(marker))),
-            "expected known_parity_gaps to mention {marker:?}"
-        );
-    }
+    assert!(
+        gaps.iter().all(
+            |item| matches!(item, JsonValue::Str(s) if !s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))
+        ),
+        "interleave findings are kept; the codec gap must stay out"
+    );
 }
 
 fn assert_case(case: &VectorCase) {

@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/writers.py` lines 1–133
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_writers`] calls [`make_finding`] with the fingerprint omitted.
-//! That returns the codec error and does not produce a digest. This module
+//! [`make_finding`] fills the digest and the finding is kept. This module
 //! does not call [`crate::graph::compute_graph_fingerprint`] and does not
 //! call a pairing fingerprint helper.
 //!
@@ -27,7 +27,7 @@
 //! [`writer_interleave_record`] reports the single first-interleave record.
 //! It does not hash a finding digest. [`check_writers`] calls
 //! [`make_finding`] only when that function returns a record, and
-//! propagates the codec error.
+//! keeps the finding.
 //!
 //! # Recorded gaps
 //!
@@ -42,8 +42,6 @@
 //! * A bool is not a string. A whitespace-only `instance` falls through to
 //!   `version`. [`model::canonical::SessionEvent::source_line`] is
 //!   `Option<i64>` and cannot be a bool.
-//! * Overflow [`make_finding`] does not produce a digest
-//!   ([`model::finding::FINGERPRINT_CODEC_UNAVAILABLE`]).
 
 use std::collections::HashSet;
 use std::error::Error;
@@ -331,8 +329,8 @@ pub fn writer_interleave_record(
 /// Fewer than three unique `(source_line, marker)` entries, a clean
 /// ordered upgrade, or a single marker returns an empty list and does not
 /// call [`make_finding`]. An interleave calls [`make_finding`] with the
-/// fingerprint omitted; that codec error is propagated. Context `None` is
-/// [`CheckContext::default`].
+/// fingerprint omitted. [`make_finding`] fills the digest and the finding
+/// is kept. Context `None` is [`CheckContext::default`].
 pub fn check_writers(
     events: &[EventValue],
     source_path: Option<&str>,

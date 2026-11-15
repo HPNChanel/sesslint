@@ -17,14 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 WRITERS_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 CHECKS_WRITERS_RS_SHA256 = (
-    "2391907cbb69723d5a8de43f536191f85527224581cd599450a0f9d8e2ede3c5"
+    "9b39e6a33eb89971f66a50d59ddcb4f48337a73e82f392b4420de8001f4e996a"
 )
 MODULE = "sesslint.checks.writers"
 
-KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "An interleave calls make_finding with the fingerprint omitted; Rust returns "
-    "FINGERPRINT_CODEC_UNAVAILABLE; Python emits one SL010 finding.",
-)
+KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = ()
 
 
 def repo_root() -> Path:
