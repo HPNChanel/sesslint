@@ -18,15 +18,14 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 HYGIENE_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 HYGIENE_RS_SHA256 = (
-    "14b3b269d71269a2121956db14716e5f0b53e827599a811c92acac81a3df407f"
+    "67436140b61fb6a06ebdb7b54e8e14dc586845d77dbe00bca3d1942139fd81f1"
 )
 MODULE = "sesslint.checks.hygiene"
 GATE_WINDOW_BYTES = 65_536
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "When SecretScanTracker has hits, into_findings calls make_finding with the "
-    "fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Vectors "
-    "compare evidence_rows (or empty into_findings) only — not Python Finding objects.",
+    "Vectors compare evidence_rows (or empty into_findings) only — not Python "
+    "Finding objects.",
     "Empty tracker into_findings returns an empty list on both sides without calling "
     "make_finding on the Rust hit path.",
 )

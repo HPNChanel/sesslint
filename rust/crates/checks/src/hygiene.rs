@@ -13,9 +13,9 @@
 //! [`gate_maybe_contains_secret`] accepts the joined bytes. Match digests are
 //! lowercase hex SHA-256 from the `sha2` crate, of the matched bytes only.
 //! Those bytes are not retained. [`SecretScanTracker::into_findings`] calls
-//! [`make_finding`] with the fingerprint omitted once a hit exists and returns
-//! the fingerprint codec error. It does not invent a fingerprint and does not
-//! hash the finding.
+//! [`make_finding`] with the fingerprint omitted once a hit exists.
+//! [`make_finding`] fills the digest and the finding is kept. This module
+//! does not invent a fingerprint and does not hash the finding.
 //!
 //! `_GENERIC_ASSIGNMENT_LOWER` is not copied. Generic assignment uses
 //! [`model::secret_families::SECRET_FAMILIES`] search on the ASCII-lowered
@@ -636,8 +636,9 @@ impl SecretScanTracker {
     /// Python: `SecretScanTracker.into_findings`.
     ///
     /// No hits returns an empty list and does not call [`make_finding`].
-    /// A hit calls [`make_finding`] with the fingerprint omitted. That codec
-    /// error is propagated. Source construction errors are propagated too.
+    /// A hit calls [`make_finding`] with the fingerprint omitted.
+    /// [`make_finding`] fills the digest and the finding is kept. Source
+    /// construction errors are propagated too.
     pub fn into_findings(&mut self, path_str: &str) -> Result<Vec<Finding>, HygieneError> {
         self.flush_pending();
         let rows = secret_evidence_rows(&self.hit_order, &self.hits);
