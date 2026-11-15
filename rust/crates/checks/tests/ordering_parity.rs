@@ -18,9 +18,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.ordering";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_ORDERING_RS_SHA256: &str =
-    "2a44d443a10f0aa06359959131665391dd504a8d46873f7f56d5deeb8d769a43";
+    "e2884c2cf0fb19eaa3c9fa94b155021ad6c78be5ff7a2d2d812aa0de4cb3d54f";
 const EXPECTED_VECTORS_SHA256: &str =
-    "d10376c9063f6caddf3fc409935b5e1e00973375251b90b4a50dc475caf0465c";
+    "9da36ac2ab9fc75b429c04e642bd184a255d1959bccae89109134a98098f267f";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -106,8 +106,14 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     }
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
+    assert!(
+        gaps.iter().all(
+            |item| matches!(item, JsonValue::Str(s) if !s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))
+        ),
+        "ordering findings are kept; the codec gap must stay out"
+    );
     let gap_markers = [
-        "FINGERPRINT_CODEC_UNAVAILABLE",
+        "skew 0",
         "max_delta_ms",
         "Option<i64>",
         "_parse_ts",

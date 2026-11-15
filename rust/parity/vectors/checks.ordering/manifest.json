@@ -2,12 +2,12 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.ordering",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_ordering_rs_sha256": "2a44d443a10f0aa06359959131665391dd504a8d46873f7f56d5deeb8d769a43",
+  "checks_ordering_rs_sha256": "e2884c2cf0fb19eaa3c9fa94b155021ad6c78be5ff7a2d2d812aa0de4cb3d54f",
   "vector_count": 9,
-  "vectors_sha256": "d10376c9063f6caddf3fc409935b5e1e00973375251b90b4a50dc475caf0465c",
+  "vectors_sha256": "9da36ac2ab9fc75b429c04e642bd184a255d1959bccae89109134a98098f267f",
   "generator": "rust/parity/vectors/checks.ordering/generate",
   "known_parity_gaps": [
-    "A real violation calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. Do not require the two-second edge with skew 0 as a silent vector.",
+    "A real violation calls make_finding with the fingerprint omitted. Python emits one SL008 finding. Do not require the two-second edge with skew 0 as a silent vector.",
     "A second violating edge updates count and max_delta_ms on the aggregate finding; that path is also a finding on the Python side.",
     "Python bool is not an int: type(True) is bool is rejected for timestamp_skew_ms. Rust uses Option<i64>, so a bool skew is not represented.",
     "No chrono: a timestamp form the hand parser cannot read is skipped, matching Python ValueError inside _parse_ts."

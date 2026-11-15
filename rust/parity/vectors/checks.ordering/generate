@@ -17,14 +17,14 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ORDERING_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 ORDERING_RS_SHA256 = (
-    "2a44d443a10f0aa06359959131665391dd504a8d46873f7f56d5deeb8d769a43"
+    "e2884c2cf0fb19eaa3c9fa94b155021ad6c78be5ff7a2d2d812aa0de4cb3d54f"
 )
 MODULE = "sesslint.checks.ordering"
 NEGATIVE_SKEW_MSG = "timestamp_skew_ms must be a nonnegative integer"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
     "A real violation calls make_finding with the fingerprint omitted. "
-    "Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits one SL008 finding. "
+    "Python emits one SL008 finding. "
     "Do not require the two-second edge with skew 0 as a silent vector.",
     "A second violating edge updates count and max_delta_ms on the aggregate finding; "
     "that path is also a finding on the Python side.",

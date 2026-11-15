@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/ordering.py` lines 1–188
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_ordering`] calls [`make_finding`] with the fingerprint omitted.
-//! That returns the codec error and does not produce a digest. This module
+//! [`make_finding`] fills the digest and the finding is kept. This module
 //! does not call [`crate::graph::cap_graph_findings`].
 //!
 //! Compares `ts` along a uniquely resolved parent edge. It does not compare
@@ -12,7 +12,7 @@
 //!
 //! [`ordering_record`] reports that aggregate. It does not hash.
 //! [`check_ordering`] calls [`make_finding`] only when that function returns
-//! a record, and propagates the codec error.
+//! a record. [`make_finding`] fills the digest and the finding is kept.
 //!
 //! Evidence is structural only: ids, stream indices, and the integer
 //! millisecond delta — never payload or raw timestamps.
@@ -559,8 +559,9 @@ fn record_evidence(record: &OrderingRecord) -> Result<PyValue, OrderingError> {
 /// Python: `check_ordering`.
 ///
 /// No violation returns an empty list and does not call [`make_finding`].
-/// A violation calls [`make_finding`] with the fingerprint omitted; that
-/// codec error is propagated. `max_findings` is ignored.
+/// A violation calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept. `max_findings`
+/// is ignored.
 pub fn check_ordering(
     events: &[EventValue],
     source_path: Option<&str>,
