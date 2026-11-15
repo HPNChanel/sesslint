@@ -10,8 +10,8 @@
 //!
 //! [`check_missing_parent`], [`check_cycles`], [`check_components`],
 //! [`check_heads`], and overflow [`cap_graph_findings`] call [`make_finding`]
-//! with the fingerprint omitted. That returns the codec error and does not
-//! produce a digest. This module does not substitute
+//! with the fingerprint omitted. [`make_finding`] fills the digest and the
+//! finding is kept. This module does not substitute
 //! [`compute_graph_fingerprint`].
 //!
 //! # Recorded gaps
@@ -582,7 +582,7 @@ pub struct ExtraComponent {
 /// is `"<canonical>"`. Omitted `context` is [`CheckContext::default`].
 /// Under the cap, the sorted list is returned and [`make_finding`] is not
 /// called. Over the cap, [`make_finding`] is called with the fingerprint
-/// omitted; that codec error is propagated.
+/// omitted. [`make_finding`] fills the digest and the finding is kept.
 pub fn cap_graph_findings(
     findings: Vec<Finding>,
     code: &str,
@@ -686,7 +686,8 @@ pub fn resolve_source_coords(
 /// parent present anywhere in the first-occurrence set, including a later
 /// event and a self-parent, does not fire. Missing-parent evidence does
 /// not search for another parent. [`make_finding`] is called with the
-/// fingerprint omitted; the codec error is propagated. A session with no
+/// fingerprint omitted. [`make_finding`] fills the digest and the finding
+/// is kept. A session with no
 /// missing parent returns an empty list and does not call [`make_finding`].
 pub fn check_missing_parent<'a>(
     events: &'a [EventValue],
@@ -872,8 +873,9 @@ pub fn cycle_paths(graph: &OccurrenceGraph<'_>) -> Vec<Vec<String>> {
 /// Python: `check_cycles` (SL005).
 ///
 /// No cycle returns an empty list and does not call [`make_finding`].
-/// A cycle calls [`make_finding`] with the fingerprint omitted; that
-/// codec error is propagated. After a successful [`make_finding`],
+/// A cycle calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept. After a
+/// successful [`make_finding`],
 /// [`cap_graph_findings`] is called.
 pub fn check_cycles<'a>(
     events: &'a [EventValue],
@@ -1083,7 +1085,8 @@ pub fn extra_components(graph: &OccurrenceGraph<'_>, event_count: usize) -> Vec<
 ///
 /// No extra component returns an empty list and does not call
 /// [`make_finding`]. An emitted component calls [`make_finding`] with
-/// the fingerprint omitted; that codec error is propagated.
+/// the fingerprint omitted. [`make_finding`] fills the digest and the
+/// finding is kept.
 pub fn check_components<'a>(
     events: &'a [EventValue],
     source_path: Option<&str>,
@@ -1231,7 +1234,8 @@ pub fn ambiguous_head_ids(graph: &OccurrenceGraph<'_>) -> Vec<String> {
 ///
 /// No ambiguous branch returns an empty list and does not call
 /// [`make_finding`]. Ambiguous heads call [`make_finding`] with the
-/// fingerprint omitted; that codec error is propagated. After a successful
+/// fingerprint omitted. [`make_finding`] fills the digest and the finding
+/// is kept. After a successful
 /// [`make_finding`], [`cap_graph_findings`] is called.
 pub fn check_heads<'a>(
     events: &'a [EventValue],

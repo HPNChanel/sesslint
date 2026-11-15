@@ -5,15 +5,14 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python str(float), str(list), and str(mapping) for event fields; Rust returns typed errors and does not invent Python repr strings.",
     "Python events.index on an event object inside same_compaction_segment; Rust does not emulate list identity search (PYTHON_EVENT_INDEX_UNREPRESENTABLE gap).",
     "Evidence map lookup with borrowed/reference semantics; Rust treats Borrowed as distinct from missing key (BORROWED_LOOKUP).",
     "Graph counts and indices that do not fit in i64 (COUNT_UNREPRESENTABLE).",
     "Empty-string parent_id is a finding in Python; omitted from required parity vectors.",
-    "Self-loop and other cycle findings; omitted (fingerprint gap).",
-    "Two disconnected components (SL006); omitted (fingerprint gap).",
-    "Two heads on one branch (SL007); omitted (fingerprint gap).",
-    "Finding-cap overflow path; omitted (fingerprint gap)."
+    "Self-loop and other cycle findings are returned by check_cycles. Those constructs are omitted from the parity vectors.",
+    "Two disconnected components (SL006) are returned by check_components. That construct is omitted from the parity vectors.",
+    "Two heads on one branch (SL007) are returned by check_heads. That construct is omitted from the parity vectors.",
+    "Finding-cap overflow appends a finding. That construct is omitted from the parity vectors."
   ]
 }

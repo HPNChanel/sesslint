@@ -2,20 +2,19 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.graph",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_graph_rs_sha256": "276ea283a055caa34aa96de8c408c3bb58d9a43c933c915d19844f5800fb340e",
+  "checks_graph_rs_sha256": "d5f7b469c0d44d499ed7dc3dfa9fb5b82d33682f7c8d3d965a37355addc16ad0",
   "vector_count": 20,
-  "vectors_sha256": "91cff50ae65b55a326d578a1332fe16972b92a8b8fadf5573bea0caa5015aa03",
+  "vectors_sha256": "3969e342ed6d96ca76dd3db17d427bc030888e82c1a99859ecf6468a1677b8a2",
   "generator": "rust/parity/vectors/checks.graph/generate",
   "known_parity_gaps": [
-    "Graph check findings use make_finding with fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python str(float), str(list), and str(mapping) for event fields; Rust returns typed errors and does not invent Python repr strings.",
     "Python events.index on an event object inside same_compaction_segment; Rust does not emulate list identity search (PYTHON_EVENT_INDEX_UNREPRESENTABLE gap).",
     "Evidence map lookup with borrowed/reference semantics; Rust treats Borrowed as distinct from missing key (BORROWED_LOOKUP).",
     "Graph counts and indices that do not fit in i64 (COUNT_UNREPRESENTABLE).",
     "Empty-string parent_id is a finding in Python; omitted from required parity vectors.",
-    "Self-loop and other cycle findings; omitted (fingerprint gap).",
-    "Two disconnected components (SL006); omitted (fingerprint gap).",
-    "Two heads on one branch (SL007); omitted (fingerprint gap).",
-    "Finding-cap overflow path; omitted (fingerprint gap)."
+    "Self-loop and other cycle findings are returned by check_cycles. Those constructs are omitted from the parity vectors.",
+    "Two disconnected components (SL006) are returned by check_components. That construct is omitted from the parity vectors.",
+    "Two heads on one branch (SL007) are returned by check_heads. That construct is omitted from the parity vectors.",
+    "Finding-cap overflow appends a finding. That construct is omitted from the parity vectors."
   ]
 }
