@@ -21,9 +21,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.size";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_CHECKS_SIZE_RS_SHA256: &str =
-    "3941c9cd2d3dc8f3d62bce9b442c2a14e9ac98f51dc69b50035263900020d84c";
+    "9af38c63ed4234e01f53d3ecb451fa6dc1e99c9de765e4feb4f7d5927386dc4b";
 const EXPECTED_VECTORS_SHA256: &str =
-    "66dbbbb621a48ef1ae810d95eaa6e81c2a3e4026814d7accbe2e64f7ab598040";
+    "8ab4bf3f3b3c1ff9693138aad99afd185626e8d23e6cb2cfb3815e80e2c80880";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -110,7 +110,7 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
 
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     let gap_markers = [
-        "FINGERPRINT_CODEC_UNAVAILABLE",
+        "PyValue has no float",
         "PYTHON_INT_UNBOUNDED",
         "2^53",
     ];

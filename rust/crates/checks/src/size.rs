@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/size.py` lines 1–86
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_size_anomaly`] calls [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
+//! omitted. That returns the finding.
 //!
 //! Flags the single largest record when its byte size is an extreme outlier
 //! within the file's own distribution: fires only when
@@ -17,7 +17,7 @@
 //!
 //! [`size_anomaly_record`] reports the one outlier record. It does not hash.
 //! [`check_size_anomaly`] calls [`make_finding`] only when that function
-//! returns a record, and propagates the codec error.
+//! returns a record, and returns the finding.
 //!
 //! # Recorded gaps
 //!
@@ -33,8 +33,8 @@
 //!   float. The pure record keeps that IEEE value. Evidence `ratio` is
 //!   [`PyValue::None`] when the median is 0, matching Python. When the
 //!   median is nonzero, the float is not converted to an int or a decimal
-//!   string; the key is still present so [`make_finding`] runs and returns
-//!   the codec error rather than a digest.
+//!   string. Evidence `ratio` stays [`PyValue::None`] because the ratio
+//!   cannot be represented.
 //! * `largest / median` is IEEE division of `i64 as f64`. Values above
 //!   `2^53` are not exact. This slice does not invent a Python long-int
 //!   float conversion.
@@ -186,8 +186,9 @@ fn python_round3(value: f64) -> f64 {
 fn size_evidence(record: &SizeAnomalyRecord) -> PyValue {
     // PyValue has no float. Python `round(largest / median, 3)` is a float
     // when the median is nonzero. That value is not converted to an int or
-    // a decimal string. The key stays in insertion order so make_finding
-    // still runs; median 0 is Python `None`.
+    // a decimal string. The key stays in insertion order. Median 0 is
+    // Python `None`. A nonzero ratio cannot be represented, so the value
+    // is `PyValue::None`.
     PyValue::map(vec![
         (
             PyValue::string("file_median_bytes"),
@@ -269,8 +270,8 @@ pub fn size_anomaly_record(
 /// No context, no metadata, missing `record_sizes`, fewer than eight kept
 /// sizes, or a largest size at or below the threshold returns an empty
 /// list and does not call [`make_finding`]. An outlier calls
-/// [`make_finding`] with the fingerprint omitted; that codec error is
-/// propagated. Adapter and profile fields are omitted, matching Python.
+/// [`make_finding`] with the fingerprint omitted and returns that finding.
+/// Adapter and profile fields are omitted, matching Python.
 pub fn check_size_anomaly(
     events: &[EventValue],
     source_path: &str,
@@ -409,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn outlier_at_end_records_and_returns_codec_error() {
+    fn outlier_at_end_records_and_returns_finding() {
         let mut values = vec![1_i64; 7];
         values.push(262145);
         let ctx = context_with(Some(array_ints(&values)));
@@ -452,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn median_zero_ratio_is_none_and_returns_codec_error() {
+    fn median_zero_ratio_is_none_and_returns_finding() {
         let mut values = vec![0_i64; 7];
         values.push(262145);
         let ctx = context_with(Some(array_ints(&values)));
