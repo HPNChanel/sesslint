@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/foreign_shape.py` lines 1–123
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`. The pin has no `__all__`.
 //! [`check_foreign_shape`] calls [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
+//! omitted. [`make_finding`] fills the digest and the finding is kept.
 //! This module does not call [`crate::graph::cap_graph_findings`].
 //!
 //! Codex-rollout-scoped check (evidence-assurance T-02 memo — GO verdict):
@@ -27,7 +27,8 @@
 //!
 //! [`foreign_shape_record`] reports the single first-offender record.
 //! It does not hash. [`check_foreign_shape`] calls [`make_finding`] only
-//! when that function returns a record, and propagates the codec error.
+//! when that function returns a record. [`make_finding`] fills the digest
+//! and the finding is kept.
 //!
 //! # Recorded gaps
 //!
@@ -341,8 +342,8 @@ pub fn foreign_shape_record(
 /// Python: `check_foreign_shape`.
 ///
 /// No offender returns an empty list and does not call [`make_finding`].
-/// An offender calls [`make_finding`] with the fingerprint omitted; that
-/// codec error is propagated.
+/// An offender calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept.
 pub fn check_foreign_shape(
     events: &[EventValue],
     source_path: Option<&str>,

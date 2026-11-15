@@ -2,9 +2,8 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.foreign_shape",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_foreign_shape_rs_sha256": "936d45d5a77a496d44765e2b432972f7a89d9477c776ccc690dc33a70f9c5e31",
+  "checks_foreign_shape_rs_sha256": "d3c028eced02602fc3d9e97caed9201872e0b90d046c718865686a06397b9f2b",
   "known_parity_gaps": [
-    "shape array or other calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
     "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
     "A bool is not an int. first_ordinal is omitted when the ordinal is absent or < 0.",
     "MapLookup::Borrowed is a failed borrow, not a missing key.",

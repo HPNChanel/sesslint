@@ -5,7 +5,6 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "shape array or other calls make_finding with the fingerprint omitted. Rust returns FINGERPRINT_CODEC_UNAVAILABLE. Python emits a finding.",
     "Python int is unbounded. Rust checked i64 overflow is PYTHON_INT_UNBOUNDED.",
     "A bool is not an int. first_ordinal is omitted when the ordinal is absent or < 0.",
     "MapLookup::Borrowed is a failed borrow, not a missing key.",
