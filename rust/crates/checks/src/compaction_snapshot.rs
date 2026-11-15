@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/compaction_snapshot.py` lines 1–235
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_compaction_snapshot`] calls [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
+//! omitted. [`make_finding`] fills the digest and the finding is kept.
 //!
 //! # Recorded gaps
 //!
@@ -523,8 +523,9 @@ fn divergence_evidence(record: &SnapshotDivergence) -> PyValue {
 /// Python: `check_compaction_snapshot`.
 ///
 /// No divergence returns an empty list and does not call [`make_finding`].
-/// A divergence calls [`make_finding`] with the fingerprint omitted; that
-/// codec error is propagated. The list is not capped a second time.
+/// A divergence calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept. The list is
+/// not capped a second time.
 pub fn check_compaction_snapshot(
     events: &[EventValue],
     source_path: Option<&str>,

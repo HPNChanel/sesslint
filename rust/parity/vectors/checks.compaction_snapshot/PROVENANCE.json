@@ -5,7 +5,6 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts (PYTHON_INT_UNBOUNDED).",
     "A bool is not an int. A float or other non-string kind is not a boundary.",
     "MapWalk::Borrowed and ListWalk::Borrowed are failed borrows, not empty collections."

@@ -17,13 +17,11 @@ SCHEMA = "sesslint.parity-module-vectors/v1"
 PYTHON_COMMIT = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 COMPACTION_SNAPSHOT_PY_PIN = "e91d50b2ecea57ef4dd900e3b0b87b14946e847e"
 COMPACTION_SNAPSHOT_RS_SHA256 = (
-    "3dbe2d2ac077cb9032fa8d126133412f8c1e3de660358cb4f24554e2d82d9176"
+    "313ddadedf71a10d64d5158317d992e503b6d358b6658dfd1bcfb986967654ac"
 )
 MODULE = "sesslint.checks.compaction_snapshot"
 
 KNOWN_PARITY_GAPS: Final[tuple[str, ...]] = (
-    "check_compaction_snapshot uses make_finding with the fingerprint omitted; Rust returns "
-    "FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python int is unbounded; Rust uses checked i64 for indexes and occurrence counts "
     "(PYTHON_INT_UNBOUNDED).",
     "A bool is not an int. A float or other non-string kind is not a boundary.",
