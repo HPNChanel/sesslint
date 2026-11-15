@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/durable_prefix.py` lines 1–228
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_durable_prefix`] calls [`make_finding`] with the fingerprint
-//! omitted. That returns the codec error and does not produce a digest.
+//! omitted. [`make_finding`] fills the digest and the finding is kept.
 //! This module does not call [`crate::graph::cap_graph_findings`].
 //!
 //! Codex-rollout-scoped check: the paginated resume path expects a contiguous
@@ -30,8 +30,8 @@
 //!
 //! [`durable_prefix_records`] reports at most one record per kind, in
 //! emission order. It does not hash. [`check_durable_prefix`] calls
-//! [`make_finding`] only when that list is non-empty, and propagates the
-//! codec error from the first finding.
+//! [`make_finding`] only when that list is non-empty. [`make_finding`]
+//! fills the digest and the finding is kept.
 //!
 //! Evidence is structural only: ordinals, counts, and envelope type names
 //! (schema vocabulary), never payload content.
@@ -542,8 +542,8 @@ fn record_evidence(record: &DurablePrefixRecord) -> PyValue {
 ///
 /// No markers, and no divergence, return an empty list and do not call
 /// [`make_finding`]. A divergence calls [`make_finding`] with the
-/// fingerprint omitted; that codec error is propagated from the first
-/// finding. The list is not capped.
+/// fingerprint omitted. [`make_finding`] fills the digest and the finding
+/// is kept. The list is not capped.
 pub fn check_durable_prefix(
     events: &[EventValue],
     source_path: Option<&str>,
