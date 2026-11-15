@@ -5,7 +5,6 @@
   "origin": "synthetic",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
   "known_parity_gaps": [
-    "check_accounting uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python ints are unbounded and Rust uses checked i64 addition for counter sums.",
     "A bool is not an int (bool, float, and negative int counter values are ignored per key)."
   ]

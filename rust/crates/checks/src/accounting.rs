@@ -3,7 +3,7 @@
 //! Port of `src/sesslint/checks/accounting.py` lines 1–178
 //! @ `e91d50b2ecea57ef4dd900e3b0b87b14946e847e`.
 //! [`check_accounting`] calls [`make_finding`] with the fingerprint omitted.
-//! That returns the codec error and does not produce a digest. This module
+//! [`make_finding`] fills the digest and the finding is kept. This module
 //! does not substitute [`crate::graph::compute_graph_fingerprint`].
 //!
 //! # Recorded gaps
@@ -279,9 +279,9 @@ pub fn accounting_mismatches(
 /// Python: `check_accounting`.
 ///
 /// No mismatch returns an empty list and does not call [`make_finding`].
-/// A mismatch calls [`make_finding`] with the fingerprint omitted; that
-/// codec error is propagated. After a successful [`make_finding`],
-/// [`cap_graph_findings`] is called.
+/// A mismatch calls [`make_finding`] with the fingerprint omitted.
+/// [`make_finding`] fills the digest and the finding is kept. After a
+/// successful [`make_finding`], [`cap_graph_findings`] is called.
 pub fn check_accounting(
     events: &[EventValue],
     source_path: Option<&str>,

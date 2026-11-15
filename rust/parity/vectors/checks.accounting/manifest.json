@@ -2,12 +2,11 @@
   "schema": "sesslint.parity-module-vectors/v1",
   "module": "sesslint.checks.accounting",
   "python_commit": "02694d537104659df66cdd084354739f3cccc440",
-  "checks_accounting_rs_sha256": "69c5665c6b3cb427dafc7100ec3230d0008c8ccb6b3fae86b253507586f75b49",
+  "checks_accounting_rs_sha256": "3a31b117348c72a770707cf9d6eebc473c8837028f1abceeaec11d11311b59e8",
   "vector_count": 7,
-  "vectors_sha256": "f90396de68392ea233e5dd5567ccd42226c1c81e9971cd0ed439d4dd21545095",
+  "vectors_sha256": "b868dbaf71b17269f9985070061d69621b790a4a102942e3813498992b6a4c87",
   "generator": "rust/parity/vectors/checks.accounting/generate",
   "known_parity_gaps": [
-    "check_accounting uses make_finding with the fingerprint omitted; Rust returns FINGERPRINT_CODEC_UNAVAILABLE (known gap).",
     "Python ints are unbounded and Rust uses checked i64 addition for counter sums.",
     "A bool is not an int (bool, float, and negative int counter values are ignored per key)."
   ]

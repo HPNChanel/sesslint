@@ -16,9 +16,9 @@ const EXPECTED_SCHEMA: &str = "sesslint.parity-module-vectors/v1";
 const EXPECTED_MODULE: &str = "sesslint.checks.accounting";
 const EXPECTED_PYTHON_COMMIT: &str = "02694d537104659df66cdd084354739f3cccc440";
 const EXPECTED_ACCOUNTING_RS_SHA256: &str =
-    "69c5665c6b3cb427dafc7100ec3230d0008c8ccb6b3fae86b253507586f75b49";
+    "3a31b117348c72a770707cf9d6eebc473c8837028f1abceeaec11d11311b59e8";
 const EXPECTED_VECTORS_SHA256: &str =
-    "f90396de68392ea233e5dd5567ccd42226c1c81e9971cd0ed439d4dd21545095";
+    "b868dbaf71b17269f9985070061d69621b790a4a102942e3813498992b6a4c87";
 
 #[derive(Debug, Clone)]
 struct VectorCase {
@@ -95,11 +95,18 @@ fn assert_root_meta(meta: &[(String, JsonValue)]) {
     );
     let gaps = array_field(meta, "known_parity_gaps").expect("known_parity_gaps");
     assert!(
-        gaps.iter().any(
-            |item| matches!(item, JsonValue::Str(s) if s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))
+        gaps.iter().all(
+            |item| matches!(item, JsonValue::Str(s) if !s.contains("FINGERPRINT_CODEC_UNAVAILABLE"))
         ),
-        "expected fingerprint codec gap in known_parity_gaps"
+        "accounting findings are kept; the codec gap must stay out"
     );
+    for marker in ["unbounded", "not an int"] {
+        assert!(
+            gaps.iter()
+                .any(|item| matches!(item, JsonValue::Str(s) if s.contains(marker))),
+            "expected known_parity_gaps to mention {marker:?}"
+        );
+    }
 }
 
 fn assert_case(case: &VectorCase) {
